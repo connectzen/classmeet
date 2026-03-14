@@ -108,6 +108,32 @@ export type CourseTarget = {
   created_at: string
 }
 
+export type Conversation = {
+  id: string
+  type: 'direct' | 'group'
+  name: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ConversationParticipant = {
+  id: string
+  conversation_id: string
+  user_id: string
+  joined_at: string
+  last_read_at: string
+}
+
+export type Message = {
+  id: string
+  conversation_id: string
+  sender_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -175,6 +201,24 @@ export type Database = {
         Row: CourseTarget
         Insert: Omit<CourseTarget, 'id' | 'created_at'>
         Update: Partial<Omit<CourseTarget, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      conversations: {
+        Row: Conversation
+        Insert: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Conversation, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      conversation_participants: {
+        Row: ConversationParticipant
+        Insert: Omit<ConversationParticipant, 'id' | 'joined_at' | 'last_read_at'>
+        Update: Partial<Omit<ConversationParticipant, 'id' | 'joined_at'>>
+        Relationships: []
+      }
+      messages: {
+        Row: Message
+        Insert: Omit<Message, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Message, 'id' | 'created_at'>>
         Relationships: []
       }
     }

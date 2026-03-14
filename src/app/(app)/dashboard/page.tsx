@@ -41,7 +41,7 @@ const STUDENT_STATS: Stat[] = [
 // ─── Quick actions per role ───────────────────────────────────────────────────
 const TEACHER_ACTIONS: Action[] = [
   { label: 'Start Live Room',  desc: 'Host a video session now',  icon: Video,    color: 'var(--primary-500)', href: '/dashboard/rooms'   },
-  { label: 'Create Course',    desc: 'Build and share content',   icon: BookOpen, color: 'var(--accent-500)',  comingSoon: true           },
+  { label: 'Create Course',    desc: 'Build and share content',   icon: BookOpen, color: 'var(--accent-500)',  href: '/dashboard/courses' },
   { label: 'Invite Members',   desc: 'Grow your classroom',       icon: Users,    color: 'var(--success-400)', href: '/dashboard/members' },
   { label: 'Create Quiz',      desc: 'Test your students',        icon: PenLine,  color: 'var(--warning-400)', comingSoon: true           },
   { label: 'Schedule Session', desc: 'Plan ahead with calendar',  icon: CalendarDays, color: 'var(--info-400)', comingSoon: true          },
@@ -50,7 +50,7 @@ const TEACHER_ACTIONS: Action[] = [
 
 const STUDENT_ACTIONS: Action[] = [
   { label: 'Join a Room',      desc: 'Enter a live class session', icon: LogIn,       color: 'var(--primary-500)', href: '/dashboard/rooms'   },
-  { label: 'Browse Courses',   desc: 'Explore available courses',  icon: BookOpen,    color: 'var(--accent-500)',  comingSoon: true           },
+  { label: 'Browse Courses',   desc: 'Explore available courses',  icon: BookOpen,    color: 'var(--accent-500)',  href: '/dashboard/courses' },
   { label: 'Take a Quiz',      desc: 'Test your knowledge',        icon: PenLine,     color: 'var(--success-400)', comingSoon: true           },
   { label: 'My Schedule',      desc: 'View upcoming sessions',     icon: CalendarDays,color: 'var(--info-400)',    href: '/dashboard/rooms'           },
 ]
