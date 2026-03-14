@@ -143,10 +143,10 @@ export default function AdminPage() {
   const roleBadge = (role: string) => {
     const colors: Record<string, string> = {
       admin: 'rgba(239,68,68,0.15)', teacher: 'rgba(59,130,246,0.15)',
-      student: 'rgba(34,197,94,0.15)', guest: 'rgba(156,163,175,0.15)',
+      student: 'rgba(34,197,94,0.15)', member: 'rgba(168,85,247,0.15)', guest: 'rgba(156,163,175,0.15)',
     }
     const textColors: Record<string, string> = {
-      admin: '#ef4444', teacher: '#3b82f6', student: '#22c55e', guest: '#9ca3af',
+      admin: '#ef4444', teacher: '#3b82f6', student: '#22c55e', member: '#a855f7', guest: '#9ca3af',
     }
     return (
       <span style={{
@@ -262,6 +262,7 @@ export default function AdminPage() {
                           <option value="admin">Admin</option>
                           <option value="teacher">Teacher</option>
                           <option value="student">Student</option>
+                          <option value="member">Member</option>
                           <option value="guest">Guest</option>
                         </select>
                         {u.id !== currentUser.id && (
