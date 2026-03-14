@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
 
   async function handleVerifyCode(e: React.FormEvent) {
     e.preventDefault()
-    if (code.length < 6) { setError('Enter the full 6-digit code.'); return }
+    if (code.length < 8) { setError('Enter the full 8-digit code.'); return }
     setError(null); setLoading(true)
     const supabase = createClient()
     const { error: err } = await supabase.auth.verifyOtp({
@@ -63,7 +63,7 @@ export default function ForgotPasswordPage() {
 
   const titles: Record<Step, { title: string; subtitle: string }> = {
     email: { title: 'Forgot password?', subtitle: "We'll send a reset code to your email." },
-    code: { title: 'Enter reset code', subtitle: `Check ${email} for your 6-digit code.` },
+    code: { title: 'Enter reset code', subtitle: `Check ${email} for your 8-digit code.` },
     password: { title: 'Set new password', subtitle: 'Choose a strong password for your account.' },
     done: { title: 'Password updated!', subtitle: 'You can now sign in with your new password.' },
   }
@@ -103,11 +103,11 @@ export default function ForgotPasswordPage() {
         <form onSubmit={handleVerifyCode}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <Input
-              label="6-digit code"
+              label="8-digit code"
               type="text"
               inputMode="numeric"
-              maxLength={6}
-              placeholder="123456"
+              maxLength={8}
+              placeholder="12345678"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               required

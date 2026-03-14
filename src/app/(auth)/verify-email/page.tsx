@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import AuthCard from '@/components/auth/AuthCard'
 import Button from '@/components/ui/Button'
 
-const CODE_LENGTH = 6
+const CODE_LENGTH = 8
 const RESEND_COOLDOWN = 60
 
 function VerifyEmailContent() {
@@ -62,7 +62,7 @@ function VerifyEmailContent() {
   async function handleVerify() {
     const otp = code.join('')
     if (otp.length < CODE_LENGTH) {
-      setError('Please enter the full 6-digit code.')
+      setError('Please enter the full 8-digit code.')
       return
     }
     setError(null)
@@ -94,7 +94,7 @@ function VerifyEmailContent() {
   return (
     <AuthCard
       title="Check your email"
-      subtitle={`We sent a 6-digit code to ${email || 'your email'}`}
+      subtitle={`We sent an 8-digit code to ${email || 'your email'}`}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center' }}>
         <div style={{

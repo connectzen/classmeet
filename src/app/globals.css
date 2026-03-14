@@ -692,15 +692,18 @@ a:hover { color: var(--primary-300); }
    ============================================================ */
 .code-input-container {
   display: flex;
-  gap: var(--space-3);
+  gap: 6px;
   justify-content: center;
+  width: 100%;
 }
 
 .code-input {
-  width: 52px;
-  height: 64px;
+  width: 0;
+  flex: 1;
+  min-width: 0;
+  height: 52px;
   text-align: center;
-  font-size: 1.6rem;
+  font-size: 1.25rem;
   font-weight: 700;
   background: var(--bg-elevated);
   border: 2px solid var(--border-default);
