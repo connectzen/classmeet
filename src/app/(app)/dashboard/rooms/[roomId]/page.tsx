@@ -686,6 +686,7 @@ function ControlBarCustom({
 
 // ── Settings Modal ──────────────────────────────────────────────────────────
 function SettingsModal({ onClose }: { onClose: () => void }) {
+  const room = useRoomContext()
   const { localParticipant } = useLocalParticipant()
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
@@ -693,21 +694,33 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [selectedVideo, setSelectedVideo] = useState('')
 
   useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then(devices => {
+    async function loadDevices() {
+      // Request permission first so labels are available
+      try { await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(s => s.getTracks().forEach(t => t.stop())) } catch {}
+      const devices = await navigator.mediaDevices.enumerateDevices()
       setAudioDevices(devices.filter(d => d.kind === 'audioinput'))
       setVideoDevices(devices.filter(d => d.kind === 'videoinput'))
-    })
-  }, [])
+
+      // Pre-select the currently active device
+      const activeMic = room.getActiveDevice('audioinput')
+      const activeCam = room.getActiveDevice('videoinput')
+      if (activeMic) setSelectedAudio(activeMic)
+      else if (devices.find(d => d.kind === 'audioinput')) setSelectedAudio(devices.find(d => d.kind === 'audioinput')!.deviceId)
+      if (activeCam) setSelectedVideo(activeCam)
+      else if (devices.find(d => d.kind === 'videoinput')) setSelectedVideo(devices.find(d => d.kind === 'videoinput')!.deviceId)
+    }
+    loadDevices()
+  }, [room])
 
   const handleAudioChange = useCallback(async (deviceId: string) => {
     setSelectedAudio(deviceId)
-    await localParticipant.setMicrophoneEnabled(true, { deviceId })
-  }, [localParticipant])
+    await room.switchActiveDevice('audioinput', deviceId)
+  }, [room])
 
   const handleVideoChange = useCallback(async (deviceId: string) => {
     setSelectedVideo(deviceId)
-    await localParticipant.setCameraEnabled(true, { deviceId })
-  }, [localParticipant])
+    await room.switchActiveDevice('videoinput', deviceId)
+  }, [room])
 
   return (
     <div className="room-settings-overlay" onClick={onClose}>
