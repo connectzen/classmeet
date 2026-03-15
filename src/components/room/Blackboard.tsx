@@ -112,12 +112,11 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     redoStack.current = []
   }, [])
 
-  // ── Initialize fabric canvas with HiDPI support ──────────────────────────
+  // ── Initialize fabric canvas (retina handled by fabric's enableRetinaScaling) ──
   useEffect(() => {
     if (!canvasRef.current || fabricRef.current) return
 
     const container = containerRef.current
-    const dpr = window.devicePixelRatio || 1
     const w = container?.clientWidth || 800
     const h = container?.clientHeight || 600
 
@@ -125,14 +124,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       backgroundColor: '#1a1a2e',
       isDrawingMode: isHost,
       selection: isHost,
-      width: w * dpr,
-      height: h * dpr,
+      width: w,
+      height: h,
     })
-
-    // Scale all rendering by DPR for sharp output
-    const ctx = canvas.getContext()
-    ctx.scale(dpr, dpr)
-    canvas.setDimensions({ width: w + 'px', height: h + 'px' }, { cssOnly: true })
 
     if (isHost) {
       const brush = new fabric.PencilBrush(canvas)
@@ -143,18 +137,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     fabricRef.current = canvas
 
-    // Fit to container with HiDPI
+    // Fit to container on resize
     const resize = () => {
       const c = containerRef.current
       if (!c || !fabricRef.current) return
-      const curDpr = window.devicePixelRatio || 1
       const cw = c.clientWidth
       const ch = c.clientHeight
-      fabricRef.current.setDimensions({ width: cw * curDpr, height: ch * curDpr })
-      fabricRef.current.setDimensions({ width: cw + 'px', height: ch + 'px' }, { cssOnly: true })
-      const rctx = fabricRef.current.getContext()
-      rctx.scale(curDpr, curDpr)
-      fabricRef.current.renderAll()
+      if (cw > 0 && ch > 0) {
+        fabricRef.current.setDimensions({ width: cw, height: ch })
+        fabricRef.current.renderAll()
+      }
     }
     const ro = new ResizeObserver(resize)
     if (container) ro.observe(container)
@@ -344,6 +336,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         const existing = canvas.getObjects().find((o: any) => o.id === incomingEvent.id)
         if (existing) {
           const json = JSON.parse(incomingEvent.data)
+          // Remove read-only properties that are getters in fabric v7
+          delete json.type
+          delete json.version
           existing.set(json)
           existing.setCoords()
           canvas.renderAll()
