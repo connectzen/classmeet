@@ -148,8 +148,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           el.style.top = `${event.y}px`
           el.style.height = `${event.height}px`
           el.style.display = 'block'
-          // Hide the cursor dot while the text caret is visible
+          // Hide the cursor dot and selection highlight while the text caret is visible
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
+          if (selectionDivRef.current) selectionDivRef.current.style.display = 'none'
         } else {
           el.style.display = 'none'
           // Restore cursor dot visibility — next cursor-move will position it
@@ -927,8 +928,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       text.enterEditing()
       text.selectAll()
 
-      // Hide the teacher cursor dot while typing — prevents leftover dot at click origin
+      // Hide the teacher cursor dot and selection highlight while typing
       onCanvasEventRef.current?.({ type: 'cursor-move', x: -100, y: -100 })
+      onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
 
       // Don't send text-cursor here at the click point — defer to first keystroke
       // so getCursorRenderingData() gives the accurate position and no stale dot lingers.
