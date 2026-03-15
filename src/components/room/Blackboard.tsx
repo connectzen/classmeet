@@ -408,9 +408,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
 
     // Selection highlight: broadcast bounding box when teacher selects/deselects
+    // Skip when an IText is being edited — the small bounding box creates visible
+    // "dots" (dashed border on a tiny rect) on the student side.
     const emitSelectionHighlight = () => {
       const active = canvas.getActiveObject()
       if (active) {
+        // Don't show selection highlight for IText in editing mode
+        if ((active as any).isEditing) {
+          onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
+          return
+        }
         const bound = active.getBoundingRect()
         onCanvasEventRef.current?.({
           type: 'selection-highlight',
