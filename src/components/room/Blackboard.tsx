@@ -129,7 +129,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (el) {
         el.style.left = `${event.x}px`
         el.style.top = `${event.y}px`
-        el.style.display = 'block'
+        // Don't show cursor dot if the text caret is currently visible
+        // (prevents late-arriving cursor-move from re-showing dot at text origin)
+        const caretVisible = caretDivRef.current && caretDivRef.current.style.display === 'block'
+        if (!caretVisible) {
+          el.style.display = 'block'
+        }
       }
       return
     }
@@ -146,6 +151,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
         } else {
           el.style.display = 'none'
+          // Restore cursor dot visibility — next cursor-move will position it
         }
       }
       return
@@ -572,9 +578,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       activeShapeRef.current = null
     }
     // Only remove tool-specific handlers (not the live drawing handlers)
-    canvas.off('mouse:down', (canvas as any).__toolMouseDown)
-    canvas.off('mouse:move', (canvas as any).__toolMouseMove)
-    canvas.off('mouse:up', (canvas as any).__toolMouseUp)
+    // IMPORTANT: canvas.off(event, undefined) removes ALL handlers for that event,
+    // so we MUST guard with a truthiness check.
+    if ((canvas as any).__toolMouseDown) canvas.off('mouse:down', (canvas as any).__toolMouseDown)
+    if ((canvas as any).__toolMouseMove) canvas.off('mouse:move', (canvas as any).__toolMouseMove)
+    if ((canvas as any).__toolMouseUp) canvas.off('mouse:up', (canvas as any).__toolMouseUp)
+    ;(canvas as any).__toolMouseDown = undefined
+    ;(canvas as any).__toolMouseMove = undefined
+    ;(canvas as any).__toolMouseUp = undefined
 
     // Make objects not selectable by default (select tool re-enables)
     canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
