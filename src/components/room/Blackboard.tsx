@@ -390,6 +390,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.isDrawingMode = false
     canvas.selection = false
     canvas.defaultCursor = 'crosshair'
+    // Clear any in-progress rect/line contextTop preview
+    const topCtx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+    if (topCtx) {
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      topCtx.clearRect(0, 0, uc?.width ?? canvas.width, uc?.height ?? canvas.height)
+    }
     // Only remove tool-specific handlers (not the live drawing handlers)
     canvas.off('mouse:down', (canvas as any).__toolMouseDown)
     canvas.off('mouse:move', (canvas as any).__toolMouseMove)
@@ -455,60 +461,62 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
-    // Stable ID for the preview object across frames
-    const shapeIdRef = { current: '' }
+    // Local state — no intermediate Fabric object needed; preview drawn on contextTop
+    const local = { id: '', sx: 0, sy: 0 }
 
     const mouseDown = (e: any) => {
-      const pointer = canvas.getScenePoint(e.e)
-      shapeStartRef.current = { x: pointer.x, y: pointer.y }
-      shapeIdRef.current = nextObjId()
-      // Create initial 1-px line so there is an object to remove next frame
-      const line = new fabric.Line([pointer.x, pointer.y, pointer.x + 1, pointer.y + 1], {
-        stroke: strokeColor,
-        strokeWidth: 3,
-        selectable: false,
-        evented: false,
-      })
-      ;(line as any).id = shapeIdRef.current
-      activeShapeRef.current = line
-      suppressEventsRef.current = true
-      canvas.add(line)
-      suppressEventsRef.current = false
+      local.id = nextObjId()
+      local.sx = e.scenePoint.x
+      local.sy = e.scenePoint.y
     }
+
     const mouseMove = (e: any) => {
-      if (!shapeStartRef.current || !shapeIdRef.current) return
-      const pointer = canvas.getScenePoint(e.e)
-      const start = shapeStartRef.current
-      // Remove the previous preview line
-      if (activeShapeRef.current) {
-        suppressEventsRef.current = true
-        canvas.remove(activeShapeRef.current)
-        suppressEventsRef.current = false
-      }
-      // Recreate with exact endpoints — no mutation, no Fabric 7 layout artifacts
-      const line = new fabric.Line([start.x, start.y, pointer.x, pointer.y], {
+      if (!local.id) return
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      if (!ctx) return
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      const dpr = window.devicePixelRatio || 1
+      ctx.clearRect(0, 0, uc.width, uc.height)
+      ctx.save()
+      ctx.scale(dpr, dpr)
+      ctx.strokeStyle = strokeColor
+      ctx.lineWidth = 3
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(local.sx, local.sy)
+      ctx.lineTo(e.scenePoint.x, e.scenePoint.y)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    const mouseUp = (e: any) => {
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
+      if (!local.id) return
+      const ex = e.scenePoint.x, ey = e.scenePoint.y
+      const line = new fabric.Path(`M ${local.sx} ${local.sy} L ${ex} ${ey}`, {
         stroke: strokeColor,
         strokeWidth: 3,
+        fill: '',
         selectable: false,
         evented: false,
+        strokeLineCap: 'round',
       })
-      ;(line as any).id = shapeIdRef.current
-      activeShapeRef.current = line
+      ;(line as any).id = local.id
       suppressEventsRef.current = true
       canvas.add(line)
       suppressEventsRef.current = false
       canvas.renderAll()
-    }
-    const mouseUp = () => {
-      if (activeShapeRef.current && onCanvasEvent) {
-        const obj = activeShapeRef.current as any
+      if (onCanvasEvent) {
         saveUndoState()
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify(obj.toObject(['id'])), id: obj.id })
+        onCanvasEvent({ type: 'object-added', data: JSON.stringify((line as any).toObject(['id'])), id: local.id })
       }
+      local.id = ''
       activeShapeRef.current = null
       shapeStartRef.current = null
-      shapeIdRef.current = ''
     }
+
     ;(canvas as any).__toolMouseDown = mouseDown
     ;(canvas as any).__toolMouseMove = mouseMove
     ;(canvas as any).__toolMouseUp = mouseUp
@@ -519,74 +527,63 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Rectangle drawing handlers ───────────────────────────────────────────
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
-    // Stable ID for the preview rect across frames
-    const shapeIdRef = { current: '' }
+    // Local state — preview drawn on contextTop; no Fabric object until mouseUp
+    const local = { id: '', sx: 0, sy: 0 }
 
     const mouseDown = (e: any) => {
-      const pointer = canvas.getScenePoint(e.e)
-      shapeStartRef.current = { x: pointer.x, y: pointer.y }
-      shapeIdRef.current = nextObjId()
-      // Create a minimal placeholder so there is always something to remove next frame
-      const rect = new fabric.Rect({
-        left: pointer.x,
-        top: pointer.y,
-        width: 1,
-        height: 1,
-        fill: 'transparent',
-        stroke: strokeColor,
-        strokeWidth: 3,
-        selectable: false,
-        evented: false,
-      })
-      ;(rect as any).id = shapeIdRef.current
-      activeShapeRef.current = rect
-      suppressEventsRef.current = true
-      canvas.add(rect)
-      suppressEventsRef.current = false
+      local.id = nextObjId()
+      local.sx = e.scenePoint.x
+      local.sy = e.scenePoint.y
     }
+
     const mouseMove = (e: any) => {
-      if (!shapeStartRef.current || !shapeIdRef.current) return
-      const pointer = canvas.getScenePoint(e.e)
-      const start = shapeStartRef.current
-      const left = Math.min(start.x, pointer.x)
-      const top = Math.min(start.y, pointer.y)
-      const width = Math.max(1, Math.abs(pointer.x - start.x))
-      const height = Math.max(1, Math.abs(pointer.y - start.y))
-      // Remove previous preview rect
-      if (activeShapeRef.current) {
-        suppressEventsRef.current = true
-        canvas.remove(activeShapeRef.current)
-        suppressEventsRef.current = false
-      }
-      // Recreate at exact bounds — avoids Fabric 7 center-anchor mutation quirk
+      if (!local.id) return
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      if (!ctx) return
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      const dpr = window.devicePixelRatio || 1
+      ctx.clearRect(0, 0, uc.width, uc.height)
+      ctx.save()
+      ctx.scale(dpr, dpr)
+      ctx.strokeStyle = strokeColor
+      ctx.lineWidth = 3
+      // strokeRect with negative width/height draws in the correct drag direction
+      ctx.strokeRect(local.sx, local.sy, e.scenePoint.x - local.sx, e.scenePoint.y - local.sy)
+      ctx.restore()
+    }
+
+    const mouseUp = (e: any) => {
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
+      if (!local.id) return
+      const ex = e.scenePoint.x, ey = e.scenePoint.y
+      const left   = Math.min(local.sx, ex)
+      const top    = Math.min(local.sy, ey)
+      const width  = Math.max(1, Math.abs(ex - local.sx))
+      const height = Math.max(1, Math.abs(ey - local.sy))
       const rect = new fabric.Rect({
-        left,
-        top,
-        width,
-        height,
+        left, top, width, height,
         fill: 'transparent',
         stroke: strokeColor,
         strokeWidth: 3,
         selectable: false,
         evented: false,
       })
-      ;(rect as any).id = shapeIdRef.current
-      activeShapeRef.current = rect
+      ;(rect as any).id = local.id
       suppressEventsRef.current = true
       canvas.add(rect)
       suppressEventsRef.current = false
       canvas.renderAll()
-    }
-    const mouseUp = () => {
-      if (activeShapeRef.current && onCanvasEvent) {
-        const obj = activeShapeRef.current as any
+      if (onCanvasEvent) {
         saveUndoState()
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify(obj.toObject(['id'])), id: obj.id })
+        onCanvasEvent({ type: 'object-added', data: JSON.stringify((rect as any).toObject(['id'])), id: local.id })
       }
+      local.id = ''
       activeShapeRef.current = null
       shapeStartRef.current = null
-      shapeIdRef.current = ''
     }
+
     ;(canvas as any).__toolMouseDown = mouseDown
     ;(canvas as any).__toolMouseMove = mouseMove
     ;(canvas as any).__toolMouseUp = mouseUp
