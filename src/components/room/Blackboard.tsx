@@ -655,16 +655,30 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:up', mouseUp)
   }, [saveUndoState])
 
-  // ── Rectangle drawing handlers (contextTop preview, final object on mouseUp) ──
+  // ── Rectangle drawing handlers (live fabric object, sync render) ──
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
-    const local = { id: '', sx: 0, sy: 0 }
+    const local: { id: string; sx: number; sy: number; ex: number; ey: number; shape: fabric.Rect | null; drawing: boolean } = { id: '', sx: 0, sy: 0, ex: 0, ey: 0, shape: null, drawing: false }
 
     const mouseDown = (e: any) => {
-      if (local.id) return // guard against double-fire
+      if (local.drawing) return
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
+      local.ex = local.sx
+      local.ey = local.sy
+      local.drawing = true
       isDrawingShapeRef.current = true
+      const rect = new fabric.Rect({
+        left: local.sx, top: local.sy, width: 1, height: 1,
+        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
+        selectable: false, evented: false,
+      })
+      ;(rect as any).id = local.id
+      local.shape = rect
+      activeShapeRef.current = rect
+      suppressEventsRef.current = true
+      canvas.add(rect)
+      suppressEventsRef.current = false
     }
 
     const emitRectPreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
@@ -672,51 +686,28 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }, 16)
 
     const mouseMove = (e: any) => {
-      if (!local.id) return
+      if (!local.drawing || !local.shape) return
       const ex = e.scenePoint.x, ey = e.scenePoint.y
-      // Draw preview on contextTop (upper canvas) — no fabric object manipulation
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      if (!ctx) return
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      ctx.clearRect(0, 0, uc.width, uc.height)
-      ctx.save()
-      ctx.strokeStyle = strokeColorRef.current
-      ctx.lineWidth = 3
-      const rx = Math.min(local.sx, ex)
-      const ry = Math.min(local.sy, ey)
-      const rw = Math.abs(ex - local.sx)
-      const rh = Math.abs(ey - local.sy)
-      ctx.strokeRect(rx, ry, rw, rh)
-      ctx.restore()
-      emitRectPreview(local.sx, local.sy, ex, ey)
-    }
-
-    const mouseUp = (e: any) => {
-      if (!local.id) return
-      const ex = e.scenePoint.x, ey = e.scenePoint.y
-      // Clear contextTop preview
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
-      // Create final rect as a fabric object
+      local.ex = ex
+      local.ey = ey
       const left = Math.min(local.sx, ex)
       const top = Math.min(local.sy, ey)
       const width = Math.max(1, Math.abs(ex - local.sx))
       const height = Math.max(1, Math.abs(ey - local.sy))
-      const rect = new fabric.Rect({
-        left, top, width, height,
-        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
-        selectable: false, evented: false,
-      })
-      ;(rect as any).id = local.id
-      suppressEventsRef.current = true
-      canvas.add(rect)
-      suppressEventsRef.current = false
-      canvas.renderAll()
+      local.shape.set({ left, top, width, height })
+      local.shape.setCoords()
+      canvas.renderAll()  // synchronous — prevents "restart" flicker
+      emitRectPreview(local.sx, local.sy, ex, ey)
+    }
+
+    const mouseUp = () => {
+      if (!local.drawing || !local.shape) return
+      local.drawing = false
       saveUndoState()
-      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((rect as any).toObject(['id'])), id: local.id })
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((local.shape as any).toObject(['id'])), id: local.id })
       onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
+      local.shape = null
       isDrawingShapeRef.current = false
       activeShapeRef.current = null
       shapeStartRef.current = null
@@ -730,16 +721,28 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:up', mouseUp)
   }, [saveUndoState])
 
-  // ── Circle/Ellipse drawing handlers (contextTop preview, final object on mouseUp) ──
+  // ── Circle/Ellipse drawing handlers (live fabric object, sync render) ──
   const setupCircleDrawing = useCallback((canvas: fabric.Canvas) => {
-    const local = { id: '', sx: 0, sy: 0 }
+    const local: { id: string; sx: number; sy: number; shape: fabric.Ellipse | null; drawing: boolean } = { id: '', sx: 0, sy: 0, shape: null, drawing: false }
 
     const mouseDown = (e: any) => {
-      if (local.id) return // guard against double-fire
+      if (local.drawing) return
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
+      local.drawing = true
       isDrawingShapeRef.current = true
+      const ellipse = new fabric.Ellipse({
+        left: local.sx, top: local.sy, rx: 1, ry: 1,
+        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
+        selectable: false, evented: false,
+      })
+      ;(ellipse as any).id = local.id
+      local.shape = ellipse
+      activeShapeRef.current = ellipse
+      suppressEventsRef.current = true
+      canvas.add(ellipse)
+      suppressEventsRef.current = false
     }
 
     const emitCirclePreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
@@ -747,53 +750,26 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }, 16)
 
     const mouseMove = (e: any) => {
-      if (!local.id) return
+      if (!local.drawing || !local.shape) return
       const ex = e.scenePoint.x, ey = e.scenePoint.y
-      // Draw preview on contextTop — no fabric object manipulation
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      if (!ctx) return
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      ctx.clearRect(0, 0, uc.width, uc.height)
-      ctx.save()
-      ctx.strokeStyle = strokeColorRef.current
-      ctx.lineWidth = 3
-      const rx = Math.max(1, Math.abs(ex - local.sx) / 2)
-      const ry = Math.max(1, Math.abs(ey - local.sy) / 2)
-      const cx = (local.sx + ex) / 2
-      const cy = (local.sy + ey) / 2
-      ctx.beginPath()
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.restore()
-      emitCirclePreview(local.sx, local.sy, ex, ey)
-    }
-
-    const mouseUp = (e: any) => {
-      if (!local.id) return
-      const ex = e.scenePoint.x, ey = e.scenePoint.y
-      // Clear contextTop preview
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
-      // Create final ellipse as a fabric object
       const rx = Math.max(1, Math.abs(ex - local.sx) / 2)
       const ry = Math.max(1, Math.abs(ey - local.sy) / 2)
       const left = Math.min(local.sx, ex)
       const top = Math.min(local.sy, ey)
-      const ellipse = new fabric.Ellipse({
-        left, top, rx, ry,
-        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
-        selectable: false, evented: false,
-      })
-      ;(ellipse as any).id = local.id
-      suppressEventsRef.current = true
-      canvas.add(ellipse)
-      suppressEventsRef.current = false
-      canvas.renderAll()
+      local.shape.set({ left, top, rx, ry })
+      local.shape.setCoords()
+      canvas.renderAll()  // synchronous — prevents "restart" flicker
+      emitCirclePreview(local.sx, local.sy, ex, ey)
+    }
+
+    const mouseUp = () => {
+      if (!local.drawing || !local.shape) return
+      local.drawing = false
       saveUndoState()
-      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((ellipse as any).toObject(['id'])), id: local.id })
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((local.shape as any).toObject(['id'])), id: local.id })
       onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
+      local.shape = null
       isDrawingShapeRef.current = false
       activeShapeRef.current = null
       shapeStartRef.current = null
