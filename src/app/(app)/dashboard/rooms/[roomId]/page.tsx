@@ -21,8 +21,9 @@ import type { Participant as LKParticipant } from 'livekit-client'
 import {
   Mic, MicOff, Video, VideoOff, Monitor, Hand, Settings,
   LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
-  MonitorOff, Volume2,
+  MonitorOff, Volume2, PenTool,
 } from 'lucide-react'
+import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getInitials(name: string) {
@@ -37,6 +38,7 @@ function formatTime(ts: number) {
 // ── Hand-raise data channel codec ────────────────────────────────────────────
 const HAND_TOPIC = 'hand-raise'
 const PROMOTE_TOPIC = 'promote'
+const BLACKBOARD_TOPIC = 'blackboard'
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
@@ -133,6 +135,11 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [showChat, setShowChat] = useState(false)
   // Settings modal
   const [showSettings, setShowSettings] = useState(false)
+  // Blackboard
+  const [blackboardActive, setBlackboardActive] = useState(false)
+  const [blackboardEvent, setBlackboardEvent] = useState<BlackboardEvent | null>(null)
+  const blackboardRef = useRef<BlackboardHandle>(null)
+  const prevParticipantCount = useRef(0)
   // Mobile detection – null means "not yet determined"
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
 
@@ -172,6 +179,65 @@ function RoomInner({ roomName }: { roomName: string }) {
     const data = JSON.parse(decoder.decode(msg.payload))
     setSpotlightIdentity(data.identity || null)
   })
+
+  // Blackboard data channel — host broadcasts canvas events, participants receive
+  const { send: sendBlackboardData } = useDataChannel(BLACKBOARD_TOPIC, (msg) => {
+    const event = JSON.parse(decoder.decode(msg.payload)) as BlackboardEvent
+    if (event.type === 'activate') {
+      setBlackboardActive(true)
+    } else if (event.type === 'deactivate') {
+      setBlackboardActive(false)
+    } else {
+      // Drawing events — only apply if not host (host already has the state)
+      if (!isTeacher) {
+        setBlackboardEvent(event)
+      }
+    }
+  })
+
+  // Host: broadcast blackboard canvas events
+  const handleBlackboardEvent = useCallback((event: BlackboardEvent) => {
+    const payload = encoder.encode(JSON.stringify(event))
+    sendBlackboardData(payload, { reliable: true })
+  }, [sendBlackboardData])
+
+  // Host: toggle blackboard on/off
+  const toggleBlackboard = useCallback(() => {
+    const next = !blackboardActive
+    setBlackboardActive(next)
+    const event: BlackboardEvent = next ? { type: 'activate' } : { type: 'deactivate' }
+    const payload = encoder.encode(JSON.stringify(event))
+    sendBlackboardData(payload, { reliable: true })
+    // Send snapshot after activation so late-joining is seamless
+    if (next) {
+      setTimeout(() => {
+        const snapshot = blackboardRef.current?.getSnapshot()
+        if (snapshot) {
+          const snapPayload = encoder.encode(JSON.stringify({ type: 'snapshot', data: snapshot }))
+          sendBlackboardData(snapPayload, { reliable: true })
+        }
+      }, 200)
+    }
+  }, [blackboardActive, sendBlackboardData])
+
+  // Host: send snapshot to late-joining participants
+  useEffect(() => {
+    if (!isTeacher || !blackboardActive) {
+      prevParticipantCount.current = participants.length
+      return
+    }
+    if (participants.length > prevParticipantCount.current) {
+      // New participant joined — send current snapshot
+      setTimeout(() => {
+        const snapshot = blackboardRef.current?.getSnapshot()
+        if (snapshot) {
+          const payload = encoder.encode(JSON.stringify({ type: 'snapshot', data: snapshot }))
+          sendBlackboardData(payload, { reliable: true })
+        }
+      }, 500)
+    }
+    prevParticipantCount.current = participants.length
+  }, [participants.length, isTeacher, blackboardActive, sendBlackboardData])
 
   // Local hand raise
   const [myHandRaised, setMyHandRaised] = useState(false)
@@ -302,11 +368,16 @@ function RoomInner({ roomName }: { roomName: string }) {
           </div>
         </div>
 
-        {/* Main stage video */}
+        {/* Main stage video / blackboard */}
         <MainStage
           participant={spotlightParticipant}
           screenShare={activeScreenShare}
           cameraTracks={cameraTracks}
+          blackboardActive={blackboardActive}
+          isHost={isTeacher}
+          onCanvasEvent={handleBlackboardEvent}
+          incomingEvent={blackboardEvent}
+          blackboardRef={blackboardRef}
         />
 
         {/* Bottom control bar */}
@@ -322,6 +393,8 @@ function RoomInner({ roomName }: { roomName: string }) {
           onLeave={handleLeave}
           raisedHandCount={raisedHands.size}
           isMobile={!!isMobile}
+          isBlackboardActive={blackboardActive}
+          onToggleBlackboard={toggleBlackboard}
         />
       </div>
 
@@ -460,13 +533,40 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
 }
 
 // ── Main Stage ───────────────────────────────────────────────────────────────
-function MainStage({ participant, screenShare, cameraTracks }: {
+function MainStage({ participant, screenShare, cameraTracks, blackboardActive, isHost, onCanvasEvent, incomingEvent, blackboardRef }: {
   participant: LKParticipant | undefined
   screenShare: TrackReferenceOrPlaceholder | null
   cameraTracks: TrackReferenceOrPlaceholder[]
+  blackboardActive: boolean
+  isHost: boolean
+  onCanvasEvent: (event: BlackboardEvent) => void
+  incomingEvent: BlackboardEvent | null
+  blackboardRef: React.RefObject<BlackboardHandle | null>
 }) {
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
+
+  // If blackboard is active, show that
+  if (blackboardActive) {
+    return (
+      <div className="room-main-stage">
+        <div className="room-stage-video room-stage-blackboard">
+          <Blackboard
+            ref={blackboardRef}
+            isHost={isHost}
+            onCanvasEvent={onCanvasEvent}
+            incomingEvent={incomingEvent}
+          />
+          <div className="room-stage-overlay">
+            <div className="room-stage-label">
+              <PenTool size={14} />
+              <span>Blackboard{isHost ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // If screen share is active, show that
   if (screenShare && screenShare.publication?.track) {
@@ -600,11 +700,14 @@ interface ControlBarProps {
   onLeave: () => void
   raisedHandCount: number
   isMobile?: boolean
+  isBlackboardActive: boolean
+  onToggleBlackboard: () => void
 }
 
 function ControlBarCustom({
   isMicEnabled, isCamEnabled, isScreenShareEnabled, isHandRaised,
   isTeacher, localParticipant, onToggleHand, onSettings, onLeave, raisedHandCount, isMobile,
+  isBlackboardActive, onToggleBlackboard,
 }: ControlBarProps) {
   const toggleMic = useCallback(() => {
     localParticipant.setMicrophoneEnabled(!isMicEnabled)
@@ -650,6 +753,18 @@ function ControlBarCustom({
           >
             {isScreenShareEnabled ? <MonitorOff size={20} /> : <Monitor size={20} />}
             <span className="room-control-label">{isScreenShareEnabled ? 'Stop Share' : 'Share Screen'}</span>
+          </button>
+        )}
+
+        {/* Blackboard — teacher only, hide on mobile */}
+        {!isMobile && isTeacher && (
+          <button
+            className={`room-control-btn ${isBlackboardActive ? 'room-control-btn-active' : ''}`}
+            onClick={onToggleBlackboard}
+            title={isBlackboardActive ? 'Close blackboard' : 'Open blackboard'}
+          >
+            <PenTool size={20} />
+            <span className="room-control-label">{isBlackboardActive ? 'Close Board' : 'Blackboard'}</span>
           </button>
         )}
 
