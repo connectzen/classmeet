@@ -11,6 +11,7 @@ export type BlackboardEvent =
   | { type: 'snapshot'; data: string }
   | { type: 'object-added'; data: string; id: string }
   | { type: 'object-modified'; data: string; id: string }
+  | { type: 'object-moving'; data: string; id: string }
   | { type: 'object-removed'; id: string }
   | { type: 'clear' }
   | { type: 'drawing-live'; points: number[]; color: string; width: number }
@@ -219,6 +220,20 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       return
     }
 
+    if (event.type === 'object-moving') {
+      // Real-time object movement: update the object's position on the student canvas
+      const existing = canvas.getObjects().find((o: any) => o.id === event.id)
+      if (existing) {
+        const json = JSON.parse(event.data)
+        delete json.type
+        delete json.version
+        existing.set(json)
+        existing.setCoords()
+        canvas.renderAll()
+      }
+      return
+    }
+
     if (event.type === 'drawing-live') {
       const pts = event.points
       if (pts.length < 4) return
@@ -400,6 +415,21 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
     }
 
+    // Stream object position during drag (throttled, ephemeral) for real-time movement
+    const emitObjectMoving = throttle((obj: fabric.FabricObject) => {
+      if (!(obj as any).id) return
+      onCanvasEventRef.current?.({ type: 'object-moving', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
+      // Also update selection highlight to follow the object during drag
+      emitSelectionHighlight()
+    }, 32)
+
+    const onObjectMoving = (e: any) => {
+      if (suppressEventsRef.current) return
+      const obj = e.target as fabric.FabricObject
+      if (!obj) return
+      emitObjectMoving(obj)
+    }
+
     const onObjectRemoved = (e: any) => {
       if (suppressEventsRef.current) return
       const obj = e.target as fabric.FabricObject
@@ -448,6 +478,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('path:created', onPathCreated)
     canvas.on('object:added', onObjectAdded)
     canvas.on('object:modified', onObjectModified)
+    canvas.on('object:moving', onObjectMoving)
+    canvas.on('object:scaling', onObjectMoving)
+    canvas.on('object:rotating', onObjectMoving)
     canvas.on('object:removed', onObjectRemoved)
     canvas.on('selection:created', onSelectionCreated)
     canvas.on('selection:updated', onSelectionUpdated)
@@ -462,6 +495,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('path:created', onPathCreated)
       canvas.off('object:added', onObjectAdded)
       canvas.off('object:modified', onObjectModified)
+      canvas.off('object:moving', onObjectMoving)
+      canvas.off('object:scaling', onObjectMoving)
+      canvas.off('object:rotating', onObjectMoving)
       canvas.off('object:removed', onObjectRemoved)
       canvas.off('selection:created', onSelectionCreated)
       canvas.off('selection:updated', onSelectionUpdated)
