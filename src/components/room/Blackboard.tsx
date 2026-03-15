@@ -887,8 +887,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       // Hide the teacher cursor dot while typing — prevents leftover dot at click origin
       onCanvasEventRef.current?.({ type: 'cursor-move', x: -100, y: -100 })
 
-      // Show text cursor to students at actual typing position
-      onCanvasEventRef.current?.({ type: 'text-cursor', x: pointer.x, y: pointer.y, height: opts.fontSize, visible: true })
+      // Don't send text-cursor here at the click point — defer to first keystroke
+      // so getCursorRenderingData() gives the accurate position and no stale dot lingers.
 
       // Stream every keystroke live to participants
       const emitTextLive = throttle(() => {

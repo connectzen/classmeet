@@ -211,11 +211,12 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Host: broadcast blackboard canvas events
   const handleBlackboardEvent = useCallback((event: BlackboardEvent) => {
     const payload = encoder.encode(JSON.stringify(event))
-    // Use unreliable transport for ephemeral preview events to avoid head-of-line blocking
+    // Use unreliable transport for ephemeral preview events to avoid head-of-line blocking.
+    // text-cursor is kept reliable so the hide event (visible:false) is guaranteed to arrive;
+    // otherwise a dropped packet leaves the caret permanently visible on student side.
     const ephemeral = event.type === 'shape-preview' || event.type === 'shape-preview-end' ||
                       event.type === 'drawing-live' || event.type === 'drawing-live-end' ||
-                      event.type === 'cursor-move' || event.type === 'text-cursor' ||
-                      event.type === 'selection-highlight'
+                      event.type === 'cursor-move' || event.type === 'selection-highlight'
     sendBlackboardData(payload, { reliable: !ephemeral })
   }, [sendBlackboardData])
 
