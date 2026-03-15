@@ -38,7 +38,7 @@ const FONT_SIZES = [
 ]
 
 const FONT_FAMILIES = [
-  { label: 'Sans', value: 'Inter, sans-serif' },
+  { label: 'Sans', value: 'Arial, sans-serif' },
   { label: 'Serif', value: 'Georgia, Times New Roman, serif' },
   { label: 'Mono', value: 'JetBrains Mono, Fira Code, monospace' },
   { label: 'Cursive', value: 'Segoe Script, cursive' },

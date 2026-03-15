@@ -72,7 +72,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const [toolbarVisible, setToolbarVisible] = useState(true)
   const [textOptions, setTextOptions] = useState<TextOptions>({
     fontSize: 24,
-    fontFamily: 'Inter, sans-serif',
+    fontFamily: 'Arial, sans-serif',
     bold: false,
     italic: false,
     underline: false,
@@ -229,7 +229,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const onMouseMove = (e: any) => {
       if (!isDrawingRef.current || !canvas.isDrawingMode) return
-      const pointer = canvas.getViewportPoint(e.e)
+      const pointer = canvas.getScenePoint(e.e)
       livePointsRef.current.push(pointer.x, pointer.y)
       const brush = canvas.freeDrawingBrush
       if (brush && livePointsRef.current.length >= 4) {
@@ -398,7 +398,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       case 'select': {
         canvas.selection = true
         canvas.defaultCursor = 'default'
-        canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = true; o.evented = true })
+        canvas.forEachObject((o: fabric.FabricObject) => {
+          o.selectable = true
+          o.evented = true
+          o.setCoords()
+        })
+        canvas.requestRenderAll()
         break
       }
       case 'pen': {
@@ -447,7 +452,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
     const mouseDown = (e: any) => {
-      const pointer = canvas.getViewportPoint(e.e)
+      const pointer = canvas.getScenePoint(e.e)
       shapeStartRef.current = { x: pointer.x, y: pointer.y }
       const line = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
         stroke: strokeColor,
@@ -463,9 +468,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
     const mouseMove = (e: any) => {
       if (!activeShapeRef.current || !shapeStartRef.current) return
-      const pointer = canvas.getViewportPoint(e.e)
+      const pointer = canvas.getScenePoint(e.e)
       const line = activeShapeRef.current as fabric.Line
       line.set({ x2: pointer.x, y2: pointer.y })
+      line.setCoords()
       canvas.renderAll()
     }
     const mouseUp = () => {
@@ -488,7 +494,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // ── Rectangle drawing handlers ───────────────────────────────────────────
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
     const mouseDown = (e: any) => {
-      const pointer = canvas.getViewportPoint(e.e)
+      const pointer = canvas.getScenePoint(e.e)
       shapeStartRef.current = { x: pointer.x, y: pointer.y }
       const rect = new fabric.Rect({
         left: pointer.x,
@@ -509,7 +515,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
     const mouseMove = (e: any) => {
       if (!activeShapeRef.current || !shapeStartRef.current) return
-      const pointer = canvas.getViewportPoint(e.e)
+      const pointer = canvas.getScenePoint(e.e)
       const start = shapeStartRef.current
       const rect = activeShapeRef.current as fabric.Rect
       const left = Math.min(start.x, pointer.x)
@@ -520,6 +526,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         width: Math.abs(pointer.x - start.x),
         height: Math.abs(pointer.y - start.y),
       })
+      rect.setCoords()
       canvas.renderAll()
     }
     const mouseUp = () => {
@@ -542,8 +549,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // ── Text tool handler ────────────────────────────────────────────────────
   const setupTextTool = useCallback((canvas: fabric.Canvas) => {
     const mouseDown = (e: any) => {
-      if (e.target && e.target.type === 'i-text') return
-      const pointer = canvas.getViewportPoint(e.e)
+      if (e.target && (e.target.type === 'i-text' || e.target.type === 'IText')) return
+      const pointer = canvas.getScenePoint(e.e)
       const id = nextObjId()
       const text = new fabric.IText('', {
         left: pointer.x,
@@ -557,13 +564,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         editable: true,
         objectCaching: false,
         paintFirst: 'fill',
+        strokeWidth: 0,
       })
       ;(text as any).id = id
       suppressEventsRef.current = true
       canvas.add(text)
       suppressEventsRef.current = false
       canvas.setActiveObject(text)
+      canvas.renderAll()
       text.enterEditing()
+      text.selectAll()
 
       text.on('editing:exited', () => {
         if (text.text?.trim() === '') {
