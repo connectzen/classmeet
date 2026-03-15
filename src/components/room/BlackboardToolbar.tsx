@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import type { DrawingTool, TextOptions } from './Blackboard'
 import {
-  Pencil, Minus, Square, Highlighter, Eraser, Type, MousePointer2,
-  Undo2, Redo2, Trash2, Palette, ChevronUp, ChevronDown,
+  Pencil, Minus, Square, Circle, Highlighter, Eraser, Type, MousePointer2,
+  Undo2, Redo2, Trash2, Palette, ChevronDown,
   Bold, Italic, Underline as UnderlineIcon,
 } from 'lucide-react'
 
@@ -74,6 +74,7 @@ export default function BlackboardToolbar({
     { tool: 'pen', icon: <Pencil size={16} />, label: 'Pen' },
     { tool: 'line', icon: <Minus size={16} />, label: 'Line' },
     { tool: 'rect', icon: <Square size={16} />, label: 'Rectangle' },
+    { tool: 'circle', icon: <Circle size={16} />, label: 'Circle' },
     { tool: 'highlighter', icon: <Highlighter size={16} />, label: 'Highlighter' },
     { tool: 'eraser', icon: <Eraser size={16} />, label: 'Eraser' },
     { tool: 'text', icon: <Type size={16} />, label: 'Text' },
@@ -218,29 +219,6 @@ export default function BlackboardToolbar({
                   <UnderlineIcon size={16} />
                 </button>
 
-                <div className="room-bb-divider" />
-
-                {/* Text color */}
-                <div style={{ position: 'relative' }}>
-                  <button
-                    className="room-bb-tool-btn"
-                    title="Text Color"
-                    onClick={() => {
-                      const input = document.getElementById('bb-text-color-input') as HTMLInputElement
-                      input?.click()
-                    }}
-                  >
-                    <Palette size={16} />
-                    <span className="room-bb-color-dot" style={{ backgroundColor: textOptions.color }} />
-                  </button>
-                  <input
-                    id="bb-text-color-input"
-                    type="color"
-                    value={textOptions.color}
-                    onChange={e => onTextOptionsChange({ ...textOptions, color: e.target.value })}
-                    style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-                  />
-                </div>
               </div>
             </>
           )}

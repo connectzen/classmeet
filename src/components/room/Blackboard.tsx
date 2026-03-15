@@ -16,7 +16,7 @@ export type BlackboardEvent =
   | { type: 'drawing-live'; points: number[]; color: string; width: number }
   | { type: 'drawing-live-end' }
 
-export type DrawingTool = 'pen' | 'line' | 'rect' | 'highlighter' | 'eraser' | 'text' | 'select'
+export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
 
 export interface TextOptions {
   fontSize: number
@@ -24,7 +24,6 @@ export interface TextOptions {
   bold: boolean
   italic: boolean
   underline: boolean
-  color: string
 }
 
 export interface BlackboardHandle {
@@ -76,12 +75,15 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     bold: false,
     italic: false,
     underline: false,
-    color: '#ffffff',
   })
 
   // Always-current textOptions ref — avoids stale closure in tool handlers
   const textOptionsRef = useRef(textOptions)
   useEffect(() => { textOptionsRef.current = textOptions }, [textOptions])
+
+  // Always-current strokeColor ref — used in text tool to pick up latest color
+  const strokeColorRef = useRef(strokeColor)
+  useEffect(() => { strokeColorRef.current = strokeColor }, [strokeColor])
 
   // Shape drawing refs (line / rect)
   const shapeStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -451,6 +453,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         setupRectDrawing(canvas)
         break
       }
+      case 'circle': {
+        setupCircleDrawing(canvas)
+        break
+      }
       case 'text': {
         canvas.defaultCursor = 'text'
         setupTextTool(canvas)
@@ -475,10 +481,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
       if (!ctx) return
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      const dpr = window.devicePixelRatio || 1
       ctx.clearRect(0, 0, uc.width, uc.height)
-      ctx.save()
-      ctx.scale(dpr, dpr)
       ctx.strokeStyle = strokeColor
       ctx.lineWidth = 3
       ctx.lineCap = 'round'
@@ -486,7 +489,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       ctx.moveTo(local.sx, local.sy)
       ctx.lineTo(e.scenePoint.x, e.scenePoint.y)
       ctx.stroke()
-      ctx.restore()
     }
 
     const mouseUp = (e: any) => {
@@ -541,15 +543,11 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
       if (!ctx) return
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      const dpr = window.devicePixelRatio || 1
       ctx.clearRect(0, 0, uc.width, uc.height)
-      ctx.save()
-      ctx.scale(dpr, dpr)
       ctx.strokeStyle = strokeColor
       ctx.lineWidth = 3
       // strokeRect with negative width/height draws in the correct drag direction
       ctx.strokeRect(local.sx, local.sy, e.scenePoint.x - local.sx, e.scenePoint.y - local.sy)
-      ctx.restore()
     }
 
     const mouseUp = (e: any) => {
@@ -592,6 +590,74 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:up', mouseUp)
   }, [strokeColor, onCanvasEvent, saveUndoState])
 
+  // ── Circle/Ellipse drawing handlers ─────────────────────────────────────
+  const setupCircleDrawing = useCallback((canvas: fabric.Canvas) => {
+    const local = { id: '', sx: 0, sy: 0 }
+
+    const mouseDown = (e: any) => {
+      local.id = nextObjId()
+      local.sx = e.scenePoint.x
+      local.sy = e.scenePoint.y
+    }
+
+    const mouseMove = (e: any) => {
+      if (!local.id) return
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      if (!ctx) return
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      ctx.clearRect(0, 0, uc.width, uc.height)
+      const rx = Math.abs(e.scenePoint.x - local.sx) / 2
+      const ry = Math.abs(e.scenePoint.y - local.sy) / 2
+      const cx = local.sx + (e.scenePoint.x - local.sx) / 2
+      const cy = local.sy + (e.scenePoint.y - local.sy) / 2
+      ctx.strokeStyle = strokeColor
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
+    const mouseUp = (e: any) => {
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
+      if (!local.id) return
+      const ex = e.scenePoint.x, ey = e.scenePoint.y
+      const rx = Math.max(1, Math.abs(ex - local.sx) / 2)
+      const ry = Math.max(1, Math.abs(ey - local.sy) / 2)
+      const left = Math.min(local.sx, ex)
+      const top  = Math.min(local.sy, ey)
+      const ellipse = new fabric.Ellipse({
+        left, top,
+        rx, ry,
+        fill: 'transparent',
+        stroke: strokeColor,
+        strokeWidth: 3,
+        selectable: false,
+        evented: false,
+      })
+      ;(ellipse as any).id = local.id
+      suppressEventsRef.current = true
+      canvas.add(ellipse)
+      suppressEventsRef.current = false
+      canvas.renderAll()
+      if (onCanvasEvent) {
+        saveUndoState()
+        onCanvasEvent({ type: 'object-added', data: JSON.stringify((ellipse as any).toObject(['id'])), id: local.id })
+      }
+      local.id = ''
+      activeShapeRef.current = null
+      shapeStartRef.current = null
+    }
+
+    ;(canvas as any).__toolMouseDown = mouseDown
+    ;(canvas as any).__toolMouseMove = mouseMove
+    ;(canvas as any).__toolMouseUp   = mouseUp
+    canvas.on('mouse:down', mouseDown)
+    canvas.on('mouse:move', mouseMove)
+    canvas.on('mouse:up',   mouseUp)
+  }, [strokeColor, onCanvasEvent, saveUndoState])
+
   // ── Text tool handler ────────────────────────────────────────────────────
   const setupTextTool = useCallback((canvas: fabric.Canvas) => {
     const mouseDown = (e: any) => {
@@ -606,7 +672,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         fontWeight: opts.bold ? 'bold' : 'normal',
         fontStyle: opts.italic ? 'italic' : 'normal',
         underline: opts.underline,
-        fill: opts.color,
+        fill: strokeColorRef.current,
         fontFamily: opts.fontFamily,
         editable: true,
         objectCaching: false,
@@ -738,12 +804,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         fontWeight: textOptions.bold ? 'bold' : 'normal',
         fontStyle: textOptions.italic ? 'italic' : 'normal',
         underline: textOptions.underline,
-        fill: textOptions.color,
+        fill: strokeColor,
         fontFamily: textOptions.fontFamily,
       })
       canvas.renderAll()
     }
-  }, [textOptions, isHost])
+  }, [textOptions, strokeColor, isHost])
 
   return (
     <div className="room-blackboard" ref={containerRef}>
