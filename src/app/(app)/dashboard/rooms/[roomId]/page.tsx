@@ -187,6 +187,11 @@ function RoomInner({ roomName }: { roomName: string }) {
       setBlackboardActive(true)
     } else if (event.type === 'deactivate') {
       setBlackboardActive(false)
+    } else if (event.type === 'drawing-live' || event.type === 'drawing-live-end') {
+      // Live drawing: call imperatively to bypass React state batching
+      if (!isTeacher) {
+        blackboardRef.current?.applyLiveEvent(event)
+      }
     } else {
       // Drawing events — only apply if not host (host already has the state)
       if (!isTeacher) {
@@ -198,9 +203,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Host: broadcast blackboard canvas events
   const handleBlackboardEvent = useCallback((event: BlackboardEvent) => {
     const payload = encoder.encode(JSON.stringify(event))
-    // Use unreliable for live drawing (ephemeral, low latency) and reliable for everything else
-    const reliable = event.type !== 'drawing-live'
-    sendBlackboardData(payload, { reliable })
+    sendBlackboardData(payload, { reliable: true })
   }, [sendBlackboardData])
 
   // Host: toggle blackboard on/off

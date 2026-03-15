@@ -29,6 +29,7 @@ export interface TextOptions {
 
 export interface BlackboardHandle {
   getSnapshot: () => string | null
+  applyLiveEvent: (event: BlackboardEvent) => void
 }
 
 interface BlackboardProps {
@@ -94,13 +95,64 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const redoStack = useRef<string[]>([])
   const isUndoRedoRef = useRef(false)
 
-  // ── Expose snapshot method to parent ─────────────────────────────────────
+  // ── Handle live drawing events imperatively (bypasses React state batching) ──
+  const handleLiveEvent = useCallback((event: BlackboardEvent) => {
+    const canvas = fabricRef.current
+    if (!canvas) return
+
+    if (event.type === 'drawing-live') {
+      const pts = event.points
+      if (pts.length < 4) return
+      // Remove old preview
+      if (livePreviewRef.current) {
+        canvas.remove(livePreviewRef.current)
+      }
+      // Build SVG path from points
+      let pathStr = `M ${pts[0]} ${pts[1]}`
+      for (let i = 2; i < pts.length - 2; i += 2) {
+        const mx = (pts[i] + pts[i + 2]) / 2
+        const my = (pts[i + 1] + pts[i + 3]) / 2
+        pathStr += ` Q ${pts[i]} ${pts[i + 1]} ${mx} ${my}`
+      }
+      pathStr += ` L ${pts[pts.length - 2]} ${pts[pts.length - 1]}`
+      const preview = new fabric.Path(pathStr, {
+        stroke: event.color,
+        strokeWidth: event.width,
+        fill: 'transparent',
+        selectable: false,
+        evented: false,
+        strokeLineCap: 'round',
+        strokeLineJoin: 'round',
+      })
+      ;(preview as any)._livePreview = true
+      livePreviewRef.current = preview
+      suppressEventsRef.current = true
+      canvas.add(preview)
+      canvas.renderAll()
+      suppressEventsRef.current = false
+      return
+    }
+
+    if (event.type === 'drawing-live-end') {
+      if (livePreviewRef.current) {
+        suppressEventsRef.current = true
+        canvas.remove(livePreviewRef.current)
+        livePreviewRef.current = null
+        canvas.renderAll()
+        suppressEventsRef.current = false
+      }
+      return
+    }
+  }, [])
+
+  // ── Expose methods to parent ─────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
     getSnapshot: () => {
       const canvas = fabricRef.current
       if (!canvas) return null
       return JSON.stringify(canvas.toObject(['id']))
     },
+    applyLiveEvent: handleLiveEvent,
   }))
 
   // ── Save state for undo ──────────────────────────────────────────────────
@@ -251,51 +303,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const canvas = fabricRef.current
     if (!canvas || !incomingEvent) return
 
-    // Handle live drawing preview (no suppress needed)
-    if (incomingEvent.type === 'drawing-live') {
-      const pts = incomingEvent.points
-      if (pts.length < 4) return
-      // Remove old preview
-      if (livePreviewRef.current) {
-        canvas.remove(livePreviewRef.current)
-      }
-      // Build SVG path from points
-      let pathStr = `M ${pts[0]} ${pts[1]}`
-      for (let i = 2; i < pts.length - 2; i += 2) {
-        const mx = (pts[i] + pts[i + 2]) / 2
-        const my = (pts[i + 1] + pts[i + 3]) / 2
-        pathStr += ` Q ${pts[i]} ${pts[i + 1]} ${mx} ${my}`
-      }
-      pathStr += ` L ${pts[pts.length - 2]} ${pts[pts.length - 1]}`
-      const preview = new fabric.Path(pathStr, {
-        stroke: incomingEvent.color,
-        strokeWidth: incomingEvent.width,
-        fill: 'transparent',
-        selectable: false,
-        evented: false,
-        strokeLineCap: 'round',
-        strokeLineJoin: 'round',
-      })
-      ;(preview as any)._livePreview = true
-      livePreviewRef.current = preview
-      suppressEventsRef.current = true
-      canvas.add(preview)
-      canvas.renderAll()
-      suppressEventsRef.current = false
-      return
-    }
-
-    if (incomingEvent.type === 'drawing-live-end') {
-      // Remove preview — the final path will arrive as object-added
-      if (livePreviewRef.current) {
-        suppressEventsRef.current = true
-        canvas.remove(livePreviewRef.current)
-        livePreviewRef.current = null
-        canvas.renderAll()
-        suppressEventsRef.current = false
-      }
-      return
-    }
+    // Live drawing events are handled imperatively via applyLiveEvent — skip here
+    if (incomingEvent.type === 'drawing-live' || incomingEvent.type === 'drawing-live-end') return
 
     suppressEventsRef.current = true
 
@@ -546,6 +555,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         fill: textOptions.color,
         fontFamily: textOptions.fontFamily,
         editable: true,
+        objectCaching: false,
+        paintFirst: 'fill',
       })
       ;(text as any).id = id
       suppressEventsRef.current = true
@@ -637,6 +648,25 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (isHost) applyTool(activeTool)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strokeColor])
+
+  // ── Apply text option changes to the currently editing IText ─────────────
+  useEffect(() => {
+    const canvas = fabricRef.current
+    if (!canvas || !isHost) return
+    const active = canvas.getActiveObject()
+    if (active && active.type === 'i-text' && (active as fabric.IText).isEditing) {
+      const txt = active as fabric.IText
+      txt.set({
+        fontSize: textOptions.fontSize,
+        fontWeight: textOptions.bold ? 'bold' : 'normal',
+        fontStyle: textOptions.italic ? 'italic' : 'normal',
+        underline: textOptions.underline,
+        fill: textOptions.color,
+        fontFamily: textOptions.fontFamily,
+      })
+      canvas.renderAll()
+    }
+  }, [textOptions, isHost])
 
   return (
     <div className="room-blackboard" ref={containerRef}>
