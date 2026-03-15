@@ -8,7 +8,7 @@ import { usePresenceStore } from '@/store/presence-store'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
 import Avatar from '@/components/ui/Avatar'
-import { Video, LayoutDashboard, BookOpen, Users, BarChart2, Settings, ShieldCheck, X, MessageSquare, Circle, FolderOpen } from 'lucide-react'
+import { Video, Settings, ShieldCheck, X, Circle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type NavLink = { href: string; label: string; icon: React.ElementType; roles?: UserRole[]; badgeKey?: string }
@@ -16,31 +16,10 @@ type NavSection = { section: string; links: NavLink[] }
 
 const NAV: NavSection[] = [
   {
-    section: 'Main',
-    links: [
-      { href: '/dashboard',          label: 'Dashboard',  icon: LayoutDashboard },
-      { href: '/dashboard/rooms',    label: 'Live Rooms', icon: Video, badgeKey: 'liveRooms' },
-      { href: '/dashboard/courses',  label: 'Courses',    icon: BookOpen        },
-      { href: '/dashboard/messages', label: 'Messages',   icon: MessageSquare   },
-    ],
-  },
-  {
-    section: 'Community',
-    links: [
-      // Members management — teacher/member/admin only
-      { href: '/dashboard/members',   label: 'Members',   icon: Users,      roles: ['teacher', 'member', 'admin'] },
-      // Groups management — teacher/member/admin only
-      { href: '/dashboard/groups',    label: 'Groups',    icon: FolderOpen,  roles: ['teacher', 'member', 'admin'] },
-      // Analytics — teacher/member/admin only
-      { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart2, roles: ['teacher', 'member', 'admin'] },
-    ],
-  },
-  {
     section: 'System',
     links: [
-      { href: '/dashboard/settings', label: 'Settings',    icon: Settings   },
-      // Admin panel — admin only
-      { href: '/admin',              label: 'Admin Panel',  icon: ShieldCheck, roles: ['admin'] },
+      { href: '/dashboard/settings', label: 'Settings',   icon: Settings                            },
+      { href: '/admin',              label: 'Admin Panel', icon: ShieldCheck, roles: ['admin']       },
     ],
   },
 ]
@@ -218,76 +197,11 @@ function TeacherInfo({ studentId }: { studentId: string }) {
   )
 }
 
-// ── Live session count hook (students) ──
-function useLiveSessionCount(userId: string | undefined, isCreatorRole: boolean) {
-  const [count, setCount] = useState(0)
-
-  useEffect(() => {
-    if (!userId || isCreatorRole) return
-    const supabase = createClient()
-
-    const load = async () => {
-      // Direct targets
-      const { data: directTargets } = await supabase
-        .from('session_targets')
-        .select('session_id')
-        .eq('target_type', 'student')
-        .eq('target_id', userId)
-
-      // Group targets
-      const { data: myGroups } = await supabase
-        .from('group_members')
-        .select('group_id')
-        .eq('student_id', userId)
-
-      let groupSessionIds: string[] = []
-      if (myGroups && myGroups.length > 0) {
-        const gids = myGroups.map(g => g.group_id)
-        const { data: groupTargets } = await supabase
-          .from('session_targets')
-          .select('session_id')
-          .eq('target_type', 'group')
-          .in('target_id', gids)
-        if (groupTargets) groupSessionIds = groupTargets.map(t => t.session_id)
-      }
-
-      const directIds = directTargets?.map(t => t.session_id) || []
-      const allIds = [...new Set([...directIds, ...groupSessionIds])]
-
-      if (allIds.length > 0) {
-        const { count: c } = await supabase
-          .from('sessions')
-          .select('id', { count: 'exact', head: true })
-          .in('id', allIds)
-          .eq('status', 'live')
-        setCount(c ?? 0)
-      } else {
-        setCount(0)
-      }
-    }
-
-    load()
-
-    const channel = supabase
-      .channel('sidebar-live-sessions')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, () => load())
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [userId, isCreatorRole])
-
-  return count
-}
-
 export default function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen, user } = useAppStore()
   const role = user?.role as UserRole | undefined
   const isCreator = role === 'teacher' || role === 'member' || role === 'admin'
-  const liveCount = useLiveSessionCount(user?.id, isCreator)
-
-  const badges: Record<string, number> = { liveRooms: liveCount }
 
   return (
     <>
@@ -333,7 +247,6 @@ export default function Sidebar() {
                 {visibleLinks.map((link) => {
                   const Icon = link.icon
                   const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
-                  const badgeCount = link.badgeKey ? (badges[link.badgeKey] || 0) : 0
                   return (
                     <Link
                       key={link.href}
@@ -343,19 +256,6 @@ export default function Sidebar() {
                     >
                       <Icon size={17} className="link-icon" />
                       {link.label}
-                      {badgeCount > 0 && (
-                        <span style={{
-                          marginLeft: 'auto',
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          minWidth: 20, height: 20, padding: '0 6px',
-                          borderRadius: 'var(--radius-full)',
-                          background: 'var(--danger-500)',
-                          color: '#fff', fontSize: '0.68rem', fontWeight: 700,
-                          animation: 'pulse 2s ease-in-out infinite',
-                        }}>
-                          {badgeCount}
-                        </span>
-                      )}
                     </Link>
                   )
                 })}

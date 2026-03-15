@@ -846,6 +846,98 @@ a:hover { color: var(--primary-300); }
 
 .topbar-mobile { left: 0; }
 
+/* Topbar navigation links */
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.topbar-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.topbar-nav-link:hover {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.topbar-nav-link.active {
+  background: rgba(99,102,241,0.12);
+  color: var(--primary-300);
+}
+
+.topbar-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--danger-500);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.topbar-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 4px;
+  min-width: 160px;
+  z-index: var(--z-dropdown);
+  box-shadow: var(--shadow-lg);
+}
+
+.topbar-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.topbar-dropdown-item:hover {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.topbar-dropdown-item.active {
+  background: rgba(99,102,241,0.12);
+  color: var(--primary-300);
+}
+
+/* Hide topbar nav on mobile (sidebar handles navigation) */
+@media (max-width: 768px) {
+  .topbar-nav { display: none; }
+}
+
 /* ============================================================
    MAIN CONTENT
    ============================================================ */
