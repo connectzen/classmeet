@@ -18,6 +18,7 @@ export type BlackboardEvent =
   | { type: 'cursor-move'; x: number; y: number }
   | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string }
   | { type: 'shape-preview-end' }
+  | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
 
@@ -68,6 +69,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const containerRef = useRef<HTMLDivElement>(null)
   const suppressEventsRef = useRef(false)
   const cursorDivRef = useRef<HTMLDivElement>(null)
+  const caretDivRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
@@ -89,9 +91,19 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const strokeColorRef = useRef(strokeColor)
   useEffect(() => { strokeColorRef.current = strokeColor }, [strokeColor])
 
+  // Always-current onCanvasEvent ref — avoids stale closure in tool handlers
+  const onCanvasEventRef = useRef(onCanvasEvent)
+  useEffect(() => { onCanvasEventRef.current = onCanvasEvent }, [onCanvasEvent])
+
   // Shape drawing refs (line / rect)
   const shapeStartRef = useRef<{ x: number; y: number } | null>(null)
   const activeShapeRef = useRef<fabric.Object | null>(null)
+
+  // Guard: prevents tool switch while mid-drag for shape drawing
+  const isDrawingShapeRef = useRef(false)
+
+  // rAF handle for smooth student-side preview
+  const previewRafRef = useRef<number>(0)
 
   // Live drawing points buffer for streaming
   const livePointsRef = useRef<number[]>([])
@@ -120,30 +132,57 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       return
     }
 
-    if (event.type === 'shape-preview') {
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement | undefined
-      if (!ctx || !uc) return
-      ctx.clearRect(0, 0, uc.width, uc.height)
-      ctx.strokeStyle = event.color
-      ctx.lineWidth = 3
-      if (event.kind === 'line') {
-        ctx.lineCap = 'round'
-        ctx.beginPath()
-        ctx.moveTo(event.x1, event.y1)
-        ctx.lineTo(event.x2, event.y2)
-        ctx.stroke()
-      } else if (event.kind === 'rect') {
-        ctx.strokeRect(event.x1, event.y1, event.x2 - event.x1, event.y2 - event.y1)
-      } else if (event.kind === 'circle') {
-        const rx = Math.abs(event.x2 - event.x1) / 2
-        const ry = Math.abs(event.y2 - event.y1) / 2
-        const cx = (event.x1 + event.x2) / 2
-        const cy = (event.y1 + event.y2) / 2
-        ctx.beginPath()
-        ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2)
-        ctx.stroke()
+    if (event.type === 'text-cursor') {
+      const el = caretDivRef.current
+      if (el) {
+        if (event.visible) {
+          el.style.left = `${event.x}px`
+          el.style.top = `${event.y}px`
+          el.style.height = `${event.height}px`
+          el.style.display = 'block'
+        } else {
+          el.style.display = 'none'
+        }
       }
+      return
+    }
+
+    if (event.type === 'shape-preview') {
+      // Buffer latest preview and render on next animation frame for smoothness
+      cancelAnimationFrame(previewRafRef.current)
+      previewRafRef.current = requestAnimationFrame(() => {
+        const c = fabricRef.current
+        if (!c) return
+        const ctx = (c as any).contextTop as CanvasRenderingContext2D | undefined
+        const uc = (c as any).upperCanvasEl as HTMLCanvasElement | undefined
+        if (!ctx || !uc) return
+        ctx.clearRect(0, 0, uc.width, uc.height)
+        ctx.save()
+        ctx.strokeStyle = event.color
+        ctx.lineWidth = 3
+        if (event.kind === 'line') {
+          ctx.lineCap = 'round'
+          ctx.beginPath()
+          ctx.moveTo(event.x1, event.y1)
+          ctx.lineTo(event.x2, event.y2)
+          ctx.stroke()
+        } else if (event.kind === 'rect') {
+          const rx = Math.min(event.x1, event.x2)
+          const ry = Math.min(event.y1, event.y2)
+          const rw = Math.abs(event.x2 - event.x1)
+          const rh = Math.abs(event.y2 - event.y1)
+          ctx.strokeRect(rx, ry, rw, rh)
+        } else if (event.kind === 'circle') {
+          const rx = Math.abs(event.x2 - event.x1) / 2
+          const ry = Math.abs(event.y2 - event.y1) / 2
+          const cx = (event.x1 + event.x2) / 2
+          const cy = (event.y1 + event.y2) / 2
+          ctx.beginPath()
+          ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+        ctx.restore()
+      })
       return
     }
 
@@ -268,16 +307,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // ── Host: wire up canvas events to emit changes ──────────────────────────
   useEffect(() => {
     const canvas = fabricRef.current
-    if (!canvas || !isHost || !onCanvasEvent) return
+    if (!canvas || !isHost) return
 
-    // Throttled live drawing emitter (~30fps)
+    // Throttled live drawing emitter (~60fps)
     const emitLiveDrawing = throttle((points: number[], color: string, width: number) => {
-      onCanvasEvent({ type: 'drawing-live', points: [...points], color, width })
-    }, 33)
+      onCanvasEventRef.current?.({ type: 'drawing-live', points: [...points], color, width })
+    }, 16)
 
     const emitCursor = throttle((x: number, y: number) => {
-      onCanvasEvent({ type: 'cursor-move', x, y })
-    }, 33)
+      onCanvasEventRef.current?.({ type: 'cursor-move', x, y })
+    }, 16)
 
     const onCursorMove = (e: any) => {
       const pointer = canvas.getScenePoint(e.e)
@@ -304,7 +343,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (isDrawingRef.current) {
         isDrawingRef.current = false
         livePointsRef.current = []
-        onCanvasEvent({ type: 'drawing-live-end' })
+        onCanvasEventRef.current?.({ type: 'drawing-live-end' })
       }
     }
 
@@ -314,7 +353,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const id = nextObjId()
       ;(path as any).id = id
       saveUndoState()
-      onCanvasEvent({ type: 'object-added', data: JSON.stringify(path.toObject(['id'])), id })
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify(path.toObject(['id'])), id })
     }
 
     const onObjectAdded = (e: any) => {
@@ -324,7 +363,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (!(obj as any).id) (obj as any).id = nextObjId()
       if (obj.type === 'path') return
       saveUndoState()
-      onCanvasEvent({ type: 'object-added', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
     }
 
     const onObjectModified = (e: any) => {
@@ -332,14 +371,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const obj = e.target as fabric.FabricObject
       if (!obj || !(obj as any).id) return
       saveUndoState()
-      onCanvasEvent({ type: 'object-modified', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
+      onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
     }
 
     const onObjectRemoved = (e: any) => {
       if (suppressEventsRef.current) return
       const obj = e.target as fabric.FabricObject
       if (!obj || !(obj as any).id) return
-      onCanvasEvent({ type: 'object-removed', id: (obj as any).id })
+      onCanvasEventRef.current?.({ type: 'object-removed', id: (obj as any).id })
     }
 
     canvas.on('mouse:down', onMouseDown)
@@ -361,7 +400,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('object:modified', onObjectModified)
       canvas.off('object:removed', onObjectRemoved)
     }
-  }, [isHost, onCanvasEvent, saveUndoState])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, saveUndoState])
 
   // ── Participant: apply incoming events ────────────────────────────────────
   useEffect(() => {
@@ -374,7 +414,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       incomingEvent.type === 'drawing-live-end' ||
       incomingEvent.type === 'cursor-move' ||
       incomingEvent.type === 'shape-preview' ||
-      incomingEvent.type === 'shape-preview-end'
+      incomingEvent.type === 'shape-preview-end' ||
+      incomingEvent.type === 'text-cursor'
     ) return
 
     suppressEventsRef.current = true
@@ -455,19 +496,21 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const applyTool = useCallback((tool: DrawingTool) => {
     const canvas = fabricRef.current
     if (!canvas || !isHost) return
+    // Prevent switching tool while mid-drag on a shape
+    if (isDrawingShapeRef.current) return
     setActiveTool(tool)
 
     // Reset states
     canvas.isDrawingMode = false
     canvas.selection = false
     canvas.defaultCursor = 'crosshair'
-    // Clear any in-progress rect/line contextTop preview
+    // Clear any in-progress contextTop preview (line / rect / circle)
     const topCtx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
     if (topCtx) {
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
       topCtx.clearRect(0, 0, uc?.width ?? canvas.width, uc?.height ?? canvas.height)
     }
-    // Remove any in-progress live shape (rect/circle tools)
+    // Remove any in-progress live shape (legacy guard)
     if (activeShapeRef.current) {
       suppressEventsRef.current = true
       canvas.remove(activeShapeRef.current)
@@ -497,7 +540,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       case 'pen': {
         canvas.isDrawingMode = true
         const brush = new fabric.PencilBrush(canvas)
-        brush.color = strokeColor
+        brush.color = strokeColorRef.current
         brush.width = 3
         canvas.freeDrawingBrush = brush
         break
@@ -505,9 +548,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       case 'highlighter': {
         canvas.isDrawingMode = true
         const hBrush = new fabric.PencilBrush(canvas)
-        const r = parseInt(strokeColor.slice(1, 3), 16)
-        const g = parseInt(strokeColor.slice(3, 5), 16)
-        const b = parseInt(strokeColor.slice(5, 7), 16)
+        const c = strokeColorRef.current
+        const r = parseInt(c.slice(1, 3), 16)
+        const g = parseInt(c.slice(3, 5), 16)
+        const b = parseInt(c.slice(5, 7), 16)
         hBrush.color = `rgba(${r},${g},${b},0.35)`
         hBrush.width = 20
         canvas.freeDrawingBrush = hBrush
@@ -539,21 +583,24 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         break
       }
     }
-  }, [isHost, strokeColor])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost])
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
     const local = { id: '', sx: 0, sy: 0 }
 
     const mouseDown = (e: any) => {
+      if (local.id) return // guard against double-fire
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
+      isDrawingShapeRef.current = true
     }
 
     const emitLinePreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
-      if (onCanvasEvent) onCanvasEvent({ type: 'shape-preview', kind: 'line', x1, y1, x2, y2, color: strokeColor })
-    }, 33)
+      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'line', x1, y1, x2, y2, color: strokeColorRef.current })
+    }, 16)
 
     const mouseMove = (e: any) => {
       if (!local.id) return
@@ -561,7 +608,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (!ctx) return
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
       ctx.clearRect(0, 0, uc.width, uc.height)
-      ctx.strokeStyle = strokeColor
+      ctx.strokeStyle = strokeColorRef.current
       ctx.lineWidth = 3
       ctx.lineCap = 'round'
       ctx.beginPath()
@@ -575,7 +622,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (!local.id) return
       const ex = e.scenePoint.x, ey = e.scenePoint.y
       const line = new fabric.Path(`M ${local.sx} ${local.sy} L ${ex} ${ey}`, {
-        stroke: strokeColor,
+        stroke: strokeColorRef.current,
         strokeWidth: 3,
         fill: '',
         selectable: false,
@@ -591,12 +638,11 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
       if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
-      if (onCanvasEvent) {
-        saveUndoState()
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify((line as any).toObject(['id'])), id: local.id })
-        onCanvasEvent({ type: 'shape-preview-end' })
-      }
+      saveUndoState()
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((line as any).toObject(['id'])), id: local.id })
+      onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
+      isDrawingShapeRef.current = false
       activeShapeRef.current = null
       shapeStartRef.current = null
     }
@@ -607,57 +653,71 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [strokeColor, onCanvasEvent, saveUndoState])
+  }, [saveUndoState])
 
-  // ── Rectangle drawing handlers ───────────────────────────────────────────
+  // ── Rectangle drawing handlers (contextTop preview, final object on mouseUp) ──
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
-    const local: { id: string; sx: number; sy: number; shape: fabric.Rect | null } = { id: '', sx: 0, sy: 0, shape: null }
+    const local = { id: '', sx: 0, sy: 0 }
 
     const mouseDown = (e: any) => {
+      if (local.id) return // guard against double-fire
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
-      const rect = new fabric.Rect({
-        left: local.sx, top: local.sy, width: 1, height: 1,
-        fill: 'transparent', stroke: strokeColor, strokeWidth: 3,
-        selectable: false, evented: false,
-      })
-      ;(rect as any).id = local.id
-      local.shape = rect
-      activeShapeRef.current = rect
-      suppressEventsRef.current = true
-      canvas.add(rect)
-      suppressEventsRef.current = false
-      canvas.requestRenderAll()
+      isDrawingShapeRef.current = true
     }
 
     const emitRectPreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
-      if (onCanvasEvent) onCanvasEvent({ type: 'shape-preview', kind: 'rect', x1, y1, x2, y2, color: strokeColor })
-    }, 33)
+      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'rect', x1, y1, x2, y2, color: strokeColorRef.current })
+    }, 16)
 
     const mouseMove = (e: any) => {
-      if (!local.id || !local.shape) return
+      if (!local.id) return
       const ex = e.scenePoint.x, ey = e.scenePoint.y
+      // Draw preview on contextTop (upper canvas) — no fabric object manipulation
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      if (!ctx) return
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      ctx.clearRect(0, 0, uc.width, uc.height)
+      ctx.save()
+      ctx.strokeStyle = strokeColorRef.current
+      ctx.lineWidth = 3
+      const rx = Math.min(local.sx, ex)
+      const ry = Math.min(local.sy, ey)
+      const rw = Math.abs(ex - local.sx)
+      const rh = Math.abs(ey - local.sy)
+      ctx.strokeRect(rx, ry, rw, rh)
+      ctx.restore()
+      emitRectPreview(local.sx, local.sy, ex, ey)
+    }
+
+    const mouseUp = (e: any) => {
+      if (!local.id) return
+      const ex = e.scenePoint.x, ey = e.scenePoint.y
+      // Clear contextTop preview
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
+      // Create final rect as a fabric object
       const left = Math.min(local.sx, ex)
       const top = Math.min(local.sy, ey)
       const width = Math.max(1, Math.abs(ex - local.sx))
       const height = Math.max(1, Math.abs(ey - local.sy))
-      local.shape.set({ left, top, width, height })
-      local.shape.setCoords()
-      canvas.requestRenderAll()
-      emitRectPreview(local.sx, local.sy, ex, ey)
-    }
-
-    const mouseUp = () => {
-      const shape = local.shape
-      if (!local.id || !shape) return
-      if (onCanvasEvent) {
-        saveUndoState()
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify((shape as any).toObject(['id'])), id: local.id })
-        onCanvasEvent({ type: 'shape-preview-end' })
-      }
+      const rect = new fabric.Rect({
+        left, top, width, height,
+        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
+        selectable: false, evented: false,
+      })
+      ;(rect as any).id = local.id
+      suppressEventsRef.current = true
+      canvas.add(rect)
+      suppressEventsRef.current = false
+      canvas.renderAll()
+      saveUndoState()
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((rect as any).toObject(['id'])), id: local.id })
+      onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
-      local.shape = null
+      isDrawingShapeRef.current = false
       activeShapeRef.current = null
       shapeStartRef.current = null
     }
@@ -668,57 +728,73 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [strokeColor, onCanvasEvent, saveUndoState])
+  }, [saveUndoState])
 
-  // ── Circle/Ellipse drawing handlers ─────────────────────────────────────
+  // ── Circle/Ellipse drawing handlers (contextTop preview, final object on mouseUp) ──
   const setupCircleDrawing = useCallback((canvas: fabric.Canvas) => {
-    const local: { id: string; sx: number; sy: number; shape: fabric.Ellipse | null } = { id: '', sx: 0, sy: 0, shape: null }
+    const local = { id: '', sx: 0, sy: 0 }
 
     const mouseDown = (e: any) => {
+      if (local.id) return // guard against double-fire
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
-      const ellipse = new fabric.Ellipse({
-        left: local.sx, top: local.sy, rx: 1, ry: 1,
-        fill: 'transparent', stroke: strokeColor, strokeWidth: 3,
-        selectable: false, evented: false,
-      })
-      ;(ellipse as any).id = local.id
-      local.shape = ellipse
-      activeShapeRef.current = ellipse
-      suppressEventsRef.current = true
-      canvas.add(ellipse)
-      suppressEventsRef.current = false
-      canvas.requestRenderAll()
+      isDrawingShapeRef.current = true
     }
 
     const emitCirclePreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
-      if (onCanvasEvent) onCanvasEvent({ type: 'shape-preview', kind: 'circle', x1, y1, x2, y2, color: strokeColor })
-    }, 33)
+      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'circle', x1, y1, x2, y2, color: strokeColorRef.current })
+    }, 16)
 
     const mouseMove = (e: any) => {
-      if (!local.id || !local.shape) return
+      if (!local.id) return
       const ex = e.scenePoint.x, ey = e.scenePoint.y
+      // Draw preview on contextTop — no fabric object manipulation
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      if (!ctx) return
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      ctx.clearRect(0, 0, uc.width, uc.height)
+      ctx.save()
+      ctx.strokeStyle = strokeColorRef.current
+      ctx.lineWidth = 3
+      const rx = Math.max(1, Math.abs(ex - local.sx) / 2)
+      const ry = Math.max(1, Math.abs(ey - local.sy) / 2)
+      const cx = (local.sx + ex) / 2
+      const cy = (local.sy + ey) / 2
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+      emitCirclePreview(local.sx, local.sy, ex, ey)
+    }
+
+    const mouseUp = (e: any) => {
+      if (!local.id) return
+      const ex = e.scenePoint.x, ey = e.scenePoint.y
+      // Clear contextTop preview
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
+      // Create final ellipse as a fabric object
       const rx = Math.max(1, Math.abs(ex - local.sx) / 2)
       const ry = Math.max(1, Math.abs(ey - local.sy) / 2)
       const left = Math.min(local.sx, ex)
       const top = Math.min(local.sy, ey)
-      local.shape.set({ left, top, rx, ry })
-      local.shape.setCoords()
-      canvas.requestRenderAll()
-      emitCirclePreview(local.sx, local.sy, ex, ey)
-    }
-
-    const mouseUp = () => {
-      const shape = local.shape
-      if (!local.id || !shape) return
-      if (onCanvasEvent) {
-        saveUndoState()
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify((shape as any).toObject(['id'])), id: local.id })
-        onCanvasEvent({ type: 'shape-preview-end' })
-      }
+      const ellipse = new fabric.Ellipse({
+        left, top, rx, ry,
+        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
+        selectable: false, evented: false,
+      })
+      ;(ellipse as any).id = local.id
+      suppressEventsRef.current = true
+      canvas.add(ellipse)
+      suppressEventsRef.current = false
+      canvas.renderAll()
+      saveUndoState()
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((ellipse as any).toObject(['id'])), id: local.id })
+      onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
-      local.shape = null
+      isDrawingShapeRef.current = false
       activeShapeRef.current = null
       shapeStartRef.current = null
     }
@@ -729,7 +805,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [strokeColor, onCanvasEvent, saveUndoState])
+  }, [saveUndoState])
 
   // ── Text tool handler ────────────────────────────────────────────────────
   const setupTextTool = useCallback((canvas: fabric.Canvas) => {
@@ -758,43 +834,43 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       suppressEventsRef.current = false
 
       // Broadcast immediately so participants create the placeholder object
-      if (onCanvasEvent) {
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify((text as any).toObject(['id'])), id })
-      }
+      onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((text as any).toObject(['id'])), id })
 
       canvas.setActiveObject(text)
       canvas.renderAll()
       text.enterEditing()
       text.selectAll()
 
-      // Stream every keystroke live to participants (~20fps)
+      // Show text cursor to students
+      onCanvasEventRef.current?.({ type: 'text-cursor', x: pointer.x, y: pointer.y, height: opts.fontSize, visible: true })
+
+      // Stream every keystroke live to participants
       const emitTextLive = throttle(() => {
-        if (onCanvasEvent) {
-          onCanvasEvent({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
-        }
+        onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
+        // Keep text cursor visible during typing
+        onCanvasEventRef.current?.({ type: 'text-cursor', x: text.left || 0, y: text.top || 0, height: text.fontSize || 24, visible: true })
       }, 50)
       text.on('changed', emitTextLive)
 
       text.on('editing:exited', () => {
+        // Hide text cursor for students
+        onCanvasEventRef.current?.({ type: 'text-cursor', x: 0, y: 0, height: 0, visible: false })
+
         if (text.text?.trim() === '') {
           suppressEventsRef.current = true
           canvas.remove(text)
           suppressEventsRef.current = false
-          if (onCanvasEvent) {
-            onCanvasEvent({ type: 'object-removed', id })
-          }
+          onCanvasEventRef.current?.({ type: 'object-removed', id })
           return
         }
         saveUndoState()
         // Emit final confirmed state
-        if (onCanvasEvent) {
-          onCanvasEvent({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
-        }
+        onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
       })
     }
     ;(canvas as any).__toolMouseDown = mouseDown
     canvas.on('mouse:down', mouseDown)
-  }, [onCanvasEvent, saveUndoState])
+  }, [saveUndoState])
 
   // ── Color change: update active brush ────────────────────────────────────
   const handleColorChange = useCallback((color: string) => {
@@ -823,11 +899,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.loadFromJSON(JSON.parse(prev)).then(() => {
       canvas.renderAll()
       isUndoRedoRef.current = false
-      if (onCanvasEvent) {
-        onCanvasEvent({ type: 'snapshot', data: prev })
-      }
+      onCanvasEventRef.current?.({ type: 'snapshot', data: prev })
     })
-  }, [onCanvasEvent])
+  }, [])
 
   const handleRedo = useCallback(() => {
     const canvas = fabricRef.current
@@ -838,11 +912,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.loadFromJSON(JSON.parse(next)).then(() => {
       canvas.renderAll()
       isUndoRedoRef.current = false
-      if (onCanvasEvent) {
-        onCanvasEvent({ type: 'snapshot', data: next })
-      }
+      onCanvasEventRef.current?.({ type: 'snapshot', data: next })
     })
-  }, [onCanvasEvent])
+  }, [])
 
   // ── Clear board ──────────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
@@ -854,16 +926,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.backgroundColor = '#1a1a2e'
     canvas.renderAll()
     suppressEventsRef.current = false
-    if (onCanvasEvent) {
-      onCanvasEvent({ type: 'clear' })
-    }
-  }, [onCanvasEvent, saveUndoState])
-
-  // ── Re-apply tool when color changes ─────────────────────────────────────
-  useEffect(() => {
-    if (isHost) applyTool(activeTool)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strokeColor])
+    onCanvasEventRef.current?.({ type: 'clear' })
+  }, [saveUndoState])
 
   // ── Apply text option changes to the currently editing IText ─────────────
   useEffect(() => {
@@ -887,7 +951,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   return (
     <div className="room-blackboard" ref={containerRef}>
       {!isHost && (
-        <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
+        <>
+          <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
+          <div ref={caretDivRef} className="room-bb-caret" style={{ display: 'none' }} />
+        </>
       )}
       <canvas ref={canvasRef} />
       {isHost && (

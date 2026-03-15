@@ -1945,3 +1945,19 @@ a:hover { color: var(--primary-300); }
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3), 0 2px 8px rgba(0, 0, 0, 0.5);
   transition: left 0.03s linear, top 0.03s linear;
 }
+
+/* Text caret overlay — visible to participants when teacher is typing */
+.room-bb-caret {
+  position: absolute;
+  width: 2px;
+  background: #f59e0b;
+  pointer-events: none;
+  z-index: 16;
+  animation: room-bb-caret-blink 1s step-end infinite;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+@keyframes room-bb-caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

@@ -192,7 +192,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       event.type === 'drawing-live-end' ||
       event.type === 'cursor-move' ||
       event.type === 'shape-preview' ||
-      event.type === 'shape-preview-end'
+      event.type === 'shape-preview-end' ||
+      event.type === 'text-cursor'
     ) {
       // Live drawing / cursor / shape-preview: call imperatively to bypass React state batching
       if (!isTeacher) {
@@ -209,7 +210,11 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Host: broadcast blackboard canvas events
   const handleBlackboardEvent = useCallback((event: BlackboardEvent) => {
     const payload = encoder.encode(JSON.stringify(event))
-    sendBlackboardData(payload, { reliable: true })
+    // Use unreliable transport for ephemeral preview events to avoid head-of-line blocking
+    const ephemeral = event.type === 'shape-preview' || event.type === 'shape-preview-end' ||
+                      event.type === 'drawing-live' || event.type === 'drawing-live-end' ||
+                      event.type === 'cursor-move' || event.type === 'text-cursor'
+    sendBlackboardData(payload, { reliable: !ephemeral })
   }, [sendBlackboardData])
 
   // Host: toggle blackboard on/off
