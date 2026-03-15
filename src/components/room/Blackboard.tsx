@@ -72,12 +72,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const [toolbarVisible, setToolbarVisible] = useState(true)
   const [textOptions, setTextOptions] = useState<TextOptions>({
     fontSize: 24,
-    fontFamily: 'Arial, sans-serif',
+    fontFamily: 'Courier New, monospace',
     bold: false,
     italic: false,
     underline: false,
     color: '#ffffff',
   })
+
+  // Always-current textOptions ref — avoids stale closure in tool handlers
+  const textOptionsRef = useRef(textOptions)
+  useEffect(() => { textOptionsRef.current = textOptions }, [textOptions])
 
   // Shape drawing refs (line / rect)
   const shapeStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -451,27 +455,48 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
+    // Stable ID for the preview object across frames
+    const shapeIdRef = { current: '' }
+
     const mouseDown = (e: any) => {
       const pointer = canvas.getScenePoint(e.e)
       shapeStartRef.current = { x: pointer.x, y: pointer.y }
-      const line = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
+      shapeIdRef.current = nextObjId()
+      // Create initial 1-px line so there is an object to remove next frame
+      const line = new fabric.Line([pointer.x, pointer.y, pointer.x + 1, pointer.y + 1], {
         stroke: strokeColor,
         strokeWidth: 3,
         selectable: false,
         evented: false,
       })
-      ;(line as any).id = nextObjId()
+      ;(line as any).id = shapeIdRef.current
       activeShapeRef.current = line
       suppressEventsRef.current = true
       canvas.add(line)
       suppressEventsRef.current = false
     }
     const mouseMove = (e: any) => {
-      if (!activeShapeRef.current || !shapeStartRef.current) return
+      if (!shapeStartRef.current || !shapeIdRef.current) return
       const pointer = canvas.getScenePoint(e.e)
-      const line = activeShapeRef.current as fabric.Line
-      line.set({ x2: pointer.x, y2: pointer.y })
-      line.setCoords()
+      const start = shapeStartRef.current
+      // Remove the previous preview line
+      if (activeShapeRef.current) {
+        suppressEventsRef.current = true
+        canvas.remove(activeShapeRef.current)
+        suppressEventsRef.current = false
+      }
+      // Recreate with exact endpoints — no mutation, no Fabric 7 layout artifacts
+      const line = new fabric.Line([start.x, start.y, pointer.x, pointer.y], {
+        stroke: strokeColor,
+        strokeWidth: 3,
+        selectable: false,
+        evented: false,
+      })
+      ;(line as any).id = shapeIdRef.current
+      activeShapeRef.current = line
+      suppressEventsRef.current = true
+      canvas.add(line)
+      suppressEventsRef.current = false
       canvas.renderAll()
     }
     const mouseUp = () => {
@@ -482,6 +507,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
       activeShapeRef.current = null
       shapeStartRef.current = null
+      shapeIdRef.current = ''
     }
     ;(canvas as any).__toolMouseDown = mouseDown
     ;(canvas as any).__toolMouseMove = mouseMove
@@ -493,40 +519,62 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Rectangle drawing handlers ───────────────────────────────────────────
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
+    // Stable ID for the preview rect across frames
+    const shapeIdRef = { current: '' }
+
     const mouseDown = (e: any) => {
       const pointer = canvas.getScenePoint(e.e)
       shapeStartRef.current = { x: pointer.x, y: pointer.y }
+      shapeIdRef.current = nextObjId()
+      // Create a minimal placeholder so there is always something to remove next frame
       const rect = new fabric.Rect({
         left: pointer.x,
         top: pointer.y,
-        width: 0,
-        height: 0,
+        width: 1,
+        height: 1,
         fill: 'transparent',
         stroke: strokeColor,
         strokeWidth: 3,
         selectable: false,
         evented: false,
       })
-      ;(rect as any).id = nextObjId()
+      ;(rect as any).id = shapeIdRef.current
       activeShapeRef.current = rect
       suppressEventsRef.current = true
       canvas.add(rect)
       suppressEventsRef.current = false
     }
     const mouseMove = (e: any) => {
-      if (!activeShapeRef.current || !shapeStartRef.current) return
+      if (!shapeStartRef.current || !shapeIdRef.current) return
       const pointer = canvas.getScenePoint(e.e)
       const start = shapeStartRef.current
-      const rect = activeShapeRef.current as fabric.Rect
       const left = Math.min(start.x, pointer.x)
       const top = Math.min(start.y, pointer.y)
-      rect.set({
+      const width = Math.max(1, Math.abs(pointer.x - start.x))
+      const height = Math.max(1, Math.abs(pointer.y - start.y))
+      // Remove previous preview rect
+      if (activeShapeRef.current) {
+        suppressEventsRef.current = true
+        canvas.remove(activeShapeRef.current)
+        suppressEventsRef.current = false
+      }
+      // Recreate at exact bounds — avoids Fabric 7 center-anchor mutation quirk
+      const rect = new fabric.Rect({
         left,
         top,
-        width: Math.abs(pointer.x - start.x),
-        height: Math.abs(pointer.y - start.y),
+        width,
+        height,
+        fill: 'transparent',
+        stroke: strokeColor,
+        strokeWidth: 3,
+        selectable: false,
+        evented: false,
       })
-      rect.setCoords()
+      ;(rect as any).id = shapeIdRef.current
+      activeShapeRef.current = rect
+      suppressEventsRef.current = true
+      canvas.add(rect)
+      suppressEventsRef.current = false
       canvas.renderAll()
     }
     const mouseUp = () => {
@@ -537,6 +585,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
       activeShapeRef.current = null
       shapeStartRef.current = null
+      shapeIdRef.current = ''
     }
     ;(canvas as any).__toolMouseDown = mouseDown
     ;(canvas as any).__toolMouseMove = mouseMove
@@ -552,15 +601,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (e.target && (e.target.type === 'i-text' || e.target.type === 'IText')) return
       const pointer = canvas.getScenePoint(e.e)
       const id = nextObjId()
+      const opts = textOptionsRef.current   // always the latest selection
       const text = new fabric.IText('', {
         left: pointer.x,
         top: pointer.y,
-        fontSize: textOptions.fontSize,
-        fontWeight: textOptions.bold ? 'bold' : 'normal',
-        fontStyle: textOptions.italic ? 'italic' : 'normal',
-        underline: textOptions.underline,
-        fill: textOptions.color,
-        fontFamily: textOptions.fontFamily,
+        fontSize: opts.fontSize,
+        fontWeight: opts.bold ? 'bold' : 'normal',
+        fontStyle: opts.italic ? 'italic' : 'normal',
+        underline: opts.underline,
+        fill: opts.color,
+        fontFamily: opts.fontFamily,
         editable: true,
         objectCaching: false,
         paintFirst: 'fill',
@@ -608,7 +658,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
     ;(canvas as any).__toolMouseDown = mouseDown
     canvas.on('mouse:down', mouseDown)
-  }, [textOptions, onCanvasEvent, saveUndoState])
+  }, [onCanvasEvent, saveUndoState])
 
   // ── Color change: update active brush ────────────────────────────────────
   const handleColorChange = useCallback((color: string) => {

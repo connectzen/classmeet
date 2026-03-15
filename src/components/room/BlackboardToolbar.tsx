@@ -38,6 +38,7 @@ const FONT_SIZES = [
 ]
 
 const FONT_FAMILIES = [
+  { label: 'Courier New', value: 'Courier New, monospace' },
   { label: 'Arial', value: 'Arial, sans-serif' },
   { label: 'Calibri', value: 'Calibri, sans-serif' },
   { label: 'Segoe UI', value: 'Segoe UI, sans-serif' },
@@ -50,7 +51,6 @@ const FONT_FAMILIES = [
   { label: 'Impact', value: 'Impact, Haettenschweiler, sans-serif' },
   { label: 'Comic Sans', value: 'Comic Sans MS, cursive' },
   { label: 'Segoe Print', value: 'Segoe Print, cursive' },
-  { label: 'Courier New', value: 'Courier New, monospace' },
   { label: 'Consolas', value: 'Consolas, Lucida Console, monospace' },
 ]
 
