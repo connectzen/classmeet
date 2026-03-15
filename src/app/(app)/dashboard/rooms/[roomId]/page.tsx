@@ -203,6 +203,11 @@ function RoomInner({ roomName }: { roomName: string }) {
     } else {
       // Drawing events — only apply if not host (host already has the state)
       if (!isTeacher) {
+        // A snapshot arriving means the blackboard IS active — ensure it's visible
+        // (covers the case where the activate event was missed)
+        if (event.type === 'snapshot') {
+          setBlackboardActive(true)
+        }
         setBlackboardEvent(event)
       }
     }
@@ -246,8 +251,11 @@ function RoomInner({ roomName }: { roomName: string }) {
       return
     }
     if (participants.length > prevParticipantCount.current) {
-      // New participant joined — send current snapshot
+      // New participant joined — send activate + snapshot so they see the blackboard
       setTimeout(() => {
+        // Send activate first so the student's blackboardActive becomes true
+        const activatePayload = encoder.encode(JSON.stringify({ type: 'activate' }))
+        sendBlackboardData(activatePayload, { reliable: true })
         const snapshot = blackboardRef.current?.getSnapshot()
         if (snapshot) {
           const payload = encoder.encode(JSON.stringify({ type: 'snapshot', data: snapshot }))
