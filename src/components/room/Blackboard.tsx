@@ -142,6 +142,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           el.style.top = `${event.y}px`
           el.style.height = `${event.height}px`
           el.style.display = 'block'
+          // Hide the cursor dot while the text caret is visible
+          if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
         } else {
           el.style.display = 'none'
         }
@@ -871,6 +873,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       text.enterEditing()
       text.selectAll()
 
+      // Hide the teacher cursor dot while typing — prevents leftover dot at click origin
+      onCanvasEventRef.current?.({ type: 'cursor-move', x: -100, y: -100 })
+
       // Show text cursor to students at actual typing position
       onCanvasEventRef.current?.({ type: 'text-cursor', x: pointer.x, y: pointer.y, height: opts.fontSize, visible: true })
 
@@ -990,6 +995,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   return (
     <div className="room-blackboard" ref={containerRef}>
+      <canvas ref={canvasRef} />
       {!isHost && (
         <>
           <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
@@ -997,7 +1003,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           <div ref={selectionDivRef} className="room-bb-selection" style={{ display: 'none' }} />
         </>
       )}
-      <canvas ref={canvasRef} />
       {isHost && (
         <BlackboardToolbar
           activeTool={activeTool}

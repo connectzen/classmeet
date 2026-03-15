@@ -1808,7 +1808,7 @@ a:hover { color: var(--primary-300); }
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
   flex-wrap: nowrap;
-  overflow-x: auto;
+  overflow: visible;
   max-width: calc(100vw - 80px);
 }
 .room-bb-tool-group {
