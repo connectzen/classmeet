@@ -420,10 +420,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
     }
 
+    // Hide cursor when mouse leaves canvas
+    const onMouseOut = () => {
+      onCanvasEventRef.current?.({ type: 'cursor-move', x: -100, y: -100 })
+    }
+
     canvas.on('mouse:down', onMouseDown)
     canvas.on('mouse:move', onMouseMove)
     canvas.on('mouse:move', onCursorMove)
     canvas.on('mouse:up', onMouseUp)
+    canvas.on('mouse:out', onMouseOut)
     canvas.on('path:created', onPathCreated)
     canvas.on('object:added', onObjectAdded)
     canvas.on('object:modified', onObjectModified)
@@ -437,6 +443,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('mouse:move', onMouseMove)
       canvas.off('mouse:move', onCursorMove)
       canvas.off('mouse:up', onMouseUp)
+      canvas.off('mouse:out', onMouseOut)
       canvas.off('path:created', onPathCreated)
       canvas.off('object:added', onObjectAdded)
       canvas.off('object:modified', onObjectModified)
@@ -715,6 +722,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       isDrawingShapeRef.current = true
       const rect = new fabric.Rect({
         left: local.sx, top: local.sy, width: 1, height: 1,
+        originX: 'left', originY: 'top',
         fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
         selectable: false, evented: false,
       })
@@ -779,6 +787,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       isDrawingShapeRef.current = true
       const ellipse = new fabric.Ellipse({
         left: local.sx, top: local.sy, rx: 1, ry: 1,
+        originX: 'left', originY: 'top',
         fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
         selectable: false, evented: false,
       })
@@ -862,14 +871,24 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       text.enterEditing()
       text.selectAll()
 
-      // Show text cursor to students
+      // Show text cursor to students at actual typing position
       onCanvasEventRef.current?.({ type: 'text-cursor', x: pointer.x, y: pointer.y, height: opts.fontSize, visible: true })
 
       // Stream every keystroke live to participants
       const emitTextLive = throttle(() => {
         onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
-        // Keep text cursor visible during typing
-        onCanvasEventRef.current?.({ type: 'text-cursor', x: text.left || 0, y: text.top || 0, height: text.fontSize || 24, visible: true })
+        // Compute actual cursor pixel position using fabric's internal cursor rendering data
+        try {
+          const rd = (text as any).getCursorRenderingData()
+          if (rd) {
+            // rd.left/top are in local coords (offset from object center), add object center to get canvas coords
+            const cx = (text.left || 0) + rd.left
+            const cy = (text.top || 0) + rd.top
+            onCanvasEventRef.current?.({ type: 'text-cursor', x: cx, y: cy, height: rd.height || text.fontSize || 24, visible: true })
+          }
+        } catch {
+          onCanvasEventRef.current?.({ type: 'text-cursor', x: text.left || 0, y: text.top || 0, height: text.fontSize || 24, visible: true })
+        }
       }, 50)
       text.on('changed', emitTextLive)
 
