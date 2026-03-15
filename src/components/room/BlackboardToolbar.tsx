@@ -13,6 +13,8 @@ interface BlackboardToolbarProps {
   onToolChange: (tool: DrawingTool) => void
   strokeColor: string
   onColorChange: (color: string) => void
+  strokeWidth: number
+  onStrokeWidthChange: (width: number) => void
   textOptions: TextOptions
   onTextOptionsChange: (opts: TextOptions) => void
   onUndo: () => void
@@ -27,6 +29,12 @@ interface BlackboardToolbarProps {
 const COLORS = [
   '#ffffff', '#ef4444', '#f97316', '#facc15',
   '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899',
+]
+
+const STROKE_SIZES = [
+  { label: 'S', value: 2 },
+  { label: 'M', value: 4 },
+  { label: 'L', value: 7 },
 ]
 
 const FONT_SIZES = [
@@ -59,6 +67,8 @@ export default function BlackboardToolbar({
   onToolChange,
   strokeColor,
   onColorChange,
+  strokeWidth,
+  onStrokeWidthChange,
   textOptions,
   onTextOptionsChange,
   onUndo,
@@ -145,6 +155,27 @@ export default function BlackboardToolbar({
               </div>
             )}
           </div>
+
+          <div className="room-bb-divider" />
+
+          {/* Stroke size — visible for drawing tools */}
+          {['pen', 'line', 'rect', 'circle', 'highlighter', 'eraser'].includes(activeTool) && (
+            <div className="room-bb-tool-group room-bb-size-group">
+              {STROKE_SIZES.map(s => (
+                <button
+                  key={s.value}
+                  className={`room-bb-size-btn ${strokeWidth === s.value ? 'room-bb-size-active' : ''}`}
+                  onClick={() => onStrokeWidthChange(s.value)}
+                  title={`${s.label === 'S' ? 'Small' : s.label === 'M' ? 'Medium' : 'Large'} stroke`}
+                >
+                  <span
+                    className="room-bb-size-dot"
+                    style={{ width: s.value * 2, height: s.value * 2 }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="room-bb-divider" />
 

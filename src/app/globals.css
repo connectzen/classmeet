@@ -1862,6 +1862,36 @@ a:hover { color: var(--primary-300); }
   border: 1px solid #27272a;
 }
 
+/* Stroke size selector */
+.room-bb-size-group {
+  gap: 2px;
+}
+.room-bb-size-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.room-bb-size-btn:hover {
+  background: #3f3f46;
+}
+.room-bb-size-active {
+  background: rgba(99, 102, 241, 0.2);
+}
+.room-bb-size-active:hover {
+  background: rgba(99, 102, 241, 0.3);
+}
+.room-bb-size-dot {
+  border-radius: 50%;
+  background: #e4e4e7;
+}
+
 /* Color picker popup */
 .room-bb-color-picker {
   position: absolute;

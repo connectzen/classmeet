@@ -17,7 +17,7 @@ export type BlackboardEvent =
   | { type: 'drawing-live'; points: number[]; color: string; width: number }
   | { type: 'drawing-live-end' }
   | { type: 'cursor-move'; x: number; y: number }
-  | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string }
+  | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string; width: number }
   | { type: 'shape-preview-end' }
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
 
@@ -75,6 +75,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
   const [strokeColor, setStrokeColor] = useState('#ffffff')
+  const [strokeWidth, setStrokeWidth] = useState(3)
   const [toolbarVisible, setToolbarVisible] = useState(true)
   const [textOptions, setTextOptions] = useState<TextOptions>({
     fontSize: 24,
@@ -91,6 +92,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // Always-current strokeColor ref — used in text tool to pick up latest color
   const strokeColorRef = useRef(strokeColor)
   useEffect(() => { strokeColorRef.current = strokeColor }, [strokeColor])
+
+  // Always-current strokeWidth ref — used in tool handlers to pick up latest width
+  const strokeWidthRef = useRef(strokeWidth)
+  useEffect(() => { strokeWidthRef.current = strokeWidth }, [strokeWidth])
 
   // Always-current onCanvasEvent ref — avoids stale closure in tool handlers
   const onCanvasEventRef = useRef(onCanvasEvent)
@@ -168,7 +173,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         ctx.clearRect(0, 0, uc.width, uc.height)
         ctx.save()
         ctx.strokeStyle = event.color
-        ctx.lineWidth = 3
+        ctx.lineWidth = event.width
         if (event.kind === 'line') {
           ctx.lineCap = 'round'
           ctx.beginPath()
@@ -299,7 +304,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (isHost) {
       const brush = new fabric.PencilBrush(canvas)
       brush.color = '#ffffff'
-      brush.width = 3
+      brush.width = strokeWidthRef.current
       canvas.freeDrawingBrush = brush
     }
 
@@ -595,7 +600,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         canvas.isDrawingMode = true
         const brush = new fabric.PencilBrush(canvas)
         brush.color = strokeColorRef.current
-        brush.width = 3
+        brush.width = strokeWidthRef.current
         canvas.freeDrawingBrush = brush
         break
       }
@@ -607,7 +612,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         const g = parseInt(c.slice(3, 5), 16)
         const b = parseInt(c.slice(5, 7), 16)
         hBrush.color = `rgba(${r},${g},${b},0.35)`
-        hBrush.width = 20
+        hBrush.width = strokeWidthRef.current * 5
         canvas.freeDrawingBrush = hBrush
         break
       }
@@ -615,7 +620,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         canvas.isDrawingMode = true
         const eBrush = new fabric.PencilBrush(canvas)
         eBrush.color = '#1a1a2e'
-        eBrush.width = 20
+        eBrush.width = strokeWidthRef.current * 5
         canvas.freeDrawingBrush = eBrush
         break
       }
@@ -653,7 +658,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
 
     const emitLinePreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
-      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'line', x1, y1, x2, y2, color: strokeColorRef.current })
+      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'line', x1, y1, x2, y2, color: strokeColorRef.current, width: strokeWidthRef.current })
     }, 16)
 
     const mouseMove = (e: any) => {
@@ -663,7 +668,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
       ctx.clearRect(0, 0, uc.width, uc.height)
       ctx.strokeStyle = strokeColorRef.current
-      ctx.lineWidth = 3
+      ctx.lineWidth = strokeWidthRef.current
       ctx.lineCap = 'round'
       ctx.beginPath()
       ctx.moveTo(local.sx, local.sy)
@@ -677,7 +682,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ex = e.scenePoint.x, ey = e.scenePoint.y
       const line = new fabric.Path(`M ${local.sx} ${local.sy} L ${ex} ${ey}`, {
         stroke: strokeColorRef.current,
-        strokeWidth: 3,
+        strokeWidth: strokeWidthRef.current,
         fill: '',
         selectable: false,
         evented: false,
@@ -725,7 +730,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const rect = new fabric.Rect({
         left: local.sx, top: local.sy, width: 1, height: 1,
         originX: 'left', originY: 'top',
-        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
+        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: strokeWidthRef.current,
         selectable: false, evented: false,
       })
       ;(rect as any).id = local.id
@@ -737,7 +742,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
 
     const emitRectPreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
-      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'rect', x1, y1, x2, y2, color: strokeColorRef.current })
+      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'rect', x1, y1, x2, y2, color: strokeColorRef.current, width: strokeWidthRef.current })
     }, 16)
 
     const mouseMove = (e: any) => {
@@ -790,7 +795,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ellipse = new fabric.Ellipse({
         left: local.sx, top: local.sy, rx: 1, ry: 1,
         originX: 'left', originY: 'top',
-        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: 3,
+        fill: 'transparent', stroke: strokeColorRef.current, strokeWidth: strokeWidthRef.current,
         selectable: false, evented: false,
       })
       ;(ellipse as any).id = local.id
@@ -802,7 +807,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
 
     const emitCirclePreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
-      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'circle', x1, y1, x2, y2, color: strokeColorRef.current })
+      onCanvasEventRef.current?.({ type: 'shape-preview', kind: 'circle', x1, y1, x2, y2, color: strokeColorRef.current, width: strokeWidthRef.current })
     }, 16)
 
     const mouseMove = (e: any) => {
@@ -934,6 +939,17 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
   }, [activeTool])
 
+  // ── Stroke width change: update active brush ───────────────────────────
+  const handleStrokeWidthChange = useCallback((width: number) => {
+    setStrokeWidth(width)
+    const canvas = fabricRef.current
+    if (!canvas) return
+    if (canvas.freeDrawingBrush) {
+      const multiplier = (activeTool === 'highlighter' || activeTool === 'eraser') ? 5 : 1
+      canvas.freeDrawingBrush.width = width * multiplier
+    }
+  }, [activeTool])
+
   // ── Undo / Redo ──────────────────────────────────────────────────────────
   const handleUndo = useCallback(() => {
     const canvas = fabricRef.current
@@ -1008,6 +1024,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           onToolChange={applyTool}
           strokeColor={strokeColor}
           onColorChange={handleColorChange}
+          strokeWidth={strokeWidth}
+          onStrokeWidthChange={handleStrokeWidthChange}
           textOptions={textOptions}
           onTextOptionsChange={setTextOptions}
           onUndo={handleUndo}
