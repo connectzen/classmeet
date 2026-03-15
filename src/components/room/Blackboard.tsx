@@ -570,19 +570,39 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       suppressEventsRef.current = true
       canvas.add(text)
       suppressEventsRef.current = false
+
+      // Broadcast immediately so participants create the placeholder object
+      if (onCanvasEvent) {
+        onCanvasEvent({ type: 'object-added', data: JSON.stringify((text as any).toObject(['id'])), id })
+      }
+
       canvas.setActiveObject(text)
       canvas.renderAll()
       text.enterEditing()
       text.selectAll()
 
+      // Stream every keystroke live to participants (~20fps)
+      const emitTextLive = throttle(() => {
+        if (onCanvasEvent) {
+          onCanvasEvent({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
+        }
+      }, 50)
+      text.on('changed', emitTextLive)
+
       text.on('editing:exited', () => {
         if (text.text?.trim() === '') {
+          suppressEventsRef.current = true
           canvas.remove(text)
+          suppressEventsRef.current = false
+          if (onCanvasEvent) {
+            onCanvasEvent({ type: 'object-removed', id })
+          }
           return
         }
         saveUndoState()
+        // Emit final confirmed state
         if (onCanvasEvent) {
-          onCanvasEvent({ type: 'object-added', data: JSON.stringify((text as any).toObject(['id'])), id })
+          onCanvasEvent({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
         }
       })
     }

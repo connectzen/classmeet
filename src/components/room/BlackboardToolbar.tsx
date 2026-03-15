@@ -38,10 +38,20 @@ const FONT_SIZES = [
 ]
 
 const FONT_FAMILIES = [
-  { label: 'Sans', value: 'Arial, sans-serif' },
-  { label: 'Serif', value: 'Georgia, Times New Roman, serif' },
-  { label: 'Mono', value: 'JetBrains Mono, Fira Code, monospace' },
-  { label: 'Cursive', value: 'Segoe Script, cursive' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Calibri', value: 'Calibri, sans-serif' },
+  { label: 'Segoe UI', value: 'Segoe UI, sans-serif' },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+  { label: 'Trebuchet', value: 'Trebuchet MS, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Times New Roman', value: 'Times New Roman, serif' },
+  { label: 'Palatino', value: 'Palatino Linotype, Palatino, serif' },
+  { label: 'Cambria', value: 'Cambria, serif' },
+  { label: 'Impact', value: 'Impact, Haettenschweiler, sans-serif' },
+  { label: 'Comic Sans', value: 'Comic Sans MS, cursive' },
+  { label: 'Segoe Print', value: 'Segoe Print, cursive' },
+  { label: 'Courier New', value: 'Courier New, monospace' },
+  { label: 'Consolas', value: 'Consolas, Lucida Console, monospace' },
 ]
 
 export default function BlackboardToolbar({
