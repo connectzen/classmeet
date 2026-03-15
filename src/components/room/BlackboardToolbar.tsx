@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import type { DrawingTool, TextOptions } from './Blackboard'
 import {
-  Pencil, Minus, Square, Highlighter, Eraser, Type,
-  Undo2, Redo2, Trash2, Palette, ChevronUp,
-  Bold, Italic,
+  Pencil, Minus, Square, Highlighter, Eraser, Type, MousePointer2,
+  Undo2, Redo2, Trash2, Palette, ChevronUp, ChevronDown,
+  Bold, Italic, Underline as UnderlineIcon,
 } from 'lucide-react'
 
 interface BlackboardToolbarProps {
@@ -20,6 +20,8 @@ interface BlackboardToolbarProps {
   onClear: () => void
   canUndo: boolean
   canRedo: boolean
+  toolbarVisible: boolean
+  onToggleToolbar: () => void
 }
 
 const COLORS = [
@@ -27,7 +29,20 @@ const COLORS = [
   '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899',
 ]
 
-const FONT_SIZES = [16, 20, 24, 32, 40, 56]
+const FONT_SIZES = [
+  { label: 'Small', value: 16 },
+  { label: 'Normal', value: 24 },
+  { label: 'Large', value: 32 },
+  { label: 'XL', value: 40 },
+  { label: '2XL', value: 56 },
+]
+
+const FONT_FAMILIES = [
+  { label: 'Sans', value: 'Inter, sans-serif' },
+  { label: 'Serif', value: 'Georgia, Times New Roman, serif' },
+  { label: 'Mono', value: 'JetBrains Mono, Fira Code, monospace' },
+  { label: 'Cursive', value: 'Segoe Script, cursive' },
+]
 
 export default function BlackboardToolbar({
   activeTool,
@@ -39,28 +54,13 @@ export default function BlackboardToolbar({
   onUndo,
   onRedo,
   onClear,
+  toolbarVisible,
+  onToggleToolbar,
 }: BlackboardToolbarProps) {
-  const [expanded, setExpanded] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
-  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleMouseEnter = () => {
-    if (collapseTimer.current) {
-      clearTimeout(collapseTimer.current)
-      collapseTimer.current = null
-    }
-    setExpanded(true)
-  }
-
-  const handleMouseLeave = () => {
-    collapseTimer.current = setTimeout(() => {
-      setExpanded(false)
-      setShowColorPicker(false)
-    }, 600)
-  }
 
   const tools: { tool: DrawingTool; icon: React.ReactNode; label: string }[] = [
-    { tool: 'select', icon: <ChevronUp size={16} />, label: 'Select' },
+    { tool: 'select', icon: <MousePointer2 size={16} />, label: 'Select & Move' },
     { tool: 'pen', icon: <Pencil size={16} />, label: 'Pen' },
     { tool: 'line', icon: <Minus size={16} />, label: 'Line' },
     { tool: 'rect', icon: <Square size={16} />, label: 'Rectangle' },
@@ -70,22 +70,18 @@ export default function BlackboardToolbar({
   ]
 
   return (
-    <div
-      className={`room-bb-toolbar ${expanded ? 'room-bb-toolbar-expanded' : 'room-bb-toolbar-collapsed'}`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      {!expanded ? (
-        /* ── Collapsed: single floating button ─────────────────────── */
-        <button
-          className="room-bb-toggle"
-          onClick={() => setExpanded(true)}
-          title="Drawing tools"
-        >
-          <Pencil size={18} />
-        </button>
-      ) : (
-        /* ── Expanded toolbar ──────────────────────────────────────── */
+    <div className="room-bb-toolbar">
+      {/* Toggle button — always visible */}
+      <button
+        className="room-bb-toggle"
+        onClick={onToggleToolbar}
+        title={toolbarVisible ? 'Hide toolbar' : 'Show toolbar'}
+      >
+        {toolbarVisible ? <ChevronDown size={18} /> : <Pencil size={18} />}
+      </button>
+
+      {/* Main toolbar */}
+      {toolbarVisible && (
         <div className="room-bb-toolbar-inner">
           {/* Drawing tools */}
           <div className="room-bb-tool-group">
@@ -101,10 +97,9 @@ export default function BlackboardToolbar({
             ))}
           </div>
 
-          {/* Divider */}
           <div className="room-bb-divider" />
 
-          {/* Color picker toggle */}
+          {/* Color picker */}
           <div className="room-bb-tool-group" style={{ position: 'relative' }}>
             <button
               className="room-bb-tool-btn"
@@ -140,7 +135,6 @@ export default function BlackboardToolbar({
             )}
           </div>
 
-          {/* Divider */}
           <div className="room-bb-divider" />
 
           {/* Undo / Redo / Clear */}
@@ -156,22 +150,36 @@ export default function BlackboardToolbar({
             </button>
           </div>
 
-          {/* ── Text options sub-toolbar ─────────────────────────── */}
+          {/* ── Text formatting sub-toolbar (Lessons editor style) ──── */}
           {activeTool === 'text' && (
             <>
               <div className="room-bb-divider" />
               <div className="room-bb-tool-group room-bb-text-options">
+                {/* Font family */}
+                <select
+                  className="room-bb-select"
+                  value={textOptions.fontFamily}
+                  onChange={e => onTextOptionsChange({ ...textOptions, fontFamily: e.target.value })}
+                  title="Font Family"
+                >
+                  {FONT_FAMILIES.map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+
                 {/* Font size */}
                 <select
                   className="room-bb-select"
                   value={textOptions.fontSize}
                   onChange={e => onTextOptionsChange({ ...textOptions, fontSize: Number(e.target.value) })}
-                  title="Font size"
+                  title="Font Size"
                 >
                   {FONT_SIZES.map(s => (
-                    <option key={s} value={s}>{s}px</option>
+                    <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>
+
+                <div className="room-bb-divider" />
 
                 {/* Bold */}
                 <button
@@ -191,14 +199,38 @@ export default function BlackboardToolbar({
                   <Italic size={16} />
                 </button>
 
+                {/* Underline */}
+                <button
+                  className={`room-bb-tool-btn ${textOptions.underline ? 'room-bb-tool-active' : ''}`}
+                  onClick={() => onTextOptionsChange({ ...textOptions, underline: !textOptions.underline })}
+                  title="Underline"
+                >
+                  <UnderlineIcon size={16} />
+                </button>
+
+                <div className="room-bb-divider" />
+
                 {/* Text color */}
-                <input
-                  type="color"
-                  value={textOptions.color}
-                  onChange={e => onTextOptionsChange({ ...textOptions, color: e.target.value })}
-                  className="room-bb-color-input"
-                  title="Text color"
-                />
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className="room-bb-tool-btn"
+                    title="Text Color"
+                    onClick={() => {
+                      const input = document.getElementById('bb-text-color-input') as HTMLInputElement
+                      input?.click()
+                    }}
+                  >
+                    <Palette size={16} />
+                    <span className="room-bb-color-dot" style={{ backgroundColor: textOptions.color }} />
+                  </button>
+                  <input
+                    id="bb-text-color-input"
+                    type="color"
+                    value={textOptions.color}
+                    onChange={e => onTextOptionsChange({ ...textOptions, color: e.target.value })}
+                    style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                  />
+                </div>
               </div>
             </>
           )}

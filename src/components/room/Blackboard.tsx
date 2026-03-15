@@ -13,13 +13,17 @@ export type BlackboardEvent =
   | { type: 'object-modified'; data: string; id: string }
   | { type: 'object-removed'; id: string }
   | { type: 'clear' }
+  | { type: 'drawing-live'; points: number[]; color: string; width: number }
+  | { type: 'drawing-live-end' }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'highlighter' | 'eraser' | 'text' | 'select'
 
 export interface TextOptions {
   fontSize: number
+  fontFamily: string
   bold: boolean
   italic: boolean
+  underline: boolean
   color: string
 }
 
@@ -39,6 +43,18 @@ function nextObjId() {
   return `obj_${Date.now()}_${++_objIdCounter}`
 }
 
+// Throttle helper for live drawing
+function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T {
+  let last = 0
+  return ((...args: any[]) => {
+    const now = Date.now()
+    if (now - last >= ms) {
+      last = now
+      fn(...args)
+    }
+  }) as T
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackboard(
   { isHost, onCanvasEvent, incomingEvent },
@@ -52,16 +68,26 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
   const [strokeColor, setStrokeColor] = useState('#ffffff')
+  const [toolbarVisible, setToolbarVisible] = useState(true)
   const [textOptions, setTextOptions] = useState<TextOptions>({
     fontSize: 24,
+    fontFamily: 'Inter, sans-serif',
     bold: false,
     italic: false,
+    underline: false,
     color: '#ffffff',
   })
 
   // Shape drawing refs (line / rect)
   const shapeStartRef = useRef<{ x: number; y: number } | null>(null)
   const activeShapeRef = useRef<fabric.Object | null>(null)
+
+  // Live drawing points buffer for streaming
+  const livePointsRef = useRef<number[]>([])
+  const isDrawingRef = useRef(false)
+
+  // Live drawing preview path for participants
+  const livePreviewRef = useRef<fabric.Path | null>(null)
 
   // Undo/redo stacks
   const undoStack = useRef<string[]>([])
@@ -86,17 +112,27 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     redoStack.current = []
   }, [])
 
-  // ── Initialize fabric canvas ─────────────────────────────────────────────
+  // ── Initialize fabric canvas with HiDPI support ──────────────────────────
   useEffect(() => {
     if (!canvasRef.current || fabricRef.current) return
+
+    const container = containerRef.current
+    const dpr = window.devicePixelRatio || 1
+    const w = container?.clientWidth || 800
+    const h = container?.clientHeight || 600
 
     const canvas = new fabric.Canvas(canvasRef.current, {
       backgroundColor: '#1a1a2e',
       isDrawingMode: isHost,
       selection: isHost,
-      width: 800,
-      height: 600,
+      width: w * dpr,
+      height: h * dpr,
     })
+
+    // Scale all rendering by DPR for sharp output
+    const ctx = canvas.getContext()
+    ctx.scale(dpr, dpr)
+    canvas.setDimensions({ width: w + 'px', height: h + 'px' }, { cssOnly: true })
 
     if (isHost) {
       const brush = new fabric.PencilBrush(canvas)
@@ -107,17 +143,21 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     fabricRef.current = canvas
 
-    // Fit to container
+    // Fit to container with HiDPI
     const resize = () => {
-      const container = containerRef.current
-      if (!container || !fabricRef.current) return
-      const w = container.clientWidth
-      const h = container.clientHeight
-      fabricRef.current.setDimensions({ width: w, height: h })
+      const c = containerRef.current
+      if (!c || !fabricRef.current) return
+      const curDpr = window.devicePixelRatio || 1
+      const cw = c.clientWidth
+      const ch = c.clientHeight
+      fabricRef.current.setDimensions({ width: cw * curDpr, height: ch * curDpr })
+      fabricRef.current.setDimensions({ width: cw + 'px', height: ch + 'px' }, { cssOnly: true })
+      const rctx = fabricRef.current.getContext()
+      rctx.scale(curDpr, curDpr)
+      fabricRef.current.renderAll()
     }
-    resize()
     const ro = new ResizeObserver(resize)
-    if (containerRef.current) ro.observe(containerRef.current)
+    if (container) ro.observe(container)
 
     return () => {
       ro.disconnect()
@@ -131,6 +171,35 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   useEffect(() => {
     const canvas = fabricRef.current
     if (!canvas || !isHost || !onCanvasEvent) return
+
+    // Throttled live drawing emitter (~30fps)
+    const emitLiveDrawing = throttle((points: number[], color: string, width: number) => {
+      onCanvasEvent({ type: 'drawing-live', points: [...points], color, width })
+    }, 33)
+
+    const onMouseDown = () => {
+      if (!canvas.isDrawingMode) return
+      isDrawingRef.current = true
+      livePointsRef.current = []
+    }
+
+    const onMouseMove = (e: any) => {
+      if (!isDrawingRef.current || !canvas.isDrawingMode) return
+      const pointer = canvas.getViewportPoint(e.e)
+      livePointsRef.current.push(pointer.x, pointer.y)
+      const brush = canvas.freeDrawingBrush
+      if (brush && livePointsRef.current.length >= 4) {
+        emitLiveDrawing(livePointsRef.current, brush.color, brush.width)
+      }
+    }
+
+    const onMouseUp = () => {
+      if (isDrawingRef.current) {
+        isDrawingRef.current = false
+        livePointsRef.current = []
+        onCanvasEvent({ type: 'drawing-live-end' })
+      }
+    }
 
     const onPathCreated = (e: any) => {
       if (suppressEventsRef.current) return
@@ -146,7 +215,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const obj = e.target as fabric.FabricObject
       if (!obj || (obj as any)._fromPath) return
       if (!(obj as any).id) (obj as any).id = nextObjId()
-      // Path objects are handled by path:created
       if (obj.type === 'path') return
       saveUndoState()
       onCanvasEvent({ type: 'object-added', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
@@ -167,12 +235,18 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       onCanvasEvent({ type: 'object-removed', id: (obj as any).id })
     }
 
+    canvas.on('mouse:down', onMouseDown)
+    canvas.on('mouse:move', onMouseMove)
+    canvas.on('mouse:up', onMouseUp)
     canvas.on('path:created', onPathCreated)
     canvas.on('object:added', onObjectAdded)
     canvas.on('object:modified', onObjectModified)
     canvas.on('object:removed', onObjectRemoved)
 
     return () => {
+      canvas.off('mouse:down', onMouseDown)
+      canvas.off('mouse:move', onMouseMove)
+      canvas.off('mouse:up', onMouseUp)
       canvas.off('path:created', onPathCreated)
       canvas.off('object:added', onObjectAdded)
       canvas.off('object:modified', onObjectModified)
@@ -185,10 +259,61 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const canvas = fabricRef.current
     if (!canvas || !incomingEvent) return
 
+    // Handle live drawing preview (no suppress needed)
+    if (incomingEvent.type === 'drawing-live') {
+      const pts = incomingEvent.points
+      if (pts.length < 4) return
+      // Remove old preview
+      if (livePreviewRef.current) {
+        canvas.remove(livePreviewRef.current)
+      }
+      // Build SVG path from points
+      let pathStr = `M ${pts[0]} ${pts[1]}`
+      for (let i = 2; i < pts.length - 2; i += 2) {
+        const mx = (pts[i] + pts[i + 2]) / 2
+        const my = (pts[i + 1] + pts[i + 3]) / 2
+        pathStr += ` Q ${pts[i]} ${pts[i + 1]} ${mx} ${my}`
+      }
+      pathStr += ` L ${pts[pts.length - 2]} ${pts[pts.length - 1]}`
+      const preview = new fabric.Path(pathStr, {
+        stroke: incomingEvent.color,
+        strokeWidth: incomingEvent.width,
+        fill: 'transparent',
+        selectable: false,
+        evented: false,
+        strokeLineCap: 'round',
+        strokeLineJoin: 'round',
+      })
+      ;(preview as any)._livePreview = true
+      livePreviewRef.current = preview
+      suppressEventsRef.current = true
+      canvas.add(preview)
+      canvas.renderAll()
+      suppressEventsRef.current = false
+      return
+    }
+
+    if (incomingEvent.type === 'drawing-live-end') {
+      // Remove preview — the final path will arrive as object-added
+      if (livePreviewRef.current) {
+        suppressEventsRef.current = true
+        canvas.remove(livePreviewRef.current)
+        livePreviewRef.current = null
+        canvas.renderAll()
+        suppressEventsRef.current = false
+      }
+      return
+    }
+
     suppressEventsRef.current = true
 
     switch (incomingEvent.type) {
       case 'snapshot': {
+        // Remove live preview before loading snapshot
+        if (livePreviewRef.current) {
+          canvas.remove(livePreviewRef.current)
+          livePreviewRef.current = null
+        }
         canvas.loadFromJSON(JSON.parse(incomingEvent.data)).then(() => {
           canvas.renderAll()
           suppressEventsRef.current = false
@@ -196,6 +321,11 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         return
       }
       case 'object-added': {
+        // Remove live preview when final object arrives
+        if (livePreviewRef.current) {
+          canvas.remove(livePreviewRef.current)
+          livePreviewRef.current = null
+        }
         const json = JSON.parse(incomingEvent.data)
         fabric.util.enlivenObjects([json]).then((objects) => {
           const obj = objects[0] as fabric.FabricObject | undefined
@@ -231,6 +361,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         return
       }
       case 'clear': {
+        if (livePreviewRef.current) livePreviewRef.current = null
         canvas.clear()
         canvas.backgroundColor = '#1a1a2e'
         canvas.renderAll()
@@ -251,9 +382,13 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.isDrawingMode = false
     canvas.selection = false
     canvas.defaultCursor = 'crosshair'
-    canvas.off('mouse:down')
-    canvas.off('mouse:move')
-    canvas.off('mouse:up')
+    // Only remove tool-specific handlers (not the live drawing handlers)
+    canvas.off('mouse:down', (canvas as any).__toolMouseDown)
+    canvas.off('mouse:move', (canvas as any).__toolMouseMove)
+    canvas.off('mouse:up', (canvas as any).__toolMouseUp)
+
+    // Make objects not selectable by default (select tool re-enables)
+    canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
 
     switch (tool) {
       case 'select': {
@@ -273,7 +408,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       case 'highlighter': {
         canvas.isDrawingMode = true
         const hBrush = new fabric.PencilBrush(canvas)
-        // Make it semi-transparent
         const r = parseInt(strokeColor.slice(1, 3), 16)
         const g = parseInt(strokeColor.slice(3, 5), 16)
         const b = parseInt(strokeColor.slice(5, 7), 16)
@@ -285,7 +419,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       case 'eraser': {
         canvas.isDrawingMode = true
         const eBrush = new fabric.PencilBrush(canvas)
-        eBrush.color = '#1a1a2e' // same as background
+        eBrush.color = '#1a1a2e'
         eBrush.width = 20
         canvas.freeDrawingBrush = eBrush
         break
@@ -308,7 +442,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
-    canvas.on('mouse:down', (e: any) => {
+    const mouseDown = (e: any) => {
       const pointer = canvas.getViewportPoint(e.e)
       shapeStartRef.current = { x: pointer.x, y: pointer.y }
       const line = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
@@ -322,15 +456,15 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       suppressEventsRef.current = true
       canvas.add(line)
       suppressEventsRef.current = false
-    })
-    canvas.on('mouse:move', (e: any) => {
+    }
+    const mouseMove = (e: any) => {
       if (!activeShapeRef.current || !shapeStartRef.current) return
       const pointer = canvas.getViewportPoint(e.e)
       const line = activeShapeRef.current as fabric.Line
       line.set({ x2: pointer.x, y2: pointer.y })
       canvas.renderAll()
-    })
-    canvas.on('mouse:up', () => {
+    }
+    const mouseUp = () => {
       if (activeShapeRef.current && onCanvasEvent) {
         const obj = activeShapeRef.current as any
         saveUndoState()
@@ -338,12 +472,18 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
       activeShapeRef.current = null
       shapeStartRef.current = null
-    })
+    }
+    ;(canvas as any).__toolMouseDown = mouseDown
+    ;(canvas as any).__toolMouseMove = mouseMove
+    ;(canvas as any).__toolMouseUp = mouseUp
+    canvas.on('mouse:down', mouseDown)
+    canvas.on('mouse:move', mouseMove)
+    canvas.on('mouse:up', mouseUp)
   }, [strokeColor, onCanvasEvent, saveUndoState])
 
   // ── Rectangle drawing handlers ───────────────────────────────────────────
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
-    canvas.on('mouse:down', (e: any) => {
+    const mouseDown = (e: any) => {
       const pointer = canvas.getViewportPoint(e.e)
       shapeStartRef.current = { x: pointer.x, y: pointer.y }
       const rect = new fabric.Rect({
@@ -362,8 +502,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       suppressEventsRef.current = true
       canvas.add(rect)
       suppressEventsRef.current = false
-    })
-    canvas.on('mouse:move', (e: any) => {
+    }
+    const mouseMove = (e: any) => {
       if (!activeShapeRef.current || !shapeStartRef.current) return
       const pointer = canvas.getViewportPoint(e.e)
       const start = shapeStartRef.current
@@ -377,8 +517,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         height: Math.abs(pointer.y - start.y),
       })
       canvas.renderAll()
-    })
-    canvas.on('mouse:up', () => {
+    }
+    const mouseUp = () => {
       if (activeShapeRef.current && onCanvasEvent) {
         const obj = activeShapeRef.current as any
         saveUndoState()
@@ -386,13 +526,18 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
       activeShapeRef.current = null
       shapeStartRef.current = null
-    })
+    }
+    ;(canvas as any).__toolMouseDown = mouseDown
+    ;(canvas as any).__toolMouseMove = mouseMove
+    ;(canvas as any).__toolMouseUp = mouseUp
+    canvas.on('mouse:down', mouseDown)
+    canvas.on('mouse:move', mouseMove)
+    canvas.on('mouse:up', mouseUp)
   }, [strokeColor, onCanvasEvent, saveUndoState])
 
   // ── Text tool handler ────────────────────────────────────────────────────
   const setupTextTool = useCallback((canvas: fabric.Canvas) => {
-    canvas.on('mouse:down', (e: any) => {
-      // Don't add new text if clicking on existing text
+    const mouseDown = (e: any) => {
       if (e.target && e.target.type === 'i-text') return
       const pointer = canvas.getViewportPoint(e.e)
       const id = nextObjId()
@@ -402,8 +547,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         fontSize: textOptions.fontSize,
         fontWeight: textOptions.bold ? 'bold' : 'normal',
         fontStyle: textOptions.italic ? 'italic' : 'normal',
+        underline: textOptions.underline,
         fill: textOptions.color,
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: textOptions.fontFamily,
         editable: true,
       })
       ;(text as any).id = id
@@ -413,7 +559,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.setActiveObject(text)
       text.enterEditing()
 
-      // Emit when editing ends
       text.on('editing:exited', () => {
         if (text.text?.trim() === '') {
           canvas.remove(text)
@@ -424,7 +569,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           onCanvasEvent({ type: 'object-added', data: JSON.stringify((text as any).toObject(['id'])), id })
         }
       })
-    })
+    }
+    ;(canvas as any).__toolMouseDown = mouseDown
+    canvas.on('mouse:down', mouseDown)
   }, [textOptions, onCanvasEvent, saveUndoState])
 
   // ── Color change: update active brush ────────────────────────────────────
@@ -512,6 +659,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           onClear={handleClear}
           canUndo={undoStack.current.length > 0}
           canRedo={redoStack.current.length > 0}
+          toolbarVisible={toolbarVisible}
+          onToggleToolbar={() => setToolbarVisible(v => !v)}
         />
       )}
     </div>

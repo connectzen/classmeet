@@ -198,7 +198,9 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Host: broadcast blackboard canvas events
   const handleBlackboardEvent = useCallback((event: BlackboardEvent) => {
     const payload = encoder.encode(JSON.stringify(event))
-    sendBlackboardData(payload, { reliable: true })
+    // Use unreliable for live drawing (ephemeral, low latency) and reliable for everything else
+    const reliable = event.type !== 'drawing-live'
+    sendBlackboardData(payload, { reliable })
   }, [sendBlackboardData])
 
   // Host: toggle blackboard on/off
@@ -546,34 +548,34 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
 
-  // If blackboard is active, show that
-  if (blackboardActive) {
-    return (
-      <div className="room-main-stage">
-        <div className="room-stage-video room-stage-blackboard">
-          <Blackboard
-            ref={blackboardRef}
-            isHost={isHost}
-            onCanvasEvent={onCanvasEvent}
-            incomingEvent={incomingEvent}
-          />
-          <div className="room-stage-overlay">
-            <div className="room-stage-label">
-              <PenTool size={14} />
-              <span>Blackboard{isHost ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
-            </div>
+  const showScreenShare = !blackboardActive && screenShare && screenShare.publication?.track
+  const showCamera = !blackboardActive && !showScreenShare
+  const camTrack = cameraTracks.find(t => t.participant?.identity === participant?.identity)
+
+  return (
+    <div className="room-main-stage">
+      {/* Blackboard — always mounted for persistence, hidden via CSS */}
+      <div
+        className={`room-stage-video room-stage-blackboard ${blackboardActive ? '' : 'room-stage-hidden'}`}
+      >
+        <Blackboard
+          ref={blackboardRef}
+          isHost={isHost}
+          onCanvasEvent={onCanvasEvent}
+          incomingEvent={incomingEvent}
+        />
+        <div className="room-stage-overlay">
+          <div className="room-stage-label">
+            <PenTool size={14} />
+            <span>Blackboard{isHost ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
           </div>
         </div>
       </div>
-    )
-  }
 
-  // If screen share is active, show that
-  if (screenShare && screenShare.publication?.track) {
-    return (
-      <div className="room-main-stage">
+      {/* Screen share */}
+      {showScreenShare && screenShare && (
         <div className="room-stage-video room-stage-screenshare">
-          <VideoTrack trackRef={screenShare} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          <VideoTrack trackRef={screenShare as TrackReferenceOrPlaceholder & { publication: { track: object } }} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           <div className="room-stage-overlay">
             <div className="room-stage-label">
               <Monitor size={14} />
@@ -581,35 +583,31 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
             </div>
           </div>
         </div>
-      </div>
-    )
-  }
+      )}
 
-  // Show participant camera
-  const camTrack = cameraTracks.find(t => t.participant?.identity === participant?.identity)
-
-  return (
-    <div className="room-main-stage">
-      <div className={`room-stage-video ${isSpeaking ? 'room-stage-speaking' : ''}`}>
-        {camTrack && camTrack.publication?.track ? (
-          <VideoTrack trackRef={camTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <div className="room-stage-placeholder">
-            <div className="room-stage-avatar">
-              {getInitials(participant?.name || participant?.identity || '?')}
+      {/* Camera view */}
+      {showCamera && (
+        <div className={`room-stage-video ${isSpeaking ? 'room-stage-speaking' : ''}`}>
+          {camTrack && camTrack.publication?.track ? (
+            <VideoTrack trackRef={camTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <div className="room-stage-placeholder">
+              <div className="room-stage-avatar">
+                {getInitials(participant?.name || participant?.identity || '?')}
+              </div>
+              <p style={{ color: 'var(--text-muted)', marginTop: 16, fontSize: '0.9rem' }}>Camera is off</p>
             </div>
-            <p style={{ color: 'var(--text-muted)', marginTop: 16, fontSize: '0.9rem' }}>Camera is off</p>
-          </div>
-        )}
-        {participant && (
-          <div className="room-stage-overlay">
-            <div className="room-stage-label">
-              {isSpeaking && <Volume2 size={14} className="room-speaking-icon" />}
-              <span>{participant.name || participant.identity}</span>
+          )}
+          {participant && (
+            <div className="room-stage-overlay">
+              <div className="room-stage-label">
+                {isSpeaking && <Volume2 size={14} className="room-speaking-icon" />}
+                <span>{participant.name || participant.identity}</span>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

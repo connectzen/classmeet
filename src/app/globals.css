@@ -1755,11 +1755,16 @@ a:hover { color: var(--primary-300); }
 }
 .room-blackboard canvas {
   display: block;
-  width: 100% !important;
-  height: 100% !important;
 }
 .room-stage-blackboard {
   box-shadow: 0 0 0 2px var(--primary-500);
+}
+.room-stage-hidden {
+  position: absolute !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none;
+  visibility: hidden;
 }
 
 /* Floating toolbar */
@@ -1768,15 +1773,10 @@ a:hover { color: var(--primary-300); }
   bottom: 48px;
   left: 16px;
   z-index: 20;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.room-bb-toolbar-collapsed {
-  width: 40px;
-  height: 40px;
-}
-.room-bb-toolbar-expanded {
-  width: auto;
-  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 .room-bb-toggle {
   width: 40px;
@@ -1791,6 +1791,7 @@ a:hover { color: var(--primary-300); }
   justify-content: center;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
   transition: transform 0.15s, background 0.15s;
+  flex-shrink: 0;
 }
 .room-bb-toggle:hover {
   background: var(--primary-500);
@@ -1806,6 +1807,7 @@ a:hover { color: var(--primary-300); }
   border: 1px solid #3f3f46;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  flex-wrap: wrap;
 }
 .room-bb-tool-group {
   display: flex;
