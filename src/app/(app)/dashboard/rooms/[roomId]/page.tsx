@@ -187,8 +187,14 @@ function RoomInner({ roomName }: { roomName: string }) {
       setBlackboardActive(true)
     } else if (event.type === 'deactivate') {
       setBlackboardActive(false)
-    } else if (event.type === 'drawing-live' || event.type === 'drawing-live-end') {
-      // Live drawing: call imperatively to bypass React state batching
+    } else if (
+      event.type === 'drawing-live' ||
+      event.type === 'drawing-live-end' ||
+      event.type === 'cursor-move' ||
+      event.type === 'shape-preview' ||
+      event.type === 'shape-preview-end'
+    ) {
+      // Live drawing / cursor / shape-preview: call imperatively to bypass React state batching
       if (!isTeacher) {
         blackboardRef.current?.applyLiveEvent(event)
       }

@@ -15,6 +15,9 @@ export type BlackboardEvent =
   | { type: 'clear' }
   | { type: 'drawing-live'; points: number[]; color: string; width: number }
   | { type: 'drawing-live-end' }
+  | { type: 'cursor-move'; x: number; y: number }
+  | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string }
+  | { type: 'shape-preview-end' }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
 
@@ -64,6 +67,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const fabricRef = useRef<fabric.Canvas | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const suppressEventsRef = useRef(false)
+  const cursorDivRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
@@ -105,6 +109,50 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const handleLiveEvent = useCallback((event: BlackboardEvent) => {
     const canvas = fabricRef.current
     if (!canvas) return
+
+    if (event.type === 'cursor-move') {
+      const el = cursorDivRef.current
+      if (el) {
+        el.style.left = `${event.x}px`
+        el.style.top = `${event.y}px`
+        el.style.display = 'block'
+      }
+      return
+    }
+
+    if (event.type === 'shape-preview') {
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement | undefined
+      if (!ctx || !uc) return
+      ctx.clearRect(0, 0, uc.width, uc.height)
+      ctx.strokeStyle = event.color
+      ctx.lineWidth = 3
+      if (event.kind === 'line') {
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        ctx.moveTo(event.x1, event.y1)
+        ctx.lineTo(event.x2, event.y2)
+        ctx.stroke()
+      } else if (event.kind === 'rect') {
+        ctx.strokeRect(event.x1, event.y1, event.x2 - event.x1, event.y2 - event.y1)
+      } else if (event.kind === 'circle') {
+        const rx = Math.abs(event.x2 - event.x1) / 2
+        const ry = Math.abs(event.y2 - event.y1) / 2
+        const cx = (event.x1 + event.x2) / 2
+        const cy = (event.y1 + event.y2) / 2
+        ctx.beginPath()
+        ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      return
+    }
+
+    if (event.type === 'shape-preview-end') {
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement | undefined
+      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
+      return
+    }
 
     if (event.type === 'drawing-live') {
       const pts = event.points
@@ -227,6 +275,15 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       onCanvasEvent({ type: 'drawing-live', points: [...points], color, width })
     }, 33)
 
+    const emitCursor = throttle((x: number, y: number) => {
+      onCanvasEvent({ type: 'cursor-move', x, y })
+    }, 33)
+
+    const onCursorMove = (e: any) => {
+      const pointer = canvas.getScenePoint(e.e)
+      emitCursor(pointer.x, pointer.y)
+    }
+
     const onMouseDown = () => {
       if (!canvas.isDrawingMode) return
       isDrawingRef.current = true
@@ -287,6 +344,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     canvas.on('mouse:down', onMouseDown)
     canvas.on('mouse:move', onMouseMove)
+    canvas.on('mouse:move', onCursorMove)
     canvas.on('mouse:up', onMouseUp)
     canvas.on('path:created', onPathCreated)
     canvas.on('object:added', onObjectAdded)
@@ -296,6 +354,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     return () => {
       canvas.off('mouse:down', onMouseDown)
       canvas.off('mouse:move', onMouseMove)
+      canvas.off('mouse:move', onCursorMove)
       canvas.off('mouse:up', onMouseUp)
       canvas.off('path:created', onPathCreated)
       canvas.off('object:added', onObjectAdded)
@@ -309,8 +368,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const canvas = fabricRef.current
     if (!canvas || !incomingEvent) return
 
-    // Live drawing events are handled imperatively via applyLiveEvent — skip here
-    if (incomingEvent.type === 'drawing-live' || incomingEvent.type === 'drawing-live-end') return
+    // Live drawing / cursor / shape-preview events are handled imperatively via applyLiveEvent — skip here
+    if (
+      incomingEvent.type === 'drawing-live' ||
+      incomingEvent.type === 'drawing-live-end' ||
+      incomingEvent.type === 'cursor-move' ||
+      incomingEvent.type === 'shape-preview' ||
+      incomingEvent.type === 'shape-preview-end'
+    ) return
 
     suppressEventsRef.current = true
 
@@ -342,6 +407,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
             obj.evented = false
             canvas.add(obj)
             canvas.renderAll()
+            // Clear shape-preview from contextTop now that committed object is on canvas
+            const ctx2 = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+            const uc2 = (canvas as any).upperCanvasEl as HTMLCanvasElement | undefined
+            if (ctx2 && uc2) ctx2.clearRect(0, 0, uc2.width, uc2.height)
           }
           suppressEventsRef.current = false
         })
@@ -397,6 +466,13 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (topCtx) {
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
       topCtx.clearRect(0, 0, uc?.width ?? canvas.width, uc?.height ?? canvas.height)
+    }
+    // Remove any in-progress live shape (rect/circle tools)
+    if (activeShapeRef.current) {
+      suppressEventsRef.current = true
+      canvas.remove(activeShapeRef.current)
+      suppressEventsRef.current = false
+      activeShapeRef.current = null
     }
     // Only remove tool-specific handlers (not the live drawing handlers)
     canvas.off('mouse:down', (canvas as any).__toolMouseDown)
@@ -467,7 +543,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
-    // Local state — no intermediate Fabric object needed; preview drawn on contextTop
     const local = { id: '', sx: 0, sy: 0 }
 
     const mouseDown = (e: any) => {
@@ -475,6 +550,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
     }
+
+    const emitLinePreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
+      if (onCanvasEvent) onCanvasEvent({ type: 'shape-preview', kind: 'line', x1, y1, x2, y2, color: strokeColor })
+    }, 33)
 
     const mouseMove = (e: any) => {
       if (!local.id) return
@@ -489,12 +568,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       ctx.moveTo(local.sx, local.sy)
       ctx.lineTo(e.scenePoint.x, e.scenePoint.y)
       ctx.stroke()
+      emitLinePreview(local.sx, local.sy, e.scenePoint.x, e.scenePoint.y)
     }
 
     const mouseUp = (e: any) => {
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
       if (!local.id) return
       const ex = e.scenePoint.x, ey = e.scenePoint.y
       const line = new fabric.Path(`M ${local.sx} ${local.sy} L ${ex} ${ey}`, {
@@ -510,9 +587,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.add(line)
       suppressEventsRef.current = false
       canvas.renderAll()
+      // Clear preview after committed shape is rendered
+      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
       if (onCanvasEvent) {
         saveUndoState()
         onCanvasEvent({ type: 'object-added', data: JSON.stringify((line as any).toObject(['id'])), id: local.id })
+        onCanvasEvent({ type: 'shape-preview-end' })
       }
       local.id = ''
       activeShapeRef.current = null
@@ -529,55 +611,53 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Rectangle drawing handlers ───────────────────────────────────────────
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
-    // Local state — preview drawn on contextTop; no Fabric object until mouseUp
-    const local = { id: '', sx: 0, sy: 0 }
+    const local: { id: string; sx: number; sy: number; shape: fabric.Rect | null } = { id: '', sx: 0, sy: 0, shape: null }
 
     const mouseDown = (e: any) => {
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
-    }
-
-    const mouseMove = (e: any) => {
-      if (!local.id) return
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      if (!ctx) return
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      ctx.clearRect(0, 0, uc.width, uc.height)
-      ctx.strokeStyle = strokeColor
-      ctx.lineWidth = 3
-      // strokeRect with negative width/height draws in the correct drag direction
-      ctx.strokeRect(local.sx, local.sy, e.scenePoint.x - local.sx, e.scenePoint.y - local.sy)
-    }
-
-    const mouseUp = (e: any) => {
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
-      if (!local.id) return
-      const ex = e.scenePoint.x, ey = e.scenePoint.y
-      const left   = Math.min(local.sx, ex)
-      const top    = Math.min(local.sy, ey)
-      const width  = Math.max(1, Math.abs(ex - local.sx))
-      const height = Math.max(1, Math.abs(ey - local.sy))
       const rect = new fabric.Rect({
-        left, top, width, height,
-        fill: 'transparent',
-        stroke: strokeColor,
-        strokeWidth: 3,
-        selectable: false,
-        evented: false,
+        left: local.sx, top: local.sy, width: 1, height: 1,
+        fill: 'transparent', stroke: strokeColor, strokeWidth: 3,
+        selectable: false, evented: false,
       })
       ;(rect as any).id = local.id
+      local.shape = rect
+      activeShapeRef.current = rect
       suppressEventsRef.current = true
       canvas.add(rect)
       suppressEventsRef.current = false
-      canvas.renderAll()
+      canvas.requestRenderAll()
+    }
+
+    const emitRectPreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
+      if (onCanvasEvent) onCanvasEvent({ type: 'shape-preview', kind: 'rect', x1, y1, x2, y2, color: strokeColor })
+    }, 33)
+
+    const mouseMove = (e: any) => {
+      if (!local.id || !local.shape) return
+      const ex = e.scenePoint.x, ey = e.scenePoint.y
+      const left = Math.min(local.sx, ex)
+      const top = Math.min(local.sy, ey)
+      const width = Math.max(1, Math.abs(ex - local.sx))
+      const height = Math.max(1, Math.abs(ey - local.sy))
+      local.shape.set({ left, top, width, height })
+      local.shape.setCoords()
+      canvas.requestRenderAll()
+      emitRectPreview(local.sx, local.sy, ex, ey)
+    }
+
+    const mouseUp = () => {
+      const shape = local.shape
+      if (!local.id || !shape) return
       if (onCanvasEvent) {
         saveUndoState()
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify((rect as any).toObject(['id'])), id: local.id })
+        onCanvasEvent({ type: 'object-added', data: JSON.stringify((shape as any).toObject(['id'])), id: local.id })
+        onCanvasEvent({ type: 'shape-preview-end' })
       }
       local.id = ''
+      local.shape = null
       activeShapeRef.current = null
       shapeStartRef.current = null
     }
@@ -592,70 +672,63 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // ── Circle/Ellipse drawing handlers ─────────────────────────────────────
   const setupCircleDrawing = useCallback((canvas: fabric.Canvas) => {
-    const local = { id: '', sx: 0, sy: 0 }
+    const local: { id: string; sx: number; sy: number; shape: fabric.Ellipse | null } = { id: '', sx: 0, sy: 0, shape: null }
 
     const mouseDown = (e: any) => {
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
+      const ellipse = new fabric.Ellipse({
+        left: local.sx, top: local.sy, rx: 1, ry: 1,
+        fill: 'transparent', stroke: strokeColor, strokeWidth: 3,
+        selectable: false, evented: false,
+      })
+      ;(ellipse as any).id = local.id
+      local.shape = ellipse
+      activeShapeRef.current = ellipse
+      suppressEventsRef.current = true
+      canvas.add(ellipse)
+      suppressEventsRef.current = false
+      canvas.requestRenderAll()
     }
+
+    const emitCirclePreview = throttle((x1: number, y1: number, x2: number, y2: number) => {
+      if (onCanvasEvent) onCanvasEvent({ type: 'shape-preview', kind: 'circle', x1, y1, x2, y2, color: strokeColor })
+    }, 33)
 
     const mouseMove = (e: any) => {
-      if (!local.id) return
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      if (!ctx) return
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      ctx.clearRect(0, 0, uc.width, uc.height)
-      const rx = Math.abs(e.scenePoint.x - local.sx) / 2
-      const ry = Math.abs(e.scenePoint.y - local.sy) / 2
-      const cx = local.sx + (e.scenePoint.x - local.sx) / 2
-      const cy = local.sy + (e.scenePoint.y - local.sy) / 2
-      ctx.strokeStyle = strokeColor
-      ctx.lineWidth = 3
-      ctx.beginPath()
-      ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2)
-      ctx.stroke()
-    }
-
-    const mouseUp = (e: any) => {
-      const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
-      const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
-      if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
-      if (!local.id) return
+      if (!local.id || !local.shape) return
       const ex = e.scenePoint.x, ey = e.scenePoint.y
       const rx = Math.max(1, Math.abs(ex - local.sx) / 2)
       const ry = Math.max(1, Math.abs(ey - local.sy) / 2)
       const left = Math.min(local.sx, ex)
-      const top  = Math.min(local.sy, ey)
-      const ellipse = new fabric.Ellipse({
-        left, top,
-        rx, ry,
-        fill: 'transparent',
-        stroke: strokeColor,
-        strokeWidth: 3,
-        selectable: false,
-        evented: false,
-      })
-      ;(ellipse as any).id = local.id
-      suppressEventsRef.current = true
-      canvas.add(ellipse)
-      suppressEventsRef.current = false
-      canvas.renderAll()
+      const top = Math.min(local.sy, ey)
+      local.shape.set({ left, top, rx, ry })
+      local.shape.setCoords()
+      canvas.requestRenderAll()
+      emitCirclePreview(local.sx, local.sy, ex, ey)
+    }
+
+    const mouseUp = () => {
+      const shape = local.shape
+      if (!local.id || !shape) return
       if (onCanvasEvent) {
         saveUndoState()
-        onCanvasEvent({ type: 'object-added', data: JSON.stringify((ellipse as any).toObject(['id'])), id: local.id })
+        onCanvasEvent({ type: 'object-added', data: JSON.stringify((shape as any).toObject(['id'])), id: local.id })
+        onCanvasEvent({ type: 'shape-preview-end' })
       }
       local.id = ''
+      local.shape = null
       activeShapeRef.current = null
       shapeStartRef.current = null
     }
 
     ;(canvas as any).__toolMouseDown = mouseDown
     ;(canvas as any).__toolMouseMove = mouseMove
-    ;(canvas as any).__toolMouseUp   = mouseUp
+    ;(canvas as any).__toolMouseUp = mouseUp
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
-    canvas.on('mouse:up',   mouseUp)
+    canvas.on('mouse:up', mouseUp)
   }, [strokeColor, onCanvasEvent, saveUndoState])
 
   // ── Text tool handler ────────────────────────────────────────────────────
@@ -813,6 +886,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   return (
     <div className="room-blackboard" ref={containerRef}>
+      {!isHost && (
+        <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
+      )}
       <canvas ref={canvasRef} />
       {isHost && (
         <BlackboardToolbar
