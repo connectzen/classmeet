@@ -193,7 +193,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       event.type === 'cursor-move' ||
       event.type === 'shape-preview' ||
       event.type === 'shape-preview-end' ||
-      event.type === 'text-cursor'
+      event.type === 'text-cursor' ||
+      event.type === 'selection-highlight'
     ) {
       // Live drawing / cursor / shape-preview: call imperatively to bypass React state batching
       if (!isTeacher) {
@@ -213,7 +214,8 @@ function RoomInner({ roomName }: { roomName: string }) {
     // Use unreliable transport for ephemeral preview events to avoid head-of-line blocking
     const ephemeral = event.type === 'shape-preview' || event.type === 'shape-preview-end' ||
                       event.type === 'drawing-live' || event.type === 'drawing-live-end' ||
-                      event.type === 'cursor-move' || event.type === 'text-cursor'
+                      event.type === 'cursor-move' || event.type === 'text-cursor' ||
+                      event.type === 'selection-highlight'
     sendBlackboardData(payload, { reliable: !ephemeral })
   }, [sendBlackboardData])
 

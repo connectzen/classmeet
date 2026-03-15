@@ -1949,15 +1949,27 @@ a:hover { color: var(--primary-300); }
 /* Text caret overlay — visible to participants when teacher is typing */
 .room-bb-caret {
   position: absolute;
-  width: 2px;
+  width: 3px;
   background: #f59e0b;
   pointer-events: none;
   z-index: 16;
   animation: room-bb-caret-blink 1s step-end infinite;
-  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8), 0 0 16px rgba(245, 158, 11, 0.4);
+  border-radius: 1px;
 }
 
 @keyframes room-bb-caret-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* Selection highlight overlay — visible to participants when teacher selects an object */
+.room-bb-selection {
+  position: absolute;
+  pointer-events: none;
+  z-index: 14;
+  border: 2px dashed rgba(99, 102, 241, 0.8);
+  background: rgba(99, 102, 241, 0.06);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
 }

@@ -19,6 +19,7 @@ export type BlackboardEvent =
   | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string }
   | { type: 'shape-preview-end' }
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
+  | { type: 'selection-highlight'; x: number; y: number; width: number; height: number; visible: boolean }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
 
@@ -70,6 +71,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const suppressEventsRef = useRef(false)
   const cursorDivRef = useRef<HTMLDivElement>(null)
   const caretDivRef = useRef<HTMLDivElement>(null)
+  const selectionDivRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
@@ -138,6 +140,22 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         if (event.visible) {
           el.style.left = `${event.x}px`
           el.style.top = `${event.y}px`
+          el.style.height = `${event.height}px`
+          el.style.display = 'block'
+        } else {
+          el.style.display = 'none'
+        }
+      }
+      return
+    }
+
+    if (event.type === 'selection-highlight') {
+      const el = selectionDivRef.current
+      if (el) {
+        if (event.visible) {
+          el.style.left = `${event.x}px`
+          el.style.top = `${event.y}px`
+          el.style.width = `${event.width}px`
           el.style.height = `${event.height}px`
           el.style.display = 'block'
         } else {
@@ -381,6 +399,27 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       onCanvasEventRef.current?.({ type: 'object-removed', id: (obj as any).id })
     }
 
+    // Selection highlight: broadcast bounding box when teacher selects/deselects
+    const emitSelectionHighlight = () => {
+      const active = canvas.getActiveObject()
+      if (active) {
+        const bound = active.getBoundingRect()
+        onCanvasEventRef.current?.({
+          type: 'selection-highlight',
+          x: bound.left, y: bound.top, width: bound.width, height: bound.height,
+          visible: true,
+        })
+      } else {
+        onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
+      }
+    }
+
+    const onSelectionCreated = () => emitSelectionHighlight()
+    const onSelectionUpdated = () => emitSelectionHighlight()
+    const onSelectionCleared = () => {
+      onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
+    }
+
     canvas.on('mouse:down', onMouseDown)
     canvas.on('mouse:move', onMouseMove)
     canvas.on('mouse:move', onCursorMove)
@@ -389,6 +428,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('object:added', onObjectAdded)
     canvas.on('object:modified', onObjectModified)
     canvas.on('object:removed', onObjectRemoved)
+    canvas.on('selection:created', onSelectionCreated)
+    canvas.on('selection:updated', onSelectionUpdated)
+    canvas.on('selection:cleared', onSelectionCleared)
 
     return () => {
       canvas.off('mouse:down', onMouseDown)
@@ -399,6 +441,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('object:added', onObjectAdded)
       canvas.off('object:modified', onObjectModified)
       canvas.off('object:removed', onObjectRemoved)
+      canvas.off('selection:created', onSelectionCreated)
+      canvas.off('selection:updated', onSelectionUpdated)
+      canvas.off('selection:cleared', onSelectionCleared)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, saveUndoState])
@@ -930,6 +975,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         <>
           <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
           <div ref={caretDivRef} className="room-bb-caret" style={{ display: 'none' }} />
+          <div ref={selectionDivRef} className="room-bb-selection" style={{ display: 'none' }} />
         </>
       )}
       <canvas ref={canvasRef} />
