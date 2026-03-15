@@ -1962,14 +1962,3 @@ a:hover { color: var(--primary-300); }
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
-
-/* Selection highlight overlay — visible to participants when teacher selects an object */
-.room-bb-selection {
-  position: absolute;
-  pointer-events: none;
-  z-index: 14;
-  border: 2px dashed rgba(99, 102, 241, 0.8);
-  background: rgba(99, 102, 241, 0.06);
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
-}

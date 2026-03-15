@@ -20,7 +20,6 @@ export type BlackboardEvent =
   | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string }
   | { type: 'shape-preview-end' }
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
-  | { type: 'selection-highlight'; x: number; y: number; width: number; height: number; visible: boolean }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
 
@@ -72,7 +71,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const suppressEventsRef = useRef(false)
   const cursorDivRef = useRef<HTMLDivElement>(null)
   const caretDivRef = useRef<HTMLDivElement>(null)
-  const selectionDivRef = useRef<HTMLDivElement>(null)
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
@@ -148,28 +146,11 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           el.style.top = `${event.y}px`
           el.style.height = `${event.height}px`
           el.style.display = 'block'
-          // Hide the cursor dot and selection highlight while the text caret is visible
+          // Hide the cursor dot while the text caret is visible
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
-          if (selectionDivRef.current) selectionDivRef.current.style.display = 'none'
         } else {
           el.style.display = 'none'
           // Restore cursor dot visibility — next cursor-move will position it
-        }
-      }
-      return
-    }
-
-    if (event.type === 'selection-highlight') {
-      const el = selectionDivRef.current
-      if (el) {
-        if (event.visible) {
-          el.style.left = `${event.x}px`
-          el.style.top = `${event.y}px`
-          el.style.width = `${event.width}px`
-          el.style.height = `${event.height}px`
-          el.style.display = 'block'
-        } else {
-          el.style.display = 'none'
         }
       }
       return
@@ -420,8 +401,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const emitObjectMoving = throttle((obj: fabric.FabricObject) => {
       if (!(obj as any).id) return
       onCanvasEventRef.current?.({ type: 'object-moving', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
-      // Also update selection highlight to follow the object during drag
-      emitSelectionHighlight()
     }, 32)
 
     const onObjectMoving = (e: any) => {
@@ -436,34 +415,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const obj = e.target as fabric.FabricObject
       if (!obj || !(obj as any).id) return
       onCanvasEventRef.current?.({ type: 'object-removed', id: (obj as any).id })
-    }
-
-    // Selection highlight: broadcast bounding box when teacher selects/deselects
-    // Skip when an IText is being edited — the small bounding box creates visible
-    // "dots" (dashed border on a tiny rect) on the student side.
-    const emitSelectionHighlight = () => {
-      const active = canvas.getActiveObject()
-      if (active) {
-        // Don't show selection highlight for IText in editing mode
-        if ((active as any).isEditing) {
-          onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
-          return
-        }
-        const bound = active.getBoundingRect()
-        onCanvasEventRef.current?.({
-          type: 'selection-highlight',
-          x: bound.left, y: bound.top, width: bound.width, height: bound.height,
-          visible: true,
-        })
-      } else {
-        onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
-      }
-    }
-
-    const onSelectionCreated = () => emitSelectionHighlight()
-    const onSelectionUpdated = () => emitSelectionHighlight()
-    const onSelectionCleared = () => {
-      onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
     }
 
     // Hide cursor when mouse leaves canvas
@@ -483,9 +434,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('object:scaling', onObjectMoving)
     canvas.on('object:rotating', onObjectMoving)
     canvas.on('object:removed', onObjectRemoved)
-    canvas.on('selection:created', onSelectionCreated)
-    canvas.on('selection:updated', onSelectionUpdated)
-    canvas.on('selection:cleared', onSelectionCleared)
 
     return () => {
       canvas.off('mouse:down', onMouseDown)
@@ -500,9 +448,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('object:scaling', onObjectMoving)
       canvas.off('object:rotating', onObjectMoving)
       canvas.off('object:removed', onObjectRemoved)
-      canvas.off('selection:created', onSelectionCreated)
-      canvas.off('selection:updated', onSelectionUpdated)
-      canvas.off('selection:cleared', onSelectionCleared)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, saveUndoState])
@@ -928,9 +873,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       text.enterEditing()
       text.selectAll()
 
-      // Hide the teacher cursor dot and selection highlight while typing
+      // Hide the teacher cursor dot while typing
       onCanvasEventRef.current?.({ type: 'cursor-move', x: -100, y: -100 })
-      onCanvasEventRef.current?.({ type: 'selection-highlight', x: 0, y: 0, width: 0, height: 0, visible: false })
 
       // Don't send text-cursor here at the click point — defer to first keystroke
       // so getCursorRenderingData() gives the accurate position and no stale dot lingers.
@@ -1056,7 +1000,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         <>
           <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
           <div ref={caretDivRef} className="room-bb-caret" style={{ display: 'none' }} />
-          <div ref={selectionDivRef} className="room-bb-selection" style={{ display: 'none' }} />
         </>
       )}
       {isHost && (

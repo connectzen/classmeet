@@ -194,7 +194,6 @@ function RoomInner({ roomName }: { roomName: string }) {
       event.type === 'shape-preview' ||
       event.type === 'shape-preview-end' ||
       event.type === 'text-cursor' ||
-      event.type === 'selection-highlight' ||
       event.type === 'object-moving'
     ) {
       // Live drawing / cursor / shape-preview: call imperatively to bypass React state batching
@@ -222,7 +221,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     // otherwise a dropped packet leaves the caret permanently visible on student side.
     const ephemeral = event.type === 'shape-preview' || event.type === 'shape-preview-end' ||
                       event.type === 'drawing-live' || event.type === 'drawing-live-end' ||
-                      event.type === 'cursor-move' || event.type === 'selection-highlight' ||
+                      event.type === 'cursor-move' ||
                       event.type === 'object-moving'
     sendBlackboardData(payload, { reliable: !ephemeral })
   }, [sendBlackboardData])
