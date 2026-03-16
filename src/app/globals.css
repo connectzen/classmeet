@@ -14,6 +14,12 @@
   --bg-overlay:     #25252f;
   --bg-highlight:   #2a2a38;
 
+  /* Aliases used across components (must not be transparent) */
+  --surface-card:   #1e1e28;
+  --bg-primary:     #18181f;
+  --bg-secondary:   #111116;
+  --bg-hover:       #25252f;
+
   /* Primary — Indigo / Purple */
   --primary-50:     #eef2ff;
   --primary-100:    #e0e7ff;
@@ -1032,6 +1038,17 @@ select option {
   padding: var(--space-8);
   min-height: calc(100svh - 60px);
   transition: margin-left var(--transition-slow);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Restore Courier New for typed/composed content inside the dashboard */
+.main-content input,
+.main-content textarea,
+.main-content select,
+.main-content [contenteditable],
+.main-content .ProseMirror,
+.main-content .prose {
+  font-family: 'Courier New', Courier, monospace;
 }
 
 @media (max-width: 768px) {
