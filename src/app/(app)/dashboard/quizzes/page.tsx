@@ -310,6 +310,7 @@ export default function QuizzesPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   // Builder state
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -499,29 +500,35 @@ export default function QuizzesPage() {
 
   // ── Create new quiz ──
   async function createNew() {
-    if (!user?.id) return
-    const { data, error } = await supabase.from('quizzes').insert({
-      teacher_id: user.id,
-      title: 'Untitled Quiz',
-      description: null,
-    }).select('id, title, description, created_at').single()
-    if (error || !data) return
-    setEditingId(data.id)
-    setTitle(data.title)
-    setDescription(data.description || '')
-    setQuestions([{
-      id: uid(),
-      questionText: '',
-      questionType: 'multiple_choice' as QuestionType,
-      options: ['', '', '', ''],
-      correctIndex: 0,
-      correctAnswer: '',
-      timeLimit: 30,
-      sortOrder: 0,
-      collapsed: false,
-    }])
-    showToast('✅ Quiz created')
-    loadQuizzes()
+    if (!user?.id || creating) return
+    setCreating(true)
+    try {
+      const { data, error } = await supabase.from('quizzes').insert({
+        teacher_id: user.id,
+        title: 'Untitled Quiz',
+        description: null,
+      }).select('id, title, description, created_at').single()
+      if (error) { console.error('Quiz create error:', error); showToast(`❌ ${error.message}`); return }
+      if (!data) return
+      setEditingId(data.id)
+      setTitle(data.title)
+      setDescription(data.description || '')
+      setQuestions([{
+        id: uid(),
+        questionText: '',
+        questionType: 'multiple_choice' as QuestionType,
+        options: ['', '', '', ''],
+        correctIndex: 0,
+        correctAnswer: '',
+        timeLimit: 30,
+        sortOrder: 0,
+        collapsed: false,
+      }])
+      showToast('✅ Quiz created')
+      loadQuizzes()
+    } finally {
+      setCreating(false)
+    }
   }
 
   // ── Save quiz ──
@@ -815,7 +822,7 @@ export default function QuizzesPage() {
             {isCreator ? 'Create and manage quizzes to present during live sessions' : 'Browse available quizzes'}
           </p>
         </div>
-        {isCreator && <Button icon={<Plus size={15} />} onClick={createNew}>New Quiz</Button>}
+        {isCreator && <Button icon={<Plus size={15} />} onClick={createNew} loading={creating}>New Quiz</Button>}
       </div>
 
       {/* Search */}
@@ -845,7 +852,7 @@ export default function QuizzesPage() {
           <p style={{ margin: '0 0 24px', fontSize: '0.875rem', color: 'var(--text-muted)', maxWidth: '320px', marginLeft: 'auto', marginRight: 'auto' }}>
             {isCreator ? 'Create your first quiz and use it in live sessions' : 'No quizzes are available yet. Check back soon.'}
           </p>
-          {isCreator && <Button icon={<Plus size={15} />} onClick={createNew}>Create Your First Quiz</Button>}
+          {isCreator && <Button icon={<Plus size={15} />} onClick={createNew} loading={creating}>Create Your First Quiz</Button>}
         </div>
       )}
 
