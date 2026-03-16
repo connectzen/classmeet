@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { apiResponse, apiError, requireAuth, requireOwnership } from '@/lib/api-utils'
+import { apiResponse, apiError, requireAuth } from '@/lib/api-utils'
 
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   try {
@@ -28,8 +28,9 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
     const body = await request.json()
     const supabase = await createClient()
 
-    // Check ownership
-    await requireOwnership('courses', id, user.id, 'teacher_id')
+    const { data: existing } = await supabase.from('courses').select('teacher_id').eq('id', id).single()
+    if (!existing) return apiError('Course not found', 404)
+    if (existing.teacher_id !== user.id) return apiError('Forbidden', 403)
 
     const { data, error } = await supabase
       .from('courses')
@@ -58,8 +59,9 @@ export async function DELETE(request: Request, props: { params: Promise<{ id: st
     const user = await requireAuth(request)
     const supabase = await createClient()
 
-    // Check ownership
-    await requireOwnership('courses', id, user.id, 'teacher_id')
+    const { data: existing } = await supabase.from('courses').select('teacher_id').eq('id', id).single()
+    if (!existing) return apiError('Course not found', 404)
+    if (existing.teacher_id !== user.id) return apiError('Forbidden', 403)
 
     const { error } = await supabase.from('courses').delete().eq('id', id)
 
