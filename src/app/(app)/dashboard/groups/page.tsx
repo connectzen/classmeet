@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import { FolderOpen, Plus, X, Trash2, Pencil, Users, Search, Check } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface GroupRow {
@@ -21,13 +22,6 @@ interface StudentOption {
   id: string
   name: string
   avatarUrl: string | null
-}
-
-// ── Toast hook ────────────────────────────────────────────────────────────────
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }, [])
-  return { toast, show }
 }
 
 // ── Create / Edit Group Modal ─────────────────────────────────────────────────
@@ -216,10 +210,9 @@ export default function GroupsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editGroup, setEditGroup] = useState<{ id: string; name: string; description: string | null; memberIds: string[] } | undefined>()
 
-  const supabase = createClient()
-
   const loadGroups = useCallback(async () => {
     if (!user?.id) return
+    const supabase = createClient()
     const { data: groupsData } = await supabase
       .from('groups')
       .select('id, name, description, created_at')
@@ -227,24 +220,26 @@ export default function GroupsPage() {
       .order('created_at', { ascending: false })
 
     if (groupsData) {
-      // Get member counts
-      const withCounts: GroupRow[] = await Promise.all(
-        groupsData.map(async (g) => {
-          const { count } = await supabase
-            .from('group_members')
-            .select('id', { count: 'exact', head: true })
-            .eq('group_id', g.id)
-          return { ...g, memberCount: count ?? 0 }
-        })
-      )
-      setGroups(withCounts)
+      // Batch: single query for all member rows, count in JS — avoids N+1
+      const groupIds = groupsData.map(g => g.id)
+      const { data: allMembers } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .in('group_id', groupIds)
+
+      const countMap = new Map<string, number>()
+      for (const m of allMembers ?? []) {
+        countMap.set(m.group_id, (countMap.get(m.group_id) ?? 0) + 1)
+      }
+
+      setGroups(groupsData.map(g => ({ ...g, memberCount: countMap.get(g.id) ?? 0 })))
     }
     setLoading(false)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
   const loadStudents = useCallback(async () => {
     if (!user?.id) return
+    const supabase = createClient()
     const { data: enrollments } = await supabase
       .from('teacher_students')
       .select('student_id')
@@ -260,7 +255,6 @@ export default function GroupsPage() {
         setStudents(profiles.map(p => ({ id: p.id, name: p.full_name || 'Student', avatarUrl: p.avatar_url })))
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
   useEffect(() => {
@@ -268,6 +262,7 @@ export default function GroupsPage() {
     loadGroups()
     loadStudents()
 
+    const supabase = createClient()
     const channel = supabase
       .channel('groups-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, () => loadGroups())
@@ -275,11 +270,10 @@ export default function GroupsPage() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, loadGroups, loadStudents])
 
   async function handleEdit(group: GroupRow) {
-    // Load current members
+    const supabase = createClient()
     const { data: members } = await supabase
       .from('group_members')
       .select('student_id')
@@ -291,6 +285,7 @@ export default function GroupsPage() {
 
   async function handleDelete(group: GroupRow) {
     if (!confirm(`Delete "${group.name}"? This cannot be undone.`)) return
+    const supabase = createClient()
     await supabase.from('groups').delete().eq('id', group.id)
     setGroups(prev => prev.filter(g => g.id !== group.id))
     showToast(`✅ "${group.name}" deleted`)

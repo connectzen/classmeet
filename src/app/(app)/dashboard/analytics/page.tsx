@@ -7,6 +7,7 @@ import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import type { UserRole } from '@/lib/supabase/types'
 import { BarChart2, TrendingUp, Users, Clock, Video, BookOpen, FolderOpen, RefreshCw } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SessionRow {
@@ -14,12 +15,6 @@ interface SessionRow {
 }
 interface StudentRow {
   id: string; name: string; avatarUrl: string | null; role: UserRole; enrolledAt: string
-}
-
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }, [])
-  return { toast, show }
 }
 
 export default function AnalyticsPage() {
@@ -34,8 +29,6 @@ export default function AnalyticsPage() {
   const [recentSessions, setRecentSessions] = useState<SessionRow[]>([])
   const [topStudents, setTopStudents] = useState<StudentRow[]>([])
   const [loading, setLoading] = useState(true)
-
-  const isCreator = user?.role === 'teacher' || user?.role === 'member' || user?.role === 'admin'
 
   const loadData = useCallback(async () => {
     if (!user?.id) return

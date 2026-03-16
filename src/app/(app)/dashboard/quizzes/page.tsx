@@ -20,6 +20,7 @@ import {
   useSortable, verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type QuestionType = 'multiple_choice' | 'true_false' | 'short_answer' | 'fill_blank'
@@ -52,13 +53,6 @@ interface QuizLocal {
 }
 
 const uid = () => `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }, [])
-  return { toast, show }
-}
 
 // ── Sortable Question ─────────────────────────────────────────────────────────
 function SortableQuestion({ question, onUpdate, onRemove }: {

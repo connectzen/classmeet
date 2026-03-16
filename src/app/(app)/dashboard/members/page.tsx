@@ -9,6 +9,8 @@ import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import type { UserRole } from '@/lib/supabase/types'
 import { UserPlus, Users, Search, X, Mail, Copy, Check, Filter, Calendar, UserMinus } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
+import { sleep } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Member {
@@ -25,13 +27,6 @@ interface Member {
 
 type FilterRole = 'all' | UserRole
 type SortBy = 'newest' | 'oldest' | 'name'
-
-// ── Toast hook ────────────────────────────────────────────────────────────────
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }, [])
-  return { toast, show }
-}
 
 // ── Invite Modal ──────────────────────────────────────────────────────────────
 function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (email: string) => void }) {

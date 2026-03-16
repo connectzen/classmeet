@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
-import type { UserRole } from '@/lib/supabase/types'
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
@@ -13,15 +12,13 @@ import {
   Clock, Sparkles, LogIn, GraduationCap, PenLine, CalendarDays, Zap,
   Radio, Circle, MessageSquare,
 } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
+import { isCreatorRole } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Stat   { label: string; value: string; icon: React.ElementType; color: string; bg: string }
 interface Action { label: string; desc: string; icon: React.ElementType; color: string; href?: string; comingSoon?: boolean }
 interface StudentSession { id: string; title: string; status: 'live' | 'scheduled' | 'ended'; room_name: string; teacher_id: string; scheduled_at: string | null; started_at: string | null; teacher_name?: string }
-
-// ─── Role helpers ─────────────────────────────────────────────────────────────
-const isCreator = (role: UserRole | undefined) =>
-  role === 'teacher' || role === 'member' || role === 'admin'
 
 // ─── Stats per role ───────────────────────────────────────────────────────────
 const TEACHER_STATS: Stat[] = [
@@ -55,28 +52,19 @@ const STUDENT_ACTIONS: Action[] = [
   { label: 'My Schedule',      desc: 'View upcoming sessions',     icon: CalendarDays, color: 'var(--info-400)',    href: '/dashboard/rooms'    },
 ]
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), 3000)
-  }, [])
-  return { toast, show }
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router  = useRouter()
   const user    = useAppStore((s) => s.user)
   const { toast, show: showToast } = useToast()
+  const sessCleanupRef = useRef<(() => void) | null>(null)
   const [studentCount, setStudentCount] = useState(0)
   const [courseCount, setCourseCount] = useState(0)
   const [sessionCount, setSessionCount] = useState(0)
   const [teachers, setTeachers] = useState<{ id: string; full_name: string | null; avatar_url: string | null; subjects: string[] }[]>([])
   const [studentSessions, setStudentSessions] = useState<StudentSession[]>([])
 
-  const creator = isCreator(user?.role)
+  const creator = isCreatorRole(user?.role)
 
   // Process pending teacher-student enrollment + load counts + real-time subscription
   useEffect(() => {
@@ -90,21 +78,17 @@ export default function DashboardPage() {
     if (pendingTeacher && pendingTeacher !== user.id) {
       localStorage.removeItem('classmeet_teacher_id')
       localStorage.removeItem('classmeet_referrer')
-      // Add teacher-student link (allows multiple teachers per student)
       supabase.from('teacher_students')
         .upsert({ teacher_id: pendingTeacher, student_id: user.id }, { onConflict: 'teacher_id,student_id' })
         .then(() => {
-          // Also update legacy referral tracking
           supabase.from('profiles').update({ referred_by: pendingTeacher }).eq('id', user.id)
           supabase.from('referrals')
             .upsert({ referrer_id: pendingTeacher, referred_id: user.id }, { onConflict: 'referred_id' })
-          // Re-fetch student count
           supabase.from('teacher_students').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
             .then(({ count }) => { if (count !== null) setStudentCount(count) })
         })
     } else if (pendingRef && pendingRef !== user.id) {
       localStorage.removeItem('classmeet_referrer')
-      // Fallback: only referral without teacher link
       supabase.from('profiles').update({ referred_by: pendingRef }).eq('id', user.id)
       supabase.from('referrals')
         .upsert({ referrer_id: pendingRef, referred_id: user.id }, { onConflict: 'referred_id' })
@@ -119,7 +103,7 @@ export default function DashboardPage() {
       .then(({ count }) => { if (count !== null) setSessionCount(count) })
 
     // ── Load student's teachers + sessions ──
-    if (!isCreator(user.role)) {
+    if (!isCreatorRole(user.role)) {
       supabase
         .from('teacher_students')
         .select('teacher_id')
@@ -135,7 +119,6 @@ export default function DashboardPage() {
           }
         })
 
-      // Load live + scheduled sessions targeted at this student
       const loadStudentSessions = async () => {
         const { data: directTargets } = await supabase
           .from('session_targets')
@@ -171,7 +154,6 @@ export default function DashboardPage() {
             .order('created_at', { ascending: false })
 
           if (sessions && sessions.length > 0) {
-            // Fetch teacher names
             const tIds = [...new Set(sessions.map(s => s.teacher_id))]
             const { data: tProfiles } = await supabase
               .from('profiles')
@@ -188,17 +170,13 @@ export default function DashboardPage() {
       }
       loadStudentSessions()
 
-      // Real-time: reload sessions when they change
       const sessChannel = supabase
         .channel('dashboard-student-sessions')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => loadStudentSessions())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, () => loadStudentSessions())
         .subscribe()
 
-      // Return cleanup that also removes this channel
-      const origCleanup = () => { supabase.removeChannel(sessChannel) }
-      // We'll handle this below in the main cleanup
-      ;(window as unknown as Record<string, () => void>).__dashSessCleanup = origCleanup
+      sessCleanupRef.current = () => { supabase.removeChannel(sessChannel) }
     }
 
     // ── Real-time subscription: update counts + teacher list instantly ──
@@ -219,7 +197,6 @@ export default function DashboardPage() {
         table: 'teacher_students',
         filter: `student_id=eq.${user.id}`,
       }, async () => {
-        // Re-fetch teachers for student
         const { data: enrollments } = await supabase
           .from('teacher_students')
           .select('teacher_id')
@@ -248,32 +225,32 @@ export default function DashboardPage() {
 
     return () => {
       supabase.removeChannel(channel)
-      const sessCleanup = (window as unknown as Record<string, () => void>).__dashSessCleanup
-      if (sessCleanup) { sessCleanup(); delete (window as unknown as Record<string, () => void>).__dashSessCleanup }
+      sessCleanupRef.current?.()
+      sessCleanupRef.current = null
     }
   }, [user?.id])
 
-  const teacherStats = TEACHER_STATS.map(s => {
+  const teacherStats = useMemo(() => TEACHER_STATS.map(s => {
     if (s.label === 'Students') return { ...s, value: String(studentCount) }
     if (s.label === 'Courses') return { ...s, value: String(courseCount) }
     if (s.label === 'Live Sessions') return { ...s, value: String(sessionCount) }
     return s
-  })
+  }), [studentCount, courseCount, sessionCount])
 
-  const studentStats = STUDENT_STATS.map(s => {
+  const studentStats = useMemo(() => STUDENT_STATS.map(s => {
     if (s.label === 'Sessions Joined') return { ...s, value: String(studentSessions.length) }
     return s
-  })
+  }), [studentSessions.length])
 
   const stats   = creator ? teacherStats  : studentStats
   const actions = creator ? TEACHER_ACTIONS : STUDENT_ACTIONS
 
-  const greeting = (() => {
+  const greeting = useMemo(() => {
     const h = new Date().getHours()
     if (h < 12) return 'Good morning'
     if (h < 17) return 'Good afternoon'
     return 'Good evening'
-  })()
+  }, [])
 
   const bannerSubtitle = creator
     ? 'Manage your rooms, courses, and students all in one place.'
@@ -288,11 +265,7 @@ export default function DashboardPage() {
   }
 
   function handleNewSession() {
-    if (creator) {
-      router.push('/dashboard/rooms')
-    } else {
-      router.push('/dashboard/rooms')
-    }
+    router.push('/dashboard/rooms')
   }
 
   return (
@@ -480,4 +453,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-

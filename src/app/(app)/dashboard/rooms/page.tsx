@@ -8,6 +8,8 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import { Video, Plus, LogIn, Users, Clock, X, Wifi, WifiOff, CalendarClock, Timer, Check, Search, FolderOpen, Trash2, StopCircle, Pencil, BookOpen, HelpCircle } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
+import { useCountdown } from '@/hooks/useCountdown'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface SessionRow {
@@ -28,39 +30,6 @@ interface GroupOption { id: string; name: string; memberCount: number }
 interface StudentOption { id: string; name: string; avatarUrl: string | null }
 interface QuizOption { id: string; title: string; questionCount: number }
 interface CourseOption { id: string; title: string; subject: string }
-
-// ── Toast hook ────────────────────────────────────────────────────────────────
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), 3500)
-  }, [])
-  return { toast, show }
-}
-
-// ── Countdown hook ────────────────────────────────────────────────────────────
-function useCountdown(target: string | null) {
-  const [secondsLeft, setSecondsLeft] = useState<number>(0)
-
-  useEffect(() => {
-    if (!target) return
-    const targetDate = new Date(target)
-    function tick() {
-      const diff = Math.max(0, Math.floor((targetDate.getTime() - Date.now()) / 1000))
-      setSecondsLeft(diff)
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [target])
-
-  if (!target) return null
-  const h = Math.floor(secondsLeft / 3600)
-  const m = Math.floor((secondsLeft % 3600) / 60)
-  const s = secondsLeft % 60
-  return { secondsLeft, h, m, s }
-}
 
 // ── Generate unique room name ─────────────────────────────────────────────────
 function generateRoomName(title: string): string {

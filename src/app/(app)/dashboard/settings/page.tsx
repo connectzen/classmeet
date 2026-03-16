@@ -1,19 +1,14 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useAppStore } from '@/store/app-store'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import { Save, User, Bell, Shield, Trash2, Camera } from 'lucide-react'
-
-// ── Toast hook ────────────────────────────────────────────────────────────────
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3200) }, [])
-  return { toast, show }
-}
+import { useToast } from '@/hooks/useToast'
+import { sleep } from '@/lib/utils'
 
 // ── Section heading ───────────────────────────────────────────────────────────
 function SectionHeading({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {
@@ -42,7 +37,7 @@ export default function SettingsPage() {
     e.preventDefault()
     if (!fullName.trim()) return
     setLoading(true)
-    await new Promise(r => setTimeout(r, 700))
+    await sleep(700)
     updateUser({ fullName: fullName.trim() })
     setLoading(false)
     showToast('✅ Profile updated successfully')

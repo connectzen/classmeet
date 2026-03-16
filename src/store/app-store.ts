@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { UserRole } from '@/lib/supabase/types'
 
-type UIPanelType = 'none' | 'notifications' | 'settings' | 'profile' | 'search'
 
 interface AppUser {
   id: string
@@ -20,8 +19,6 @@ interface AppState {
   updateUser: (updates: Partial<AppUser>) => void
 
   // UI
-  activePanel: UIPanelType
-  setActivePanel: (panel: UIPanelType) => void
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
@@ -40,9 +37,6 @@ export const useAppStore = create<AppState>()(
         const { user } = get()
         if (user) set({ user: { ...user, ...updates } })
       },
-
-      activePanel: 'none',
-      setActivePanel: (panel) => set({ activePanel: panel }),
 
       sidebarOpen: false,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),

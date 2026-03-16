@@ -9,6 +9,7 @@ import Avatar from '@/components/ui/Avatar'
 import {
   MessageSquare, Send, Plus, Search, ArrowLeft, X, Check, Users, User,
 } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ConversationItem {
@@ -54,12 +55,6 @@ function timeAgo(dateStr: string) {
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function useToast() {
-  const [toast, setToast] = useState<string | null>(null)
-  const show = useCallback((msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }, [])
-  return { toast, show }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -127,61 +122,83 @@ export default function MessagesPage() {
       .select('conversation_id, user_id')
       .in('conversation_id', convIds)
 
-    // Get last message for each conversation
-    const items: ConversationItem[] = []
-    for (const conv of convs) {
+    // Batch: fetch the most recent messages for ALL conversations in one query
+    const { data: recentMsgs } = await supabase
+      .from('messages')
+      .select('id, conversation_id, content, created_at, sender_id')
+      .in('conversation_id', convIds)
+      .order('created_at', { ascending: false })
+      .limit(500)
+
+    // Build last-message and unread maps — O(messages) in JS, no extra DB round-trips
+    const lastMsgMap = new Map<string, { content: string; created_at: string; sender_id: string }>()
+    const unreadMap = new Map<string, number>()
+
+    for (const msg of recentMsgs ?? []) {
+      if (!lastMsgMap.has(msg.conversation_id)) {
+        lastMsgMap.set(msg.conversation_id, msg)
+      }
+      const lastRead = readMap.get(msg.conversation_id) || ''
+      if (msg.sender_id !== user.id && (!lastRead || msg.created_at > lastRead)) {
+        unreadMap.set(msg.conversation_id, (unreadMap.get(msg.conversation_id) ?? 0) + 1)
+      }
+    }
+
+    // Batch: fetch all direct-conversation partner profiles in one query
+    const directPartnerIds = convs
+      .filter(c => c.type === 'direct')
+      .flatMap(c => {
+        const parts = allParticipants?.filter(p => p.conversation_id === c.id) ?? []
+        const other = parts.find(p => p.user_id !== user.id)
+        return other ? [other.user_id] : []
+      })
+    const uncachedIds = [...new Set(directPartnerIds)].filter(
+      id => !profileCacheRef.current.has(id)
+    )
+    if (uncachedIds.length > 0) {
+      const { data: partnerProfiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', uncachedIds)
+      for (const p of partnerProfiles ?? []) {
+        profileCacheRef.current.set(p.id, { name: p.full_name || 'Unknown', avatar: p.avatar_url })
+      }
+    }
+
+    // Build final conversation items — pure JS, no more DB queries
+    const items: ConversationItem[] = convs.map(conv => {
       const participants = allParticipants?.filter(p => p.conversation_id === conv.id) || []
       const participantIds = participants.map(p => p.user_id)
 
-      // Get last message
-      const { data: lastMsgs } = await supabase
-        .from('messages')
-        .select('content, created_at, sender_id')
-        .eq('conversation_id', conv.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-
-      const lastMsg = lastMsgs?.[0]
-
-      // Count unread messages
-      const lastRead = readMap.get(conv.id) || conv.created_at
-      const { count: unreadCount } = await supabase
-        .from('messages')
-        .select('id', { count: 'exact', head: true })
-        .eq('conversation_id', conv.id)
-        .neq('sender_id', user.id)
-        .gt('created_at', lastRead)
-
-      // Determine display name and avatar
       let displayName = conv.name || 'Group Chat'
       let avatarUrl: string | null = null
 
       if (conv.type === 'direct') {
         const otherId = participantIds.find(id => id !== user.id)
         if (otherId) {
-          const profile = await getProfile(otherId)
-          displayName = profile.name
-          avatarUrl = profile.avatar
+          const profile = profileCacheRef.current.get(otherId)
+          if (profile) { displayName = profile.name; avatarUrl = profile.avatar }
         }
       }
 
-      items.push({
+      const lastMsg = lastMsgMap.get(conv.id)
+      return {
         id: conv.id,
         type: conv.type as 'direct' | 'group',
         name: displayName,
         avatarUrl,
-        lastMessage: lastMsg ? lastMsg.content : '',
+        lastMessage: lastMsg?.content || '',
         lastMessageAt: lastMsg?.created_at || conv.created_at,
-        unread: unreadCount || 0,
+        unread: unreadMap.get(conv.id) ?? 0,
         participantIds,
-      })
-    }
+      }
+    })
 
     // Sort by last message time
     items.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
     setConversations(items)
     setLoadingConvs(false)
-  }, [user?.id, getProfile])
+  }, [user?.id])
 
   // ── Load messages for active conversation ──
   const loadMessages = useCallback(async (convId: string) => {

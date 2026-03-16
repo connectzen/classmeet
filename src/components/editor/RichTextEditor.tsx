@@ -190,6 +190,35 @@ const FontSize = TextStyle.extend({
   },
 })
 
+// ── Toolbar primitives (module-scope prevents re-creation on every render) ────
+function ToolBtn({ active, onClick, children, title, disabled }: {
+  active?: boolean; onClick: () => void; children: React.ReactNode; title: string; disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: 'none', borderRadius: 'var(--radius-sm)', cursor: disabled ? 'not-allowed' : 'pointer',
+        background: active ? 'var(--primary-500)' : 'transparent',
+        color: active ? '#fff' : disabled ? 'var(--text-disabled)' : 'var(--text-secondary)',
+        transition: 'all 0.15s', opacity: disabled ? 0.5 : 1,
+      }}
+      onMouseEnter={e => { if (!active && !disabled) (e.target as HTMLElement).style.background = 'var(--bg-hover)' }}
+      onMouseLeave={e => { if (!active && !disabled) (e.target as HTMLElement).style.background = 'transparent' }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Sep() {
+  return <div style={{ width: 1, background: 'var(--border-default)', margin: '4px 3px', flexShrink: 0 }} />
+}
+
 export default function RichTextEditor({ content, onChange }: RichTextEditorProps) {
   const [showColors, setShowColors] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -302,34 +331,12 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
     }
   }
 
-  const ToolBtn = ({ active, onClick, children, title, disabled }: { active?: boolean; onClick: () => void; children: React.ReactNode; title: string; disabled?: boolean }) => (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        border: 'none', borderRadius: 'var(--radius-sm)', cursor: disabled ? 'not-allowed' : 'pointer',
-        background: active ? 'var(--primary-500)' : 'transparent',
-        color: active ? '#fff' : disabled ? 'var(--text-disabled)' : 'var(--text-secondary)',
-        transition: 'all 0.15s', opacity: disabled ? 0.5 : 1,
-      }}
-      onMouseEnter={e => { if (!active && !disabled) (e.target as HTMLElement).style.background = 'var(--bg-hover)' }}
-      onMouseLeave={e => { if (!active && !disabled) (e.target as HTMLElement).style.background = 'transparent' }}
-    >
-      {children}
-    </button>
-  )
-
   const selectStyle: React.CSSProperties = {
     height: 28, padding: '0 4px', fontSize: '0.7rem', fontWeight: 500,
     background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', cursor: 'pointer',
     maxWidth: '120px',
   }
-
-  const Sep = () => <div style={{ width: 1, background: 'var(--border-default)', margin: '4px 3px', flexShrink: 0 }} />
 
   return (
     <div style={{ border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--bg-primary)' }}>

@@ -82,6 +82,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const [strokeColor, setStrokeColor] = useState('#ffffff')
   const [strokeWidth, setStrokeWidth] = useState(3)
   const [toolbarVisible, setToolbarVisible] = useState(true)
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const [textOptions, setTextOptions] = useState<TextOptions>({
     fontSize: 24,
     fontFamily: 'Courier New, monospace',
@@ -291,6 +293,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     undoStack.current.push(JSON.stringify(canvas.toObject(['id'])))
     if (undoStack.current.length > 50) undoStack.current.shift()
     redoStack.current = []
+    setCanUndo(undoStack.current.length > 0)
+    setCanRedo(false)
   }, [])
 
   // ── Initialize fabric canvas (retina handled by fabric's enableRetinaScaling) ──
@@ -980,6 +984,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.loadFromJSON(JSON.parse(prev)).then(() => {
       canvas.renderAll()
       isUndoRedoRef.current = false
+      setCanUndo(undoStack.current.length > 0)
+      setCanRedo(redoStack.current.length > 0)
       onCanvasEventRef.current?.({ type: 'snapshot', data: prev })
     })
   }, [])
@@ -993,6 +999,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.loadFromJSON(JSON.parse(next)).then(() => {
       canvas.renderAll()
       isUndoRedoRef.current = false
+      setCanUndo(undoStack.current.length > 0)
+      setCanRedo(redoStack.current.length > 0)
       onCanvasEventRef.current?.({ type: 'snapshot', data: next })
     })
   }, [])
@@ -1069,8 +1077,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           onUndo={handleUndo}
           onRedo={handleRedo}
           onClear={handleClear}
-          canUndo={undoStack.current.length > 0}
-          canRedo={redoStack.current.length > 0}
+          canUndo={canUndo}
+          canRedo={canRedo}
           toolbarVisible={toolbarVisible}
           onToggleToolbar={() => setToolbarVisible(v => !v)}
           hasSelection={hasSelection}

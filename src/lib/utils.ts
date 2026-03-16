@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import type { UserRole } from '@/lib/supabase/types'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -46,5 +47,9 @@ export function formatRole(role: string): string {
 
 export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export function isCreatorRole(role: UserRole | null | undefined): boolean {
+  return role === 'teacher' || role === 'member' || role === 'admin'
 }
 
