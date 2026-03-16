@@ -1003,21 +1003,26 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
   // Find which topic this lesson belongs to
   const currentTopic = course.topics.find(t => t.lessons.some(l => l.id === lesson?.id))
 
-  // Teacher: broadcast scroll position on scroll (throttled to reduce traffic)
+  // Teacher: broadcast scroll position on scroll (throttled, sends ratio 0-1)
   const handleScroll = useCallback(() => {
     if (!isHost || !contentRef.current) return
-    const st = contentRef.current.scrollTop
+    const el = contentRef.current
+    const maxScroll = el.scrollHeight - el.clientHeight
+    const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0
     if (scrollThrottleRef.current) clearTimeout(scrollThrottleRef.current)
     scrollThrottleRef.current = setTimeout(() => {
-      onScroll(st)
+      onScroll(ratio)
     }, 150)
   }, [isHost, onScroll])
 
-  // Student: sync scroll position from teacher using rAF to avoid jank
+  // Student: sync scroll position from teacher ratio using rAF
   useEffect(() => {
     if (isHost || !contentRef.current) return
     requestAnimationFrame(() => {
-      if (contentRef.current) contentRef.current.scrollTop = scrollTop
+      if (contentRef.current) {
+        const maxScroll = contentRef.current.scrollHeight - contentRef.current.clientHeight
+        contentRef.current.scrollTop = scrollTop * maxScroll
+      }
     })
   }, [isHost, scrollTop])
 
