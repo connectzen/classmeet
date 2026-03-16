@@ -347,6 +347,12 @@ a:hover { color: var(--primary-300); }
 .input-icon-right:hover { color: var(--text-secondary); }
 
 .input-helper { font-size: 0.8rem; color: var(--text-muted); }
+
+/* Force dark background on all native <select> option dropdowns */
+select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
 .input-error-msg { font-size: 0.8rem; color: var(--error-400); display: flex; align-items: center; gap: 4px; }
 
 /* ============================================================

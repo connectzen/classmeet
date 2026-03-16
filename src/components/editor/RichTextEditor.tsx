@@ -34,10 +34,20 @@ const FONT_SIZES = [
 
 const FONT_FAMILIES = [
   { label: 'Default', value: '' },
-  { label: 'Sans-Serif', value: 'Inter, system-ui, sans-serif' },
-  { label: 'Serif', value: 'Georgia, Times New Roman, serif' },
-  { label: 'Mono', value: 'JetBrains Mono, Fira Code, monospace' },
-  { label: 'Cursive', value: 'Segoe Script, cursive' },
+  { label: 'Courier New', value: 'Courier New, monospace' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Calibri', value: 'Calibri, sans-serif' },
+  { label: 'Segoe UI', value: 'Segoe UI, sans-serif' },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+  { label: 'Trebuchet', value: 'Trebuchet MS, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Times New Roman', value: 'Times New Roman, serif' },
+  { label: 'Palatino', value: 'Palatino Linotype, Palatino, serif' },
+  { label: 'Cambria', value: 'Cambria, serif' },
+  { label: 'Impact', value: 'Impact, Haettenschweiler, sans-serif' },
+  { label: 'Comic Sans', value: 'Comic Sans MS, cursive' },
+  { label: 'Segoe Print', value: 'Segoe Print, cursive' },
+  { label: 'Consolas', value: 'Consolas, Lucida Console, monospace' },
 ]
 
 const ALIGN_MAP: Record<string, string> = {
@@ -316,7 +326,7 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
     height: 28, padding: '0 4px', fontSize: '0.7rem', fontWeight: 500,
     background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
     borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', cursor: 'pointer',
-    maxWidth: '90px',
+    maxWidth: '120px',
   }
 
   const Sep = () => <div style={{ width: 1, background: 'var(--border-default)', margin: '4px 3px', flexShrink: 0 }} />
