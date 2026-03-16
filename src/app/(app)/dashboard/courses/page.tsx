@@ -245,6 +245,8 @@ export default function CoursesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState<CourseLocal | null>(null)
+  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set())
+  const [expandedLessons, setExpandedLessons] = useState<Set<string>>(new Set())
 
   // Targeting state
   const [groups, setGroups] = useState<GroupOption[]>([])
@@ -609,42 +611,80 @@ export default function CoursesPage() {
           {editing.description && <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>{editing.description}</p>}
         </div>
 
-        {/* Topics & Lessons read-only */}
+        {/* Topics & Lessons read-only (collapsible) */}
         {editing.topics.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {editing.topics.map(topic => (
+            {editing.topics.map(topic => {
+              const topicOpen = expandedTopics.has(topic.id)
+              return (
               <div key={topic.id} className="card" style={{ overflow: 'hidden' }}>
-                <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* Topic header — clickable toggle */}
+                <button
+                  type="button"
+                  onClick={() => setExpandedTopics(prev => {
+                    const n = new Set(prev)
+                    if (n.has(topic.id)) n.delete(topic.id); else n.add(topic.id)
+                    return n
+                  })}
+                  style={{
+                    width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '8px',
+                    borderBottom: topicOpen ? '1px solid var(--border-subtle)' : 'none',
+                    textAlign: 'left',
+                  }}
+                >
                   <FolderOpen size={16} color="var(--primary-400)" />
-                  <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{topic.title || 'Untitled Topic'}</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{topic.lessons.length} lesson{topic.lessons.length !== 1 ? 's' : ''}</span>
-                </div>
-                <div style={{ padding: '8px 16px 16px' }}>
-                  {topic.lessons.map(lesson => (
-                    <div key={lesson.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', marginBottom: '8px', background: 'var(--bg-secondary)' }}>
-                      <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {lesson.type === 'video' ? <Video size={14} color="#8b5cf6" /> : <FileText size={14} color="#6366f1" />}
-                        <span style={{ fontWeight: 500, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{lesson.title || 'Untitled Lesson'}</span>
-                      </div>
-                      <div style={{ padding: '0 14px 14px' }}>
-                        {lesson.type === 'video' && lesson.videoUrl ? (
-                          <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#000' }}>
-                            <video src={lesson.videoUrl} controls style={{ width: '100%', maxHeight: '400px' }} />
+                  <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)', flex: 1 }}>{topic.title || 'Untitled Topic'}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{topic.lessons.length} lesson{topic.lessons.length !== 1 ? 's' : ''}</span>
+                  <ChevronRight size={15} color="var(--text-muted)" style={{ transition: 'transform 0.2s', transform: topicOpen ? 'rotate(90deg)' : 'rotate(0deg)', marginLeft: '4px' }} />
+                </button>
+                {topicOpen && (
+                  <div style={{ padding: '8px 16px 16px' }}>
+                    {topic.lessons.map(lesson => {
+                      const lessonOpen = expandedLessons.has(lesson.id)
+                      return (
+                      <div key={lesson.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', marginBottom: '8px', background: 'var(--bg-secondary)' }}>
+                        {/* Lesson header — clickable toggle */}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedLessons(prev => {
+                            const n = new Set(prev)
+                            if (n.has(lesson.id)) n.delete(lesson.id); else n.add(lesson.id)
+                            return n
+                          })}
+                          style={{
+                            width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                            padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '8px',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {lesson.type === 'video' ? <Video size={14} color="#8b5cf6" /> : <FileText size={14} color="#6366f1" />}
+                          <span style={{ fontWeight: 500, fontSize: '0.88rem', color: 'var(--text-primary)', flex: 1 }}>{lesson.title || 'Untitled Lesson'}</span>
+                          <ChevronRight size={13} color="var(--text-muted)" style={{ transition: 'transform 0.2s', transform: lessonOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
+                        </button>
+                        {lessonOpen && (
+                          <div style={{ padding: '0 14px 14px' }}>
+                            {lesson.type === 'video' && lesson.videoUrl ? (
+                              <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#000' }}>
+                                <video src={lesson.videoUrl} controls style={{ width: '100%', maxHeight: '400px' }} />
+                              </div>
+                            ) : lesson.content ? (
+                              <div className="prose" style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: lesson.content }} />
+                            ) : (
+                              <p style={{ fontSize: '0.8rem', color: 'var(--text-disabled)', fontStyle: 'italic' }}>No content</p>
+                            )}
                           </div>
-                        ) : lesson.content ? (
-                          <div className="prose" style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: lesson.content }} />
-                        ) : (
-                          <p style={{ fontSize: '0.8rem', color: 'var(--text-disabled)', fontStyle: 'italic' }}>No content</p>
                         )}
                       </div>
-                    </div>
-                  ))}
-                  {topic.lessons.length === 0 && (
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '8px 0' }}>No lessons in this topic</p>
-                  )}
-                </div>
+                    )})}
+                    {topic.lessons.length === 0 && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '8px 0' }}>No lessons in this topic</p>
+                    )}
+                  </div>
+                )}
               </div>
-            ))}
+            )})}
+
           </div>
         ) : (
           <div className="card" style={{ padding: '40px', textAlign: 'center' }}>

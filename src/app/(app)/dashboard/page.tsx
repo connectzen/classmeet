@@ -425,14 +425,14 @@ export default function DashboardPage() {
           return (
             <div
               key={action.label}
-              className="card card-interactive stagger-item"
+              className="card card-interactive dash-action-card stagger-item"
               style={{ animationDelay: `${(i + 4) * 60}ms`, padding: '20px', cursor: 'pointer' }}
               role="button"
               tabIndex={0}
               onClick={() => handleAction(action)}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleAction(action)}
             >
-              <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-lg)', background: `color-mix(in srgb, ${action.color} 15%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+              <div className="dash-action-icon" style={{ width: 44, height: 44, borderRadius: 'var(--radius-lg)', background: `color-mix(in srgb, ${action.color} 15%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
                 <Icon size={20} color={action.color} />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
@@ -443,7 +443,9 @@ export default function DashboardPage() {
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>{action.desc}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', color: action.color, fontWeight: 500 }}>
-                {action.comingSoon ? <>Learn more <Zap size={11} /></> : <>Get started <ArrowRight size={12} /></>}
+                {action.comingSoon
+                  ? <>Learn more <span className="dash-action-arrow"><Zap size={11} /></span></>
+                  : <>Get started <span className="dash-action-arrow"><ArrowRight size={12} /></span></>}
               </div>
             </div>
           )

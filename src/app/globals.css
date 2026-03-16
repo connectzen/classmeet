@@ -112,7 +112,7 @@ html { color-scheme: dark; }
 body {
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: var(--font-geist-sans, system-ui, sans-serif);
+  font-family: 'Courier New', Courier, monospace;
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -386,17 +386,41 @@ select option {
 
 .card-interactive {
   cursor: pointer;
-  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base), background var(--transition-base);
 }
 .card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
   border-color: var(--border-primary);
 }
+.card-interactive:active {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+}
 .card-interactive.selected {
   border-color: var(--primary-500);
   box-shadow: 0 0 0 3px rgba(99,102,241,0.2), var(--shadow-md);
   background: rgba(99,102,241,0.06);
+}
+
+/* Quick-action card icon + arrow micro-animations */
+.dash-action-card .dash-action-icon {
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+}
+.dash-action-card:hover .dash-action-icon {
+  transform: scale(1.18) rotate(-4deg);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+.dash-action-card .dash-action-arrow {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+}
+.dash-action-card:hover .dash-action-arrow {
+  transform: translateX(4px);
+}
+.dash-action-card:active .dash-action-icon {
+  transform: scale(1.05);
 }
 
 /* ============================================================
