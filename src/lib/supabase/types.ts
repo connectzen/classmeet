@@ -108,6 +108,38 @@ export type CourseTarget = {
   created_at: string
 }
 
+export type Quiz = {
+  id: string
+  teacher_id: string
+  title: string
+  description: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type QuizQuestion = {
+  id: string
+  quiz_id: string
+  question_text: string
+  options: string[]
+  correct_index: number
+  sort_order: number
+  time_limit: number
+  created_at: string
+}
+
+export type SessionQuiz = {
+  id: string
+  session_id: string
+  quiz_id: string
+}
+
+export type SessionCourse = {
+  id: string
+  session_id: string
+  course_id: string
+}
+
 export type Conversation = {
   id: string
   type: 'direct' | 'group'
@@ -201,6 +233,30 @@ export type Database = {
         Row: CourseTarget
         Insert: Omit<CourseTarget, 'id' | 'created_at'>
         Update: Partial<Omit<CourseTarget, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      quizzes: {
+        Row: Quiz
+        Insert: Omit<Quiz, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Quiz, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      quiz_questions: {
+        Row: QuizQuestion
+        Insert: Omit<QuizQuestion, 'id' | 'created_at'>
+        Update: Partial<Omit<QuizQuestion, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      session_quizzes: {
+        Row: SessionQuiz
+        Insert: Omit<SessionQuiz, 'id'>
+        Update: Partial<Omit<SessionQuiz, 'id'>>
+        Relationships: []
+      }
+      session_courses: {
+        Row: SessionCourse
+        Insert: Omit<SessionCourse, 'id'>
+        Update: Partial<Omit<SessionCourse, 'id'>>
         Relationships: []
       }
       conversations: {

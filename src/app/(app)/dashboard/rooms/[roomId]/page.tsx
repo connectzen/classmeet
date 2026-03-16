@@ -21,9 +21,12 @@ import type { Participant as LKParticipant } from 'livekit-client'
 import {
   Mic, MicOff, Video, VideoOff, Monitor, Hand, Settings,
   LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
-  MonitorOff, Volume2, PenTool,
+  MonitorOff, Volume2, PenTool, ChevronDown, BookOpen, HelpCircle,
+  ChevronUp, Check, Clock, ArrowLeft, ArrowRight,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
+import { createClient } from '@/lib/supabase/client'
+import type { Quiz, QuizQuestion as DBQuizQuestion, Course, Topic, Lesson } from '@/lib/supabase/types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getInitials(name: string) {
@@ -39,8 +42,30 @@ function formatTime(ts: number) {
 const HAND_TOPIC = 'hand-raise'
 const PROMOTE_TOPIC = 'promote'
 const BLACKBOARD_TOPIC = 'blackboard'
+const PRESENT_TOPIC = 'present'
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+
+// ── Presentation types ───────────────────────────────────────────────────────
+type PresentMode = 'none' | 'blackboard' | 'course' | 'quiz'
+
+interface LinkedCourse extends Course {
+  topics: (Topic & { lessons: Lesson[] })[]
+}
+
+interface LinkedQuiz extends Quiz {
+  questions: DBQuizQuestion[]
+}
+
+interface PresentEvent {
+  type: 'start-course' | 'start-quiz' | 'stop' | 'course-navigate' | 'quiz-advance' | 'quiz-reveal' | 'quiz-answer'
+  courseId?: string
+  quizId?: string
+  lessonIndex?: number
+  questionIndex?: number
+  identity?: string
+  answerIndex?: number
+}
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function RoomPage() {
@@ -140,6 +165,16 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [blackboardEvent, setBlackboardEvent] = useState<BlackboardEvent | null>(null)
   const blackboardRef = useRef<BlackboardHandle>(null)
   const prevParticipantCount = useRef(0)
+  // Presentation state
+  const [presentMode, setPresentMode] = useState<PresentMode>('none')
+  const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([])
+  const [linkedQuizzes, setLinkedQuizzes] = useState<LinkedQuiz[]>([])
+  const [activeCourseId, setActiveCourseId] = useState<string | null>(null)
+  const [activeQuizId, setActiveQuizId] = useState<string | null>(null)
+  const [currentLessonIndex, setCurrentLessonIndex] = useState(0)
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
+  const [quizRevealed, setQuizRevealed] = useState(false)
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({})
   // Mobile detection – null means "not yet determined"
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
 
@@ -162,6 +197,83 @@ function RoomInner({ roomName }: { roomName: string }) {
   }, [isMobile])
 
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'member'
+
+  // Load linked courses/quizzes for this session
+  useEffect(() => {
+    const load = async () => {
+      const supabase = createClient()
+      // Find session by room_name
+      const { data: session } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('room_name', roomName)
+        .single()
+      if (!session) return
+
+      // Load linked courses with topics + lessons
+      const { data: sessionCourses } = await supabase
+        .from('session_courses')
+        .select('course_id')
+        .eq('session_id', session.id)
+      if (sessionCourses && sessionCourses.length > 0) {
+        const courseIds = sessionCourses.map(sc => sc.course_id)
+        const { data: courses } = await supabase
+          .from('courses')
+          .select('*')
+          .in('id', courseIds)
+        if (courses) {
+          const coursesWithContent: LinkedCourse[] = await Promise.all(
+            courses.map(async (course) => {
+              const { data: topics } = await supabase
+                .from('topics')
+                .select('*')
+                .eq('course_id', course.id)
+                .order('sort_order')
+              const topicsWithLessons = await Promise.all(
+                (topics || []).map(async (topic) => {
+                  const { data: lessons } = await supabase
+                    .from('lessons')
+                    .select('*')
+                    .eq('topic_id', topic.id)
+                    .order('sort_order')
+                  return { ...topic, lessons: lessons || [] }
+                })
+              )
+              return { ...course, topics: topicsWithLessons }
+            })
+          )
+          setLinkedCourses(coursesWithContent)
+        }
+      }
+
+      // Load linked quizzes with questions
+      const { data: sessionQuizzes } = await supabase
+        .from('session_quizzes')
+        .select('quiz_id')
+        .eq('session_id', session.id)
+      if (sessionQuizzes && sessionQuizzes.length > 0) {
+        const quizIds = sessionQuizzes.map(sq => sq.quiz_id)
+        const { data: quizzes } = await supabase
+          .from('quizzes')
+          .select('*')
+          .in('id', quizIds)
+        if (quizzes) {
+          const quizzesWithQuestions: LinkedQuiz[] = await Promise.all(
+            quizzes.map(async (quiz) => {
+              const { data: questions } = await supabase
+                .from('quiz_questions')
+                .select('*')
+                .eq('quiz_id', quiz.id)
+                .order('sort_order')
+              return { ...quiz, questions: questions || [] }
+            })
+          )
+          setLinkedQuizzes(quizzesWithQuestions)
+        }
+      }
+    }
+    load()
+  }, [roomName])
 
   // Hand raise data channel
   const { send: sendHandData } = useDataChannel(HAND_TOPIC, (msg) => {
@@ -230,6 +342,8 @@ function RoomInner({ roomName }: { roomName: string }) {
   const toggleBlackboard = useCallback(() => {
     const next = !blackboardActive
     setBlackboardActive(next)
+    if (next) setPresentMode('blackboard')
+    else if (presentMode === 'blackboard') setPresentMode('none')
     const event: BlackboardEvent = next ? { type: 'activate' } : { type: 'deactivate' }
     const payload = encoder.encode(JSON.stringify(event))
     sendBlackboardData(payload, { reliable: true })
@@ -243,7 +357,119 @@ function RoomInner({ roomName }: { roomName: string }) {
         }
       }, 200)
     }
-  }, [blackboardActive, sendBlackboardData])
+  }, [blackboardActive, presentMode, sendBlackboardData])
+
+  // Presentation data channel — syncs course/quiz presentation state
+  const { send: sendPresentData } = useDataChannel(PRESENT_TOPIC, (msg) => {
+    const event = JSON.parse(decoder.decode(msg.payload)) as PresentEvent
+    if (event.type === 'start-course') {
+      setPresentMode('course')
+      setActiveCourseId(event.courseId || null)
+      setCurrentLessonIndex(0)
+      setBlackboardActive(false)
+    } else if (event.type === 'start-quiz') {
+      setPresentMode('quiz')
+      setActiveQuizId(event.quizId || null)
+      setCurrentQuestionIndex(0)
+      setQuizRevealed(false)
+      setQuizAnswers({})
+      setBlackboardActive(false)
+    } else if (event.type === 'stop') {
+      setPresentMode('none')
+      setActiveCourseId(null)
+      setActiveQuizId(null)
+    } else if (event.type === 'course-navigate') {
+      setCurrentLessonIndex(event.lessonIndex ?? 0)
+    } else if (event.type === 'quiz-advance') {
+      setCurrentQuestionIndex(event.questionIndex ?? 0)
+      setQuizRevealed(false)
+      setQuizAnswers({})
+    } else if (event.type === 'quiz-reveal') {
+      setQuizRevealed(true)
+    } else if (event.type === 'quiz-answer' && event.identity && event.answerIndex !== undefined) {
+      setQuizAnswers(prev => ({ ...prev, [event.identity!]: event.answerIndex! }))
+    }
+  })
+
+  // Teacher: start presenting a course
+  const startCourse = useCallback((courseId: string) => {
+    setPresentMode('course')
+    setActiveCourseId(courseId)
+    setCurrentLessonIndex(0)
+    setBlackboardActive(false)
+    const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId }))
+    sendPresentData(payload, { reliable: true })
+  }, [sendPresentData])
+
+  // Teacher: start presenting a quiz
+  const startQuiz = useCallback((quizId: string) => {
+    setPresentMode('quiz')
+    setActiveQuizId(quizId)
+    setCurrentQuestionIndex(0)
+    setQuizRevealed(false)
+    setQuizAnswers({})
+    setBlackboardActive(false)
+    const payload = encoder.encode(JSON.stringify({ type: 'start-quiz', quizId }))
+    sendPresentData(payload, { reliable: true })
+  }, [sendPresentData])
+
+  // Teacher: stop presenting
+  const stopPresenting = useCallback(() => {
+    setPresentMode('none')
+    setActiveCourseId(null)
+    setActiveQuizId(null)
+    const payload = encoder.encode(JSON.stringify({ type: 'stop' }))
+    sendPresentData(payload, { reliable: true })
+  }, [sendPresentData])
+
+  // Teacher: navigate course lesson
+  const navigateCourseLesson = useCallback((index: number) => {
+    setCurrentLessonIndex(index)
+    const payload = encoder.encode(JSON.stringify({ type: 'course-navigate', lessonIndex: index }))
+    sendPresentData(payload, { reliable: true })
+  }, [sendPresentData])
+
+  // Teacher: advance quiz question
+  const advanceQuizQuestion = useCallback((index: number) => {
+    setCurrentQuestionIndex(index)
+    setQuizRevealed(false)
+    setQuizAnswers({})
+    const payload = encoder.encode(JSON.stringify({ type: 'quiz-advance', questionIndex: index }))
+    sendPresentData(payload, { reliable: true })
+  }, [sendPresentData])
+
+  // Teacher: reveal quiz answer
+  const revealQuizAnswer = useCallback(() => {
+    setQuizRevealed(true)
+    const payload = encoder.encode(JSON.stringify({ type: 'quiz-reveal' }))
+    sendPresentData(payload, { reliable: true })
+  }, [sendPresentData])
+
+  // Student: submit quiz answer
+  const submitQuizAnswer = useCallback((answerIndex: number) => {
+    setQuizAnswers(prev => ({ ...prev, [localParticipant.identity]: answerIndex }))
+    const payload = encoder.encode(JSON.stringify({
+      type: 'quiz-answer',
+      identity: localParticipant.identity,
+      answerIndex,
+    }))
+    sendPresentData(payload, { reliable: true })
+  }, [localParticipant.identity, sendPresentData])
+
+  // Get active course/quiz data
+  const activeCourse = useMemo(() =>
+    linkedCourses.find(c => c.id === activeCourseId) || null
+  , [linkedCourses, activeCourseId])
+
+  const activeQuiz = useMemo(() =>
+    linkedQuizzes.find(q => q.id === activeQuizId) || null
+  , [linkedQuizzes, activeQuizId])
+
+  // Flatten lessons for course navigation
+  const allLessons = useMemo(() => {
+    if (!activeCourse) return []
+    return activeCourse.topics.flatMap(t => t.lessons)
+  }, [activeCourse])
 
   // Host: send snapshot to late-joining participants
   useEffect(() => {
@@ -396,7 +622,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           </div>
         </div>
 
-        {/* Main stage video / blackboard */}
+        {/* Main stage video / blackboard / course / quiz */}
         <MainStage
           participant={spotlightParticipant}
           screenShare={activeScreenShare}
@@ -406,6 +632,19 @@ function RoomInner({ roomName }: { roomName: string }) {
           onCanvasEvent={handleBlackboardEvent}
           incomingEvent={blackboardEvent}
           blackboardRef={blackboardRef}
+          presentMode={presentMode}
+          activeCourse={activeCourse}
+          activeQuiz={activeQuiz}
+          allLessons={allLessons}
+          currentLessonIndex={currentLessonIndex}
+          currentQuestionIndex={currentQuestionIndex}
+          quizRevealed={quizRevealed}
+          quizAnswers={quizAnswers}
+          onNavigateLesson={navigateCourseLesson}
+          onAdvanceQuestion={advanceQuizQuestion}
+          onRevealAnswer={revealQuizAnswer}
+          onSubmitAnswer={submitQuizAnswer}
+          localIdentity={localParticipant.identity}
         />
 
         {/* Bottom control bar */}
@@ -423,6 +662,12 @@ function RoomInner({ roomName }: { roomName: string }) {
           isMobile={!!isMobile}
           isBlackboardActive={blackboardActive}
           onToggleBlackboard={toggleBlackboard}
+          presentMode={presentMode}
+          linkedCourses={linkedCourses}
+          linkedQuizzes={linkedQuizzes}
+          onStartCourse={startCourse}
+          onStartQuiz={startQuiz}
+          onStopPresenting={stopPresenting}
         />
       </div>
 
@@ -561,7 +806,10 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
 }
 
 // ── Main Stage ───────────────────────────────────────────────────────────────
-function MainStage({ participant, screenShare, cameraTracks, blackboardActive, isHost, onCanvasEvent, incomingEvent, blackboardRef }: {
+function MainStage({ participant, screenShare, cameraTracks, blackboardActive, isHost, onCanvasEvent, incomingEvent, blackboardRef,
+  presentMode, activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
+  quizRevealed, quizAnswers, onNavigateLesson, onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, localIdentity,
+}: {
   participant: LKParticipant | undefined
   screenShare: TrackReferenceOrPlaceholder | null
   cameraTracks: TrackReferenceOrPlaceholder[]
@@ -570,12 +818,27 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
   onCanvasEvent: (event: BlackboardEvent) => void
   incomingEvent: BlackboardEvent | null
   blackboardRef: React.RefObject<BlackboardHandle | null>
+  presentMode: PresentMode
+  activeCourse: LinkedCourse | null
+  activeQuiz: LinkedQuiz | null
+  allLessons: Lesson[]
+  currentLessonIndex: number
+  currentQuestionIndex: number
+  quizRevealed: boolean
+  quizAnswers: Record<string, number>
+  onNavigateLesson: (index: number) => void
+  onAdvanceQuestion: (index: number) => void
+  onRevealAnswer: () => void
+  onSubmitAnswer: (index: number) => void
+  localIdentity: string
 }) {
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
 
-  const showScreenShare = !blackboardActive && screenShare && screenShare.publication?.track
-  const showCamera = !blackboardActive && !showScreenShare
+  const showCoursePresentation = presentMode === 'course' && activeCourse
+  const showQuizPresentation = presentMode === 'quiz' && activeQuiz
+  const showScreenShare = !blackboardActive && !showCoursePresentation && !showQuizPresentation && screenShare && screenShare.publication?.track
+  const showCamera = !blackboardActive && !showScreenShare && !showCoursePresentation && !showQuizPresentation
   const camTrack = cameraTracks.find(t => t.participant?.identity === participant?.identity)
 
   return (
@@ -597,6 +860,38 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
           </div>
         </div>
       </div>
+
+      {/* Course presentation */}
+      {showCoursePresentation && activeCourse && (
+        <div className="room-stage-video room-stage-presentation">
+          <CoursePresentation
+            course={activeCourse}
+            lessons={allLessons}
+            currentIndex={currentLessonIndex}
+            isHost={isHost}
+            onNavigate={onNavigateLesson}
+            teacherName={participant?.name || 'Teacher'}
+          />
+        </div>
+      )}
+
+      {/* Quiz presentation */}
+      {showQuizPresentation && activeQuiz && (
+        <div className="room-stage-video room-stage-presentation">
+          <QuizPresentation
+            quiz={activeQuiz}
+            currentIndex={currentQuestionIndex}
+            revealed={quizRevealed}
+            answers={quizAnswers}
+            isHost={isHost}
+            onAdvance={onAdvanceQuestion}
+            onReveal={onRevealAnswer}
+            onAnswer={onSubmitAnswer}
+            localIdentity={localIdentity}
+            teacherName={participant?.name || 'Teacher'}
+          />
+        </div>
+      )}
 
       {/* Screen share */}
       {showScreenShare && screenShare && (
@@ -632,6 +927,219 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Course Presentation ──────────────────────────────────────────────────────
+function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate, teacherName }: {
+  course: LinkedCourse
+  lessons: Lesson[]
+  currentIndex: number
+  isHost: boolean
+  onNavigate: (index: number) => void
+  teacherName: string
+}) {
+  const lesson = lessons[currentIndex]
+  const totalLessons = lessons.length
+
+  // Find which topic this lesson belongs to
+  const currentTopic = course.topics.find(t => t.lessons.some(l => l.id === lesson?.id))
+
+  return (
+    <div className="room-presentation">
+      <div className="room-presentation-header">
+        <BookOpen size={16} />
+        <span className="room-presentation-title">{course.title}</span>
+        {!isHost && <span className="room-presentation-subtitle">{teacherName} is presenting</span>}
+      </div>
+
+      <div className="room-presentation-content">
+        {lesson ? (
+          <>
+            {currentTopic && (
+              <div className="room-presentation-topic">{currentTopic.title}</div>
+            )}
+            <h2 className="room-presentation-lesson-title">{lesson.title}</h2>
+            {lesson.type === 'video' && lesson.video_url && (
+              <div className="room-presentation-video">
+                <video src={lesson.video_url} controls style={{ maxWidth: '100%', maxHeight: '60vh' }} />
+              </div>
+            )}
+            {lesson.content && (
+              <div className="room-presentation-text" dangerouslySetInnerHTML={{ __html: lesson.content }} />
+            )}
+          </>
+        ) : (
+          <div className="room-presentation-empty">No lessons available</div>
+        )}
+      </div>
+
+      <div className="room-presentation-nav">
+        {isHost ? (
+          <>
+            <button
+              className="btn btn-outline btn-sm"
+              disabled={currentIndex === 0}
+              onClick={() => onNavigate(currentIndex - 1)}
+            >
+              <ArrowLeft size={16} /> Previous
+            </button>
+            <span className="room-presentation-counter">
+              {currentIndex + 1} / {totalLessons}
+            </span>
+            <button
+              className="btn btn-outline btn-sm"
+              disabled={currentIndex >= totalLessons - 1}
+              onClick={() => onNavigate(currentIndex + 1)}
+            >
+              Next <ArrowRight size={16} />
+            </button>
+          </>
+        ) : (
+          <span className="room-presentation-counter">
+            Lesson {currentIndex + 1} of {totalLessons}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Quiz Presentation ────────────────────────────────────────────────────────
+function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdvance, onReveal, onAnswer, localIdentity, teacherName }: {
+  quiz: LinkedQuiz
+  currentIndex: number
+  revealed: boolean
+  answers: Record<string, number>
+  isHost: boolean
+  onAdvance: (index: number) => void
+  onReveal: () => void
+  onAnswer: (index: number) => void
+  localIdentity: string
+  teacherName: string
+}) {
+  const question = quiz.questions[currentIndex]
+  const totalQuestions = quiz.questions.length
+  const myAnswer = answers[localIdentity]
+  const hasAnswered = myAnswer !== undefined
+
+  // Tally answers for each option
+  const answerCounts = useMemo(() => {
+    const counts: Record<number, number> = {}
+    Object.values(answers).forEach(a => {
+      counts[a] = (counts[a] || 0) + 1
+    })
+    return counts
+  }, [answers])
+
+  const totalAnswers = Object.keys(answers).length
+
+  if (!question) {
+    return (
+      <div className="room-presentation">
+        <div className="room-presentation-header">
+          <HelpCircle size={16} />
+          <span className="room-presentation-title">{quiz.title}</span>
+        </div>
+        <div className="room-presentation-empty">No questions available</div>
+      </div>
+    )
+  }
+
+  const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
+
+  return (
+    <div className="room-presentation">
+      <div className="room-presentation-header">
+        <HelpCircle size={16} />
+        <span className="room-presentation-title">{quiz.title}</span>
+        {!isHost && <span className="room-presentation-subtitle">{teacherName} is presenting</span>}
+        <span className="room-presentation-counter" style={{ marginLeft: 'auto' }}>
+          Q{currentIndex + 1}/{totalQuestions}
+        </span>
+      </div>
+
+      <div className="room-presentation-content room-quiz-content">
+        <div className="room-quiz-question">
+          <span className="room-quiz-question-number">Question {currentIndex + 1}</span>
+          <h2 className="room-quiz-question-text">{question.question_text}</h2>
+          {question.time_limit > 0 && (
+            <div className="room-quiz-timer">
+              <Clock size={14} /> {question.time_limit}s
+            </div>
+          )}
+        </div>
+
+        <div className="room-quiz-options">
+          {question.options.map((opt, i) => {
+            const isCorrect = i === question.correct_index
+            const isMyAnswer = myAnswer === i
+            const count = answerCounts[i] || 0
+            const pct = totalAnswers > 0 ? Math.round((count / totalAnswers) * 100) : 0
+
+            let optClass = 'room-quiz-option'
+            if (revealed && isCorrect) optClass += ' room-quiz-option-correct'
+            if (revealed && isMyAnswer && !isCorrect) optClass += ' room-quiz-option-wrong'
+            if (!revealed && isMyAnswer) optClass += ' room-quiz-option-selected'
+
+            return (
+              <button
+                key={i}
+                className={optClass}
+                onClick={() => {
+                  if (!isHost && !hasAnswered && !revealed) onAnswer(i)
+                }}
+                disabled={isHost || hasAnswered || revealed}
+              >
+                <span className="room-quiz-option-label">{optionLabels[i]}</span>
+                <span className="room-quiz-option-text">{opt}</span>
+                {revealed && (
+                  <span className="room-quiz-option-stats">
+                    {isCorrect && <Check size={14} />}
+                    {isHost && <span>{count} ({pct}%)</span>}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {!isHost && hasAnswered && !revealed && (
+          <div className="room-quiz-waiting">
+            <span>Answer submitted! Waiting for teacher to reveal...</span>
+          </div>
+        )}
+      </div>
+
+      {isHost && (
+        <div className="room-presentation-nav">
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={currentIndex === 0}
+            onClick={() => onAdvance(currentIndex - 1)}
+          >
+            <ArrowLeft size={16} /> Prev
+          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {!revealed && (
+              <button className="btn btn-primary btn-sm" onClick={onReveal}>
+                Reveal Answer
+              </button>
+            )}
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {totalAnswers} answer{totalAnswers !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={currentIndex >= totalQuestions - 1}
+            onClick={() => onAdvance(currentIndex + 1)}
+          >
+            Next <ArrowRight size={16} />
+          </button>
         </div>
       )}
     </div>
@@ -726,13 +1234,23 @@ interface ControlBarProps {
   isMobile?: boolean
   isBlackboardActive: boolean
   onToggleBlackboard: () => void
+  presentMode: PresentMode
+  linkedCourses: LinkedCourse[]
+  linkedQuizzes: LinkedQuiz[]
+  onStartCourse: (courseId: string) => void
+  onStartQuiz: (quizId: string) => void
+  onStopPresenting: () => void
 }
 
 function ControlBarCustom({
   isMicEnabled, isCamEnabled, isScreenShareEnabled, isHandRaised,
   isTeacher, localParticipant, onToggleHand, onSettings, onLeave, raisedHandCount, isMobile,
-  isBlackboardActive, onToggleBlackboard,
+  isBlackboardActive, onToggleBlackboard, presentMode, linkedCourses, linkedQuizzes,
+  onStartCourse, onStartQuiz, onStopPresenting,
 }: ControlBarProps) {
+  const [showPresentMenu, setShowPresentMenu] = useState(false)
+  const presentMenuRef = useRef<HTMLDivElement>(null)
+
   const toggleMic = useCallback(() => {
     localParticipant.setMicrophoneEnabled(!isMicEnabled)
   }, [localParticipant, isMicEnabled])
@@ -744,6 +1262,20 @@ function ControlBarCustom({
   const toggleScreen = useCallback(() => {
     localParticipant.setScreenShareEnabled(!isScreenShareEnabled)
   }, [localParticipant, isScreenShareEnabled])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (presentMenuRef.current && !presentMenuRef.current.contains(e.target as Node)) {
+        setShowPresentMenu(false)
+      }
+    }
+    if (showPresentMenu) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showPresentMenu])
+
+  const isPresentActive = presentMode !== 'none'
+  const hasContent = linkedCourses.length > 0 || linkedQuizzes.length > 0
 
   return (
     <div className={`room-controls ${isMobile ? 'room-controls-mobile' : ''}`}>
@@ -780,16 +1312,68 @@ function ControlBarCustom({
           </button>
         )}
 
-        {/* Blackboard — teacher only, hide on mobile */}
+        {/* Present — teacher only, hide on mobile */}
         {!isMobile && isTeacher && (
-          <button
-            className={`room-control-btn ${isBlackboardActive ? 'room-control-btn-active' : ''}`}
-            onClick={onToggleBlackboard}
-            title={isBlackboardActive ? 'Close blackboard' : 'Open blackboard'}
-          >
-            <PenTool size={20} />
-            <span className="room-control-label">{isBlackboardActive ? 'Close Board' : 'Blackboard'}</span>
-          </button>
+          <div style={{ position: 'relative' }} ref={presentMenuRef}>
+            <button
+              className={`room-control-btn ${isPresentActive ? 'room-control-btn-active' : ''}`}
+              onClick={() => {
+                if (isPresentActive) {
+                  // If presenting, stop
+                  if (presentMode === 'blackboard') onToggleBlackboard()
+                  else onStopPresenting()
+                } else {
+                  setShowPresentMenu(v => !v)
+                }
+              }}
+              title={isPresentActive ? 'Stop presenting' : 'Present'}
+            >
+              <Monitor size={20} />
+              <span className="room-control-label">
+                {isPresentActive ? 'Stop' : 'Present'}
+              </span>
+              {!isPresentActive && <ChevronUp size={12} style={{ marginLeft: -4, opacity: 0.6 }} />}
+            </button>
+
+            {/* Present dropdown menu */}
+            {showPresentMenu && (
+              <div className="room-present-menu">
+                <div className="room-present-menu-item" onClick={() => { onToggleBlackboard(); setShowPresentMenu(false) }}>
+                  <PenTool size={16} />
+                  <span>Blackboard</span>
+                </div>
+                {linkedCourses.length > 0 && (
+                  <>
+                    <div className="room-present-menu-divider" />
+                    <div className="room-present-menu-label">Courses</div>
+                    {linkedCourses.map(c => (
+                      <div key={c.id} className="room-present-menu-item" onClick={() => { onStartCourse(c.id); setShowPresentMenu(false) }}>
+                        <BookOpen size={16} />
+                        <span>{c.title}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {linkedQuizzes.length > 0 && (
+                  <>
+                    <div className="room-present-menu-divider" />
+                    <div className="room-present-menu-label">Quizzes</div>
+                    {linkedQuizzes.map(q => (
+                      <div key={q.id} className="room-present-menu-item" onClick={() => { onStartQuiz(q.id); setShowPresentMenu(false) }}>
+                        <HelpCircle size={16} />
+                        <span>{q.title}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {!hasContent && (
+                  <div className="room-present-menu-empty">
+                    No courses or quizzes linked to this session
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Raise Hand */}

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, Video, BookOpen, MessageSquare, Users, BarChart2, FolderOpen, ChevronDown } from 'lucide-react'
+import { Menu, Video, BookOpen, MessageSquare, Users, BarChart2, FolderOpen, ChevronDown, HelpCircle } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { useLiveSessionCount } from '@/hooks/useLiveSessionCount'
 import UserMenu from './UserMenu'
@@ -85,6 +85,17 @@ export default function TopBar() {
             <BookOpen size={14} />
             Courses
           </Link>
+
+          {/* Quizzes */}
+          {isCreator && (
+            <Link
+              href="/dashboard/quizzes"
+              className={cn('topbar-nav-link', (pathname === '/dashboard/quizzes' || pathname.startsWith('/dashboard/quizzes/')) && 'active')}
+            >
+              <HelpCircle size={14} />
+              Quizzes
+            </Link>
+          )}
 
           {/* Messages */}
           <Link

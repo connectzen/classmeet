@@ -196,7 +196,7 @@ function SortableLesson({ lesson, onUpdate, onRemove }: {
 }
 
 // ── Course Card ─────────────────────────────────────────────────────────────
-function CourseCard({ course, onClick, onDelete }: { course: CourseLocal; onClick: () => void; onDelete: () => void }) {
+function CourseCard({ course, onClick, onDelete, readOnly }: { course: CourseLocal; onClick: () => void; onDelete: () => void; readOnly?: boolean }) {
   const subjectColors: Record<string, string> = {
     Mathematics: '#6366f1', Science: '#10b981', English: '#f59e0b', History: '#ef4444',
     'Computer Science': '#8b5cf6', Art: '#ec4899', Music: '#14b8a6', 'Physical Education': '#f97316', Other: '#64748b',
@@ -211,11 +211,13 @@ function CourseCard({ course, onClick, onDelete }: { course: CourseLocal; onClic
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {course.published ? <Eye size={12} color="#22c55e" /> : <EyeOff size={12} color="var(--text-muted)" />}
           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{course.level}</span>
-          <button type="button" onClick={e => { e.stopPropagation(); onDelete() }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 2, display: 'flex' }}
-            title="Delete course">
-            <Trash2 size={13} />
-          </button>
+          {!readOnly && (
+            <button type="button" onClick={e => { e.stopPropagation(); onDelete() }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 2, display: 'flex' }}
+              title="Delete course">
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       </div>
       <h3 style={{ margin: '0 0 6px', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>{course.title}</h3>
@@ -259,11 +261,57 @@ export default function CoursesPage() {
   useEffect(() => {
     if (!user?.id) { setLoading(false); return }
     async function load() {
-      const { data: coursesData } = await supabase
-        .from('courses')
-        .select('*')
-        .eq('teacher_id', user!.id)
-        .order('created_at', { ascending: false })
+      let coursesData: any[] | null = null
+
+      if (isCreator) {
+        // Teachers see all their own courses
+        const { data } = await supabase
+          .from('courses')
+          .select('*')
+          .eq('teacher_id', user!.id)
+          .order('created_at', { ascending: false })
+        coursesData = data
+      } else {
+        // Students see published courses targeted at them (directly or via groups)
+        // 1. Direct targets
+        const { data: directTargets } = await supabase
+          .from('course_targets')
+          .select('course_id')
+          .eq('target_type', 'student')
+          .eq('target_id', user!.id)
+
+        // 2. Group targets
+        const { data: myGroups } = await supabase
+          .from('group_members')
+          .select('group_id')
+          .eq('student_id', user!.id)
+
+        let groupCourseIds: string[] = []
+        if (myGroups && myGroups.length > 0) {
+          const gids = myGroups.map(g => g.group_id)
+          const { data: groupTargets } = await supabase
+            .from('course_targets')
+            .select('course_id')
+            .eq('target_type', 'group')
+            .in('target_id', gids)
+          if (groupTargets) groupCourseIds = groupTargets.map(t => t.course_id)
+        }
+
+        const directIds = directTargets?.map(t => t.course_id) || []
+        const allIds = [...new Set([...directIds, ...groupCourseIds])]
+
+        if (allIds.length > 0) {
+          const { data } = await supabase
+            .from('courses')
+            .select('*')
+            .in('id', allIds)
+            .eq('published', true)
+            .order('created_at', { ascending: false })
+          coursesData = data
+        } else {
+          coursesData = []
+        }
+      }
 
       if (coursesData) {
         const full: CourseLocal[] = []
@@ -546,14 +594,16 @@ export default function CoursesPage() {
             style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             <ArrowLeft size={16} /> Back to Courses
           </button>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="danger" size="sm" icon={<Trash2 size={14} />} onClick={() => deleteCourse(editing.id)}>Delete</Button>
-            <Button variant="ghost" icon={editing.published ? <Eye size={14} /> : <EyeOff size={14} />}
-              onClick={() => setEditing({ ...editing, published: !editing.published })}>
-              {editing.published ? 'Published' : 'Draft'}
-            </Button>
-            <Button icon={<Save size={14} />} loading={saving} onClick={saveCourse}>Save Course</Button>
-          </div>
+          {isCreator && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button variant="danger" size="sm" icon={<Trash2 size={14} />} onClick={() => deleteCourse(editing.id)}>Delete</Button>
+              <Button variant="ghost" icon={editing.published ? <Eye size={14} /> : <EyeOff size={14} />}
+                onClick={() => setEditing({ ...editing, published: !editing.published })}>
+                {editing.published ? 'Published' : 'Draft'}
+              </Button>
+              <Button icon={<Save size={14} />} loading={saving} onClick={saveCourse}>Save Course</Button>
+            </div>
+          )}
         </div>
 
         {/* Course meta */}
@@ -585,7 +635,7 @@ export default function CoursesPage() {
         </div>
 
         {/* Assignment – assign to groups or students */}
-        <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+        {isCreator && (<div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
             <Users size={16} color="var(--primary-400)" />
             <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Assign To</span>
@@ -642,7 +692,7 @@ export default function CoursesPage() {
               {targetMode === 'groups' ? `${selectedGroups.size} group(s) selected` : `${selectedStudents.size} student(s) selected`}
             </div>
           )}
-        </div>
+        </div>)}
 
         {/* Curriculum */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -707,7 +757,7 @@ export default function CoursesPage() {
         </div>
       ) : filtered.length > 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-          {filtered.map(c => <CourseCard key={c.id} course={c} onClick={() => setEditing(c)} onDelete={() => deleteCourse(c.id)} />)}
+          {filtered.map(c => <CourseCard key={c.id} course={c} onClick={() => setEditing(c)} onDelete={() => deleteCourse(c.id)} readOnly={!isCreator} />)}
         </div>
       ) : courses.length > 0 && search ? (
         <div className="card" style={{ padding: '40px', textAlign: 'center' }}>

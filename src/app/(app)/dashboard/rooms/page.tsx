@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
-import { Video, Plus, LogIn, Users, Clock, X, Wifi, WifiOff, CalendarClock, Timer, Check, Search, FolderOpen, Trash2, StopCircle } from 'lucide-react'
+import { Video, Plus, LogIn, Users, Clock, X, Wifi, WifiOff, CalendarClock, Timer, Check, Search, FolderOpen, Trash2, StopCircle, Pencil, BookOpen, HelpCircle } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface SessionRow {
@@ -26,6 +26,8 @@ interface SessionRow {
 
 interface GroupOption { id: string; name: string; memberCount: number }
 interface StudentOption { id: string; name: string; avatarUrl: string | null }
+interface QuizOption { id: string; title: string; questionCount: number }
+interface CourseOption { id: string; title: string; subject: string }
 
 // ── Toast hook ────────────────────────────────────────────────────────────────
 function useToast() {
@@ -67,11 +69,13 @@ function generateRoomName(title: string): string {
 }
 
 // ── Create Session Modal ──────────────────────────────────────────────────────
-function CreateSessionModal({ onClose, onCreated, groups, students }: {
+function CreateSessionModal({ onClose, onCreated, groups, students, quizzes, courses }: {
   onClose: () => void
   onCreated: () => void
   groups: GroupOption[]
   students: StudentOption[]
+  quizzes: QuizOption[]
+  courses: CourseOption[]
 }) {
   const user = useAppStore(s => s.user)
   const [title, setTitle]             = useState('')
@@ -86,6 +90,10 @@ function CreateSessionModal({ onClose, onCreated, groups, students }: {
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
+
+  // Content selection
+  const [selectedQuizzes, setSelectedQuizzes] = useState<Set<string>>(new Set())
+  const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set())
 
   const minDatetime = new Date(Date.now() + 2 * 60 * 1000).toISOString().slice(0, 16)
 
@@ -104,9 +112,7 @@ function CreateSessionModal({ onClose, onCreated, groups, students }: {
     if (!title.trim() || !user?.id) return
     if (mode === 'scheduled' && !scheduledAt) return
 
-    const hasTargets = (targetMode === 'groups' && selectedGroups.size > 0) ||
-                       (targetMode === 'students' && selectedStudents.size > 0)
-    if (!hasTargets) return
+    // Targets are optional – session is visible to all enrolled students if none selected
 
     setLoading(true)
     const supabase = createClient()
@@ -132,6 +138,19 @@ function CreateSessionModal({ onClose, onCreated, groups, students }: {
       : Array.from(selectedStudents).map(sid => ({ session_id: session.id, target_type: 'student' as const, target_id: sid }))
 
     if (targets.length > 0) await supabase.from('session_targets').insert(targets as { session_id: string; target_type: 'group' | 'student'; target_id: string }[])
+
+    // Link quizzes & courses
+    if (selectedQuizzes.size > 0) {
+      await supabase.from('session_quizzes').insert(
+        Array.from(selectedQuizzes).map(qid => ({ session_id: session.id, quiz_id: qid }))
+      )
+    }
+    if (selectedCourses.size > 0) {
+      await supabase.from('session_courses').insert(
+        Array.from(selectedCourses).map(cid => ({ session_id: session.id, course_id: cid }))
+      )
+    }
+
     setLoading(false)
     onCreated()
     onClose()
@@ -177,7 +196,7 @@ function CreateSessionModal({ onClose, onCreated, groups, students }: {
 
           {/* Target selection */}
           <div>
-            <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Target Audience *</label>
+            <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Target Audience <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'var(--bg-elevated)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
               <button type="button" onClick={() => setTargetMode('groups')}
                 style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, transition: 'all 0.15s',
@@ -242,6 +261,64 @@ function CreateSessionModal({ onClose, onCreated, groups, students }: {
             </span>
           </div>
 
+          {/* Content to present */}
+          {(courses.length > 0 || quizzes.length > 0) && (
+            <div>
+              <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Content to Present <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              {courses.length > 0 && (
+                <>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <BookOpen size={13} /> Courses
+                  </div>
+                  <div style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '12px', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)' }}>
+                    {courses.map(c => (
+                      <div key={c.id} onClick={() => setSelectedCourses(prev => { const n = new Set(prev); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n })}
+                        role="checkbox" aria-checked={selectedCourses.has(c.id)} tabIndex={0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
+                          background: selectedCourses.has(c.id) ? 'rgba(99,102,241,0.08)' : 'transparent' }}>
+                        <div style={{ width: 20, height: 20, borderRadius: 'var(--radius-sm)', border: selectedCourses.has(c.id) ? 'none' : '2px solid var(--border-primary)',
+                          background: selectedCourses.has(c.id) ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {selectedCourses.has(c.id) && <Check size={12} color="#fff" />}
+                        </div>
+                        <BookOpen size={14} color="var(--text-muted)" />
+                        <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{c.title}</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{c.subject}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {quizzes.length > 0 && (
+                <>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <HelpCircle size={13} /> Quizzes
+                  </div>
+                  <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)' }}>
+                    {quizzes.map(q => (
+                      <div key={q.id} onClick={() => setSelectedQuizzes(prev => { const n = new Set(prev); if (n.has(q.id)) n.delete(q.id); else n.add(q.id); return n })}
+                        role="checkbox" aria-checked={selectedQuizzes.has(q.id)} tabIndex={0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
+                          background: selectedQuizzes.has(q.id) ? 'rgba(139,92,246,0.08)' : 'transparent' }}>
+                        <div style={{ width: 20, height: 20, borderRadius: 'var(--radius-sm)', border: selectedQuizzes.has(q.id) ? 'none' : '2px solid var(--border-primary)',
+                          background: selectedQuizzes.has(q.id) ? '#8b5cf6' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {selectedQuizzes.has(q.id) && <Check size={12} color="#fff" />}
+                        </div>
+                        <HelpCircle size={14} color="var(--text-muted)" />
+                        <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{q.title}</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{q.questionCount} Q</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <span className="input-helper" style={{ marginTop: '4px', display: 'block' }}>
+                {selectedCourses.size + selectedQuizzes.size > 0
+                  ? `${selectedCourses.size} course(s), ${selectedQuizzes.size} quiz(zes) selected`
+                  : 'Select content you want to present during this session'}
+              </span>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
             <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
             <Button type="submit" loading={loading} icon={mode === 'now' ? <Video size={15} /> : <CalendarClock size={15} />}>
@@ -288,14 +365,287 @@ function JoinRoomModal({ onClose, onJoin }: { onClose: () => void; onJoin: (room
   )
 }
 
+// ── Edit Session Modal ────────────────────────────────────────────────────────
+function EditSessionModal({ session, onClose, onUpdated, groups, students, quizzes, courses }: {
+  session: SessionRow
+  onClose: () => void
+  onUpdated: () => void
+  groups: GroupOption[]
+  students: StudentOption[]
+  quizzes: QuizOption[]
+  courses: CourseOption[]
+}) {
+  const user = useAppStore(s => s.user)
+  const [title, setTitle]             = useState(session.title)
+  const [description, setDescription] = useState(session.description || '')
+  const [maxParticipants, setMaxParticipants] = useState(String(session.max_participants))
+  const [scheduledAt, setScheduledAt] = useState(session.scheduled_at ? session.scheduled_at.slice(0, 16) : '')
+  const [loading, setLoading]         = useState(false)
+  const [loadingTargets, setLoadingTargets] = useState(true)
+
+  // Targeting
+  const [targetMode, setTargetMode] = useState<'groups' | 'students'>('groups')
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState('')
+
+  // Content selection
+  const [selectedQuizzes, setSelectedQuizzes] = useState<Set<string>>(new Set())
+  const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set())
+
+  const filteredStudents = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
+  const filteredGroups = groups.filter(g => g.name.toLowerCase().includes(search.toLowerCase()))
+
+  function toggleGroup(id: string) {
+    setSelectedGroups(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+  function toggleStudent(id: string) {
+    setSelectedStudents(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+
+  // Load existing targets and linked content on mount
+  useEffect(() => {
+    async function loadExistingData() {
+      const supabase = createClient()
+      const { data: targets } = await supabase
+        .from('session_targets')
+        .select('target_type, target_id')
+        .eq('session_id', session.id)
+      if (targets && targets.length > 0) {
+        const gIds = new Set(targets.filter(t => t.target_type === 'group').map(t => t.target_id))
+        const sIds = new Set(targets.filter(t => t.target_type === 'student').map(t => t.target_id))
+        if (gIds.size > 0) {
+          setTargetMode('groups')
+          setSelectedGroups(gIds)
+        } else if (sIds.size > 0) {
+          setTargetMode('students')
+          setSelectedStudents(sIds)
+        }
+      }
+      // Load linked quizzes & courses
+      const { data: sq } = await supabase.from('session_quizzes').select('quiz_id').eq('session_id', session.id)
+      if (sq) setSelectedQuizzes(new Set(sq.map(r => r.quiz_id)))
+      const { data: sc } = await supabase.from('session_courses').select('course_id').eq('session_id', session.id)
+      if (sc) setSelectedCourses(new Set(sc.map(r => r.course_id)))
+      setLoadingTargets(false)
+    }
+    loadExistingData()
+  }, [session.id])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!title.trim() || !user?.id) return
+
+    setLoading(true)
+    const supabase = createClient()
+    const now = new Date().toISOString()
+
+    await supabase.from('sessions').update({
+      title: title.trim(),
+      description: description.trim() || null,
+      max_participants: parseInt(maxParticipants, 10) || 30,
+      scheduled_at: session.status === 'scheduled' && scheduledAt ? new Date(scheduledAt).toISOString() : session.scheduled_at,
+      updated_at: now,
+    }).eq('id', session.id)
+
+    // Replace targets: delete old, insert new
+    await supabase.from('session_targets').delete().eq('session_id', session.id)
+    const targets = targetMode === 'groups'
+      ? Array.from(selectedGroups).map(gid => ({ session_id: session.id, target_type: 'group' as const, target_id: gid }))
+      : Array.from(selectedStudents).map(sid => ({ session_id: session.id, target_type: 'student' as const, target_id: sid }))
+    if (targets.length > 0) await supabase.from('session_targets').insert(targets as { session_id: string; target_type: 'group' | 'student'; target_id: string }[])
+
+    // Replace linked quizzes & courses
+    await supabase.from('session_quizzes').delete().eq('session_id', session.id)
+    if (selectedQuizzes.size > 0) {
+      await supabase.from('session_quizzes').insert(
+        Array.from(selectedQuizzes).map(qid => ({ session_id: session.id, quiz_id: qid }))
+      )
+    }
+    await supabase.from('session_courses').delete().eq('session_id', session.id)
+    if (selectedCourses.size > 0) {
+      await supabase.from('session_courses').insert(
+        Array.from(selectedCourses).map(cid => ({ session_id: session.id, course_id: cid }))
+      )
+    }
+
+    setLoading(false)
+    onUpdated()
+    onClose()
+  }
+
+  return (
+    <div className="modal-container" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700 }}>Edit Session</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Update session details and targets</p>
+          </div>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <Input label="Session Title" required placeholder="e.g. Math 101 – Live Session" value={title} onChange={e => setTitle(e.target.value)} />
+          <div className="input-group">
+            <label className="input-label">Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <textarea className="input" rows={2} placeholder="What will you cover today?" value={description} onChange={e => setDescription(e.target.value)} style={{ resize: 'vertical', minHeight: '70px' }} />
+          </div>
+          <Input label="Max Participants" type="number" min="2" max="200" value={maxParticipants} onChange={e => setMaxParticipants(e.target.value)} helper="Between 2 and 200 participants" />
+
+          {session.status === 'scheduled' && (
+            <div className="input-group">
+              <label className="input-label">Start Date &amp; Time</label>
+              <input type="datetime-local" className="input" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
+            </div>
+          )}
+
+          {/* Target selection */}
+          {loadingTargets ? (
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading targets…</p>
+          ) : (
+            <div>
+              <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Target Audience <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'var(--bg-elevated)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
+                <button type="button" onClick={() => setTargetMode('groups')}
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, transition: 'all 0.15s',
+                    background: targetMode === 'groups' ? 'var(--primary-500)' : 'transparent', color: targetMode === 'groups' ? '#fff' : 'var(--text-muted)' }}>
+                  <FolderOpen size={13} style={{ marginRight: '6px', verticalAlign: '-2px' }} />Select Groups
+                </button>
+                <button type="button" onClick={() => setTargetMode('students')}
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, transition: 'all 0.15s',
+                    background: targetMode === 'students' ? 'var(--primary-500)' : 'transparent', color: targetMode === 'students' ? '#fff' : 'var(--text-muted)' }}>
+                  <Users size={13} style={{ marginRight: '6px', verticalAlign: '-2px' }} />Select Students
+                </button>
+              </div>
+              <Input placeholder={targetMode === 'groups' ? 'Search groups…' : 'Search students…'} value={search} onChange={e => setSearch(e.target.value)} leftIcon={<Search size={14} />} />
+              <div style={{ maxHeight: '180px', overflowY: 'auto', marginTop: '8px', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)' }}>
+                {targetMode === 'groups' ? (
+                  filteredGroups.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      {groups.length === 0 ? 'No groups created yet' : 'No matching groups'}
+                    </div>
+                  ) : filteredGroups.map(g => (
+                    <div key={g.id} onClick={() => toggleGroup(g.id)} role="checkbox" aria-checked={selectedGroups.has(g.id)} tabIndex={0}
+                      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleGroup(g.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
+                        background: selectedGroups.has(g.id) ? 'rgba(99,102,241,0.08)' : 'transparent' }}>
+                      <div style={{ width: 20, height: 20, borderRadius: 'var(--radius-sm)', border: selectedGroups.has(g.id) ? 'none' : '2px solid var(--border-primary)',
+                        background: selectedGroups.has(g.id) ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {selectedGroups.has(g.id) && <Check size={12} color="#fff" />}
+                      </div>
+                      <FolderOpen size={16} color="var(--text-muted)" />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>{g.name}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{g.memberCount} students</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  filteredStudents.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      {students.length === 0 ? 'No students enrolled yet' : 'No matching students'}
+                    </div>
+                  ) : filteredStudents.map(s => (
+                    <div key={s.id} onClick={() => toggleStudent(s.id)} role="checkbox" aria-checked={selectedStudents.has(s.id)} tabIndex={0}
+                      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleStudent(s.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
+                        background: selectedStudents.has(s.id) ? 'rgba(99,102,241,0.08)' : 'transparent' }}>
+                      <div style={{ width: 20, height: 20, borderRadius: 'var(--radius-sm)', border: selectedStudents.has(s.id) ? 'none' : '2px solid var(--border-primary)',
+                        background: selectedStudents.has(s.id) ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {selectedStudents.has(s.id) && <Check size={12} color="#fff" />}
+                      </div>
+                      <Avatar src={s.avatarUrl} name={s.name} size="xs" />
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{s.name}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <span className="input-helper" style={{ marginTop: '4px', display: 'block' }}>
+                {targetMode === 'groups'
+                  ? `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''} selected`
+                  : `${selectedStudents.size} student${selectedStudents.size !== 1 ? 's' : ''} selected`}
+              </span>
+            </div>
+          )}
+
+          {/* Content to present */}
+          {(courses.length > 0 || quizzes.length > 0) && (
+            <div>
+              <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Content to Present <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              {courses.length > 0 && (
+                <>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <BookOpen size={13} /> Courses
+                  </div>
+                  <div style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '12px', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)' }}>
+                    {courses.map(c => (
+                      <div key={c.id} onClick={() => setSelectedCourses(prev => { const n = new Set(prev); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n })}
+                        role="checkbox" aria-checked={selectedCourses.has(c.id)} tabIndex={0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
+                          background: selectedCourses.has(c.id) ? 'rgba(99,102,241,0.08)' : 'transparent' }}>
+                        <div style={{ width: 20, height: 20, borderRadius: 'var(--radius-sm)', border: selectedCourses.has(c.id) ? 'none' : '2px solid var(--border-primary)',
+                          background: selectedCourses.has(c.id) ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {selectedCourses.has(c.id) && <Check size={12} color="#fff" />}
+                        </div>
+                        <BookOpen size={14} color="var(--text-muted)" />
+                        <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{c.title}</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{c.subject}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {quizzes.length > 0 && (
+                <>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <HelpCircle size={13} /> Quizzes
+                  </div>
+                  <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)' }}>
+                    {quizzes.map(q => (
+                      <div key={q.id} onClick={() => setSelectedQuizzes(prev => { const n = new Set(prev); if (n.has(q.id)) n.delete(q.id); else n.add(q.id); return n })}
+                        role="checkbox" aria-checked={selectedQuizzes.has(q.id)} tabIndex={0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
+                          background: selectedQuizzes.has(q.id) ? 'rgba(139,92,246,0.08)' : 'transparent' }}>
+                        <div style={{ width: 20, height: 20, borderRadius: 'var(--radius-sm)', border: selectedQuizzes.has(q.id) ? 'none' : '2px solid var(--border-primary)',
+                          background: selectedQuizzes.has(q.id) ? '#8b5cf6' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {selectedQuizzes.has(q.id) && <Check size={12} color="#fff" />}
+                        </div>
+                        <HelpCircle size={14} color="var(--text-muted)" />
+                        <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{q.title}</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{q.questionCount} Q</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <span className="input-helper" style={{ marginTop: '4px', display: 'block' }}>
+                {selectedCourses.size + selectedQuizzes.size > 0
+                  ? `${selectedCourses.size} course(s), ${selectedQuizzes.size} quiz(zes) selected`
+                  : 'Select content you want to present during this session'}
+              </span>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+            <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={loading} icon={<Pencil size={15} />}>Save Changes</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Session Card ──────────────────────────────────────────────────────────────
-function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete }: {
+function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, onEdit }: {
   session: SessionRow
   isCreator: boolean
   onEnter: (s: SessionRow) => void
   onGoLive: (s: SessionRow) => void
   onEnd: (s: SessionRow) => void
   onDelete: (s: SessionRow) => void
+  onEdit: (s: SessionRow) => void
 }) {
   const countdown = useCountdown(session.status === 'scheduled' ? session.scheduled_at : null)
   const isReady = session.status === 'scheduled' && countdown !== null && countdown.secondsLeft === 0
@@ -318,7 +668,10 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete }:
             <Users size={12} /> max {session.max_participants}
           </span>
           {isCreator && session.status !== 'ended' && (
-            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onDelete(session)} aria-label="Delete" style={{ color: 'var(--danger-400)' }}><Trash2 size={13} /></button>
+            <>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onEdit(session)} aria-label="Edit" style={{ color: 'var(--text-muted)' }}><Pencil size={13} /></button>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onDelete(session)} aria-label="Delete" style={{ color: 'var(--danger-400)' }}><Trash2 size={13} /></button>
+            </>
           )}
         </div>
       </div>
@@ -377,9 +730,12 @@ export default function RoomsPage() {
   const { toast, show: showToast } = useToast()
   const [showCreate, setShowCreate] = useState(false)
   const [showJoin, setShowJoin]     = useState(false)
+  const [editSession, setEditSession] = useState<SessionRow | null>(null)
   const [sessions, setSessions]     = useState<SessionRow[]>([])
   const [groups, setGroups]         = useState<GroupOption[]>([])
   const [students, setStudents]     = useState<StudentOption[]>([])
+  const [availableQuizzes, setAvailableQuizzes] = useState<QuizOption[]>([])
+  const [availableCourses, setAvailableCourses] = useState<CourseOption[]>([])
   const [loading, setLoading]       = useState(true)
 
   const supabase = createClient()
@@ -398,8 +754,16 @@ export default function RoomsPage() {
         .order('created_at', { ascending: false })
       if (data) setSessions(data as SessionRow[])
     } else {
-      // Students: find sessions targeted at them (directly or via group)
-      // 1. Direct targets
+      // Students: find sessions targeted at them (directly, via group, or with NO targets = open to all)
+      // Get teacher IDs for this student
+      const { data: myTeachers } = await supabase
+        .from('teacher_students')
+        .select('teacher_id')
+        .eq('student_id', user.id)
+      const teacherIds = myTeachers?.map(t => t.teacher_id) || []
+      if (teacherIds.length === 0) { setSessions([]); setLoading(false); return }
+
+      // 1. Direct student targets
       const { data: directTargets } = await supabase
         .from('session_targets')
         .select('session_id')
@@ -423,8 +787,26 @@ export default function RoomsPage() {
         if (groupTargets) groupTargetSessionIds = groupTargets.map(t => t.session_id)
       }
 
+      // 3. Sessions from my teachers with NO targets (open to all enrolled students)
+      const { data: teacherSessions } = await supabase
+        .from('sessions')
+        .select('id')
+        .in('teacher_id', teacherIds)
+        .in('status', ['live', 'scheduled'])
+
+      let noTargetSessionIds: string[] = []
+      if (teacherSessions && teacherSessions.length > 0) {
+        const tsIds = teacherSessions.map(s => s.id)
+        const { data: withTargets } = await supabase
+          .from('session_targets')
+          .select('session_id')
+          .in('session_id', tsIds)
+        const idsWithTargets = new Set(withTargets?.map(t => t.session_id) || [])
+        noTargetSessionIds = tsIds.filter(id => !idsWithTargets.has(id))
+      }
+
       const directIds = directTargets?.map(t => t.session_id) || []
-      const allIds = [...new Set([...directIds, ...groupTargetSessionIds])]
+      const allIds = [...new Set([...directIds, ...groupTargetSessionIds, ...noTargetSessionIds])]
 
       if (allIds.length > 0) {
         const { data } = await supabase
@@ -473,6 +855,31 @@ export default function RoomsPage() {
         .in('id', ids)
       if (profiles) setStudents(profiles.map(p => ({ id: p.id, name: p.full_name || 'Student', avatarUrl: p.avatar_url })))
     }
+
+    // Quizzes
+    const { data: quizzesData } = await supabase
+      .from('quizzes')
+      .select('id, title')
+      .eq('teacher_id', user.id)
+      .order('title')
+    if (quizzesData) {
+      const withCounts = await Promise.all(quizzesData.map(async q => {
+        const { count } = await supabase.from('quiz_questions').select('id', { count: 'exact', head: true }).eq('quiz_id', q.id)
+        return { id: q.id, title: q.title, questionCount: count ?? 0 }
+      }))
+      setAvailableQuizzes(withCounts)
+    }
+
+    // Published courses
+    const { data: coursesData } = await supabase
+      .from('courses')
+      .select('id, title, subject')
+      .eq('teacher_id', user.id)
+      .eq('published', true)
+      .order('title')
+    if (coursesData) {
+      setAvailableCourses(coursesData.map(c => ({ id: c.id, title: c.title, subject: c.subject })))
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, isCreator])
 
@@ -495,6 +902,15 @@ export default function RoomsPage() {
   function handleCreated() {
     loadSessions()
     showToast('✅ Session created!')
+  }
+
+  function handleEdit(session: SessionRow) {
+    setEditSession(session)
+  }
+
+  function handleUpdated() {
+    loadSessions()
+    showToast('✅ Session updated!')
   }
 
   function handleEnter(session: SessionRow) {
@@ -556,7 +972,7 @@ export default function RoomsPage() {
           {activeSessions.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px', marginBottom: endedSessions.length > 0 ? '32px' : 0 }}>
               {activeSessions.map(session => (
-                <SessionCard key={session.id} session={session} isCreator={isCreator} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} />
+                <SessionCard key={session.id} session={session} isCreator={isCreator} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} onEdit={handleEdit} />
               ))}
             </div>
           )}
@@ -565,7 +981,7 @@ export default function RoomsPage() {
               <h3 style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '12px' }}>Past Sessions</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
                 {endedSessions.map(session => (
-                  <SessionCard key={session.id} session={session} isCreator={isCreator} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} />
+                  <SessionCard key={session.id} session={session} isCreator={isCreator} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} onEdit={handleEdit} />
                 ))}
               </div>
             </>
@@ -589,8 +1005,9 @@ export default function RoomsPage() {
       )}
 
       {/* Modals */}
-      {showCreate && <CreateSessionModal onClose={() => setShowCreate(false)} onCreated={handleCreated} groups={groups} students={students} />}
+      {showCreate && <CreateSessionModal onClose={() => setShowCreate(false)} onCreated={handleCreated} groups={groups} students={students} quizzes={availableQuizzes} courses={availableCourses} />}
       {showJoin && <JoinRoomModal onClose={() => setShowJoin(false)} onJoin={handleJoin} />}
+      {editSession && <EditSessionModal session={editSession} onClose={() => setEditSession(null)} onUpdated={handleUpdated} groups={groups} students={students} quizzes={availableQuizzes} courses={availableCourses} />}
 
       {/* Toast */}
       {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
