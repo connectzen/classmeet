@@ -58,13 +58,14 @@ interface LinkedQuiz extends Quiz {
 }
 
 interface PresentEvent {
-  type: 'start-course' | 'start-quiz' | 'stop' | 'course-navigate' | 'quiz-advance' | 'quiz-reveal' | 'quiz-answer'
+  type: 'start-course' | 'start-quiz' | 'stop' | 'course-navigate' | 'course-scroll' | 'quiz-advance' | 'quiz-reveal' | 'quiz-answer'
   courseId?: string
   quizId?: string
   lessonIndex?: number
   questionIndex?: number
   identity?: string
   answerIndex?: number
+  scrollTop?: number
 }
 
 // ── Main Page ────────────────────────────────────────────────────────────────
@@ -175,7 +176,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [quizRevealed, setQuizRevealed] = useState(false)
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({})
-  // Mobile detection – null means "not yet determined"
+  const [courseScrollTop, setCourseScrollTop] = useState(0)  // Mobile detection – null means "not yet determined"
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -380,6 +381,9 @@ function RoomInner({ roomName }: { roomName: string }) {
       setActiveQuizId(null)
     } else if (event.type === 'course-navigate') {
       setCurrentLessonIndex(event.lessonIndex ?? 0)
+      setCourseScrollTop(0)
+    } else if (event.type === 'course-scroll') {
+      setCourseScrollTop(event.scrollTop ?? 0)
     } else if (event.type === 'quiz-advance') {
       setCurrentQuestionIndex(event.questionIndex ?? 0)
       setQuizRevealed(false)
@@ -425,8 +429,16 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Teacher: navigate course lesson
   const navigateCourseLesson = useCallback((index: number) => {
     setCurrentLessonIndex(index)
+    setCourseScrollTop(0)
     const payload = encoder.encode(JSON.stringify({ type: 'course-navigate', lessonIndex: index }))
     sendPresentData(payload, { reliable: true })
+  }, [sendPresentData])
+
+  // Teacher: sync course scroll position to students
+  const scrollCourseContent = useCallback((scrollTop: number) => {
+    setCourseScrollTop(scrollTop)
+    const payload = encoder.encode(JSON.stringify({ type: 'course-scroll', scrollTop }))
+    sendPresentData(payload, { reliable: false })
   }, [sendPresentData])
 
   // Teacher: advance quiz question
@@ -641,6 +653,8 @@ function RoomInner({ roomName }: { roomName: string }) {
           quizRevealed={quizRevealed}
           quizAnswers={quizAnswers}
           onNavigateLesson={navigateCourseLesson}
+          onScrollCourse={scrollCourseContent}
+          courseScrollTop={courseScrollTop}
           onAdvanceQuestion={advanceQuizQuestion}
           onRevealAnswer={revealQuizAnswer}
           onSubmitAnswer={submitQuizAnswer}
@@ -808,7 +822,8 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
 // ── Main Stage ───────────────────────────────────────────────────────────────
 function MainStage({ participant, screenShare, cameraTracks, blackboardActive, isHost, onCanvasEvent, incomingEvent, blackboardRef,
   presentMode, activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
-  quizRevealed, quizAnswers, onNavigateLesson, onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, localIdentity,
+  quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop,
+  onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, localIdentity,
 }: {
   participant: LKParticipant | undefined
   screenShare: TrackReferenceOrPlaceholder | null
@@ -827,6 +842,8 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
   quizRevealed: boolean
   quizAnswers: Record<string, number>
   onNavigateLesson: (index: number) => void
+  onScrollCourse: (scrollTop: number) => void
+  courseScrollTop: number
   onAdvanceQuestion: (index: number) => void
   onRevealAnswer: () => void
   onSubmitAnswer: (index: number) => void
@@ -870,6 +887,8 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
             currentIndex={currentLessonIndex}
             isHost={isHost}
             onNavigate={onNavigateLesson}
+            onScroll={onScrollCourse}
+            scrollTop={courseScrollTop}
             teacherName={participant?.name || 'Teacher'}
           />
         </div>
@@ -934,19 +953,39 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
 }
 
 // ── Course Presentation ──────────────────────────────────────────────────────
-function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate, teacherName }: {
+function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate, onScroll, scrollTop, teacherName }: {
   course: LinkedCourse
   lessons: Lesson[]
   currentIndex: number
   isHost: boolean
   onNavigate: (index: number) => void
+  onScroll: (scrollTop: number) => void
+  scrollTop: number
   teacherName: string
 }) {
   const lesson = lessons[currentIndex]
   const totalLessons = lessons.length
+  const contentRef = useRef<HTMLDivElement>(null)
+  const scrollThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Find which topic this lesson belongs to
   const currentTopic = course.topics.find(t => t.lessons.some(l => l.id === lesson?.id))
+
+  // Teacher: broadcast scroll position on scroll
+  const handleScroll = useCallback(() => {
+    if (!isHost || !contentRef.current) return
+    const st = contentRef.current.scrollTop
+    if (scrollThrottleRef.current) clearTimeout(scrollThrottleRef.current)
+    scrollThrottleRef.current = setTimeout(() => {
+      onScroll(st)
+    }, 50)
+  }, [isHost, onScroll])
+
+  // Student: sync scroll position from teacher
+  useEffect(() => {
+    if (isHost || !contentRef.current) return
+    contentRef.current.scrollTop = scrollTop
+  }, [isHost, scrollTop])
 
   return (
     <div className="room-presentation">
@@ -956,7 +995,12 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
         {!isHost && <span className="room-presentation-subtitle">{teacherName} is presenting</span>}
       </div>
 
-      <div className="room-presentation-content">
+      <div
+        ref={contentRef}
+        className="room-presentation-content"
+        onScroll={isHost ? handleScroll : undefined}
+        style={!isHost ? { overflow: 'hidden' } : undefined}
+      >
         {lesson ? (
           <>
             {currentTopic && (
@@ -1021,12 +1065,21 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   localIdentity: string
   teacherName: string
 }) {
-  const question = quiz.questions[currentIndex]
   const totalQuestions = quiz.questions.length
-  const myAnswer = answers[localIdentity]
+
+  // Students navigate independently; teacher uses the shared currentIndex
+  const [studentIndex, setStudentIndex] = useState(0)
+  // Students track their own answers locally per question index
+  const [studentAnswers, setStudentAnswers] = useState<Record<number, number>>({})
+
+  const activeIndex = isHost ? currentIndex : studentIndex
+  const question = quiz.questions[activeIndex]
+
+  // For teacher: aggregate answer stats from data channel
+  const myAnswer = isHost ? answers[localIdentity] : studentAnswers[activeIndex]
   const hasAnswered = myAnswer !== undefined
 
-  // Tally answers for each option
+  // Tally answers for each option (teacher view only)
   const answerCounts = useMemo(() => {
     const counts: Record<number, number> = {}
     Object.values(answers).forEach(a => {
@@ -1036,6 +1089,12 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   }, [answers])
 
   const totalAnswers = Object.keys(answers).length
+
+  // Student: answer the current question and broadcast it
+  const handleStudentAnswer = useCallback((optionIndex: number) => {
+    setStudentAnswers(prev => ({ ...prev, [activeIndex]: optionIndex }))
+    onAnswer(optionIndex)
+  }, [activeIndex, onAnswer])
 
   if (!question) {
     return (
@@ -1058,13 +1117,13 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
         <span className="room-presentation-title">{quiz.title}</span>
         {!isHost && <span className="room-presentation-subtitle">{teacherName} is presenting</span>}
         <span className="room-presentation-counter" style={{ marginLeft: 'auto' }}>
-          Q{currentIndex + 1}/{totalQuestions}
+          Q{activeIndex + 1}/{totalQuestions}
         </span>
       </div>
 
       <div className="room-presentation-content room-quiz-content">
         <div className="room-quiz-question">
-          <span className="room-quiz-question-number">Question {currentIndex + 1}</span>
+          <span className="room-quiz-question-number">Question {activeIndex + 1}</span>
           <h2 className="room-quiz-question-text">{question.question_text}</h2>
           {question.time_limit > 0 && (
             <div className="room-quiz-timer">
@@ -1080,23 +1139,30 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             const count = answerCounts[i] || 0
             const pct = totalAnswers > 0 ? Math.round((count / totalAnswers) * 100) : 0
 
+            // Teacher: show reveal state; Student: show selected + immediate feedback after answering
             let optClass = 'room-quiz-option'
-            if (revealed && isCorrect) optClass += ' room-quiz-option-correct'
-            if (revealed && isMyAnswer && !isCorrect) optClass += ' room-quiz-option-wrong'
-            if (!revealed && isMyAnswer) optClass += ' room-quiz-option-selected'
+            if (isHost) {
+              if (revealed && isCorrect) optClass += ' room-quiz-option-correct'
+              if (revealed && isMyAnswer && !isCorrect) optClass += ' room-quiz-option-wrong'
+              if (!revealed && isMyAnswer) optClass += ' room-quiz-option-selected'
+            } else {
+              if (hasAnswered && isCorrect) optClass += ' room-quiz-option-correct'
+              if (hasAnswered && isMyAnswer && !isCorrect) optClass += ' room-quiz-option-wrong'
+              if (!hasAnswered && isMyAnswer) optClass += ' room-quiz-option-selected'
+            }
 
             return (
               <button
                 key={i}
                 className={optClass}
                 onClick={() => {
-                  if (!isHost && !hasAnswered && !revealed) onAnswer(i)
+                  if (!isHost && !hasAnswered) handleStudentAnswer(i)
                 }}
-                disabled={isHost || hasAnswered || revealed}
+                disabled={isHost || hasAnswered}
               >
                 <span className="room-quiz-option-label">{optionLabels[i]}</span>
                 <span className="room-quiz-option-text">{opt}</span>
-                {revealed && (
+                {((isHost && revealed) || (!isHost && hasAnswered)) && (
                   <span className="room-quiz-option-stats">
                     {isCorrect && <Check size={14} />}
                     {isHost && <span>{count} ({pct}%)</span>}
@@ -1107,13 +1173,14 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
           })}
         </div>
 
-        {!isHost && hasAnswered && !revealed && (
+        {!isHost && hasAnswered && (
           <div className="room-quiz-waiting">
-            <span>Answer submitted! Waiting for teacher to reveal...</span>
+            <span>{myAnswer === question.correct_index ? '✓ Correct!' : '✗ Incorrect'}</span>
           </div>
         )}
       </div>
 
+      {/* Teacher navigation + reveal controls */}
       {isHost && (
         <div className="room-presentation-nav">
           <button
@@ -1137,6 +1204,29 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             className="btn btn-outline btn-sm"
             disabled={currentIndex >= totalQuestions - 1}
             onClick={() => onAdvance(currentIndex + 1)}
+          >
+            Next <ArrowRight size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Student self-paced navigation */}
+      {!isHost && (
+        <div className="room-presentation-nav">
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={studentIndex === 0}
+            onClick={() => setStudentIndex(prev => prev - 1)}
+          >
+            <ArrowLeft size={16} /> Previous
+          </button>
+          <span className="room-presentation-counter">
+            {Object.keys(studentAnswers).length} of {totalQuestions} answered
+          </span>
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={studentIndex >= totalQuestions - 1}
+            onClick={() => setStudentIndex(prev => prev + 1)}
           >
             Next <ArrowRight size={16} />
           </button>

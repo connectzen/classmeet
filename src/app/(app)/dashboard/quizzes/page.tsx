@@ -5,9 +5,11 @@ import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
+import Avatar from '@/components/ui/Avatar'
 import {
   HelpCircle, Plus, Trash2, ArrowLeft, Save, Clock,
   GripVertical, ChevronDown, ChevronRight, Check, X, Type, ToggleLeft, PenLine, FileText,
+  Users, Search, FolderOpen,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -267,7 +269,7 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
 }
 
 // ── Quiz Card ─────────────────────────────────────────────────────────────────
-function QuizCard({ quiz, onClick, onDelete }: { quiz: QuizLocal; onClick: () => void; onDelete: () => void }) {
+function QuizCard({ quiz, onClick, onDelete, readOnly }: { quiz: QuizLocal; onClick: () => void; onDelete: () => void; readOnly?: boolean }) {
   return (
     <div className="card" style={{ padding: '20px', cursor: 'pointer' }} onClick={onClick}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
@@ -275,11 +277,13 @@ function QuizCard({ quiz, onClick, onDelete }: { quiz: QuizLocal; onClick: () =>
           Quiz
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button type="button" onClick={e => { e.stopPropagation(); onDelete() }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 2, display: 'flex' }}
-            title="Delete quiz">
-            <Trash2 size={13} />
-          </button>
+          {!readOnly && (
+            <button type="button" onClick={e => { e.stopPropagation(); onDelete() }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 2, display: 'flex' }}
+              title="Delete quiz">
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       </div>
       <h3 style={{ margin: '0 0 6px', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>{quiz.title}</h3>
@@ -316,6 +320,18 @@ export default function QuizzesPage() {
   const isCreator = user?.role === 'teacher' || user?.role === 'member' || user?.role === 'admin'
   const supabase = createClient()
 
+  // Targeting state
+  interface GroupOption { id: string; name: string; memberCount: number }
+  interface StudentOption { id: string; name: string; avatarUrl: string | null }
+  const [groups, setGroups] = useState<GroupOption[]>([])
+  const [studentsOptions, setStudentsOptions] = useState<StudentOption[]>([])
+  const [targetMode, setTargetMode] = useState<'groups' | 'students'>('groups')
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set())
+  const [targetSearch, setTargetSearch] = useState('')
+  // Student read-only viewer
+  const [viewingQuiz, setViewingQuiz] = useState<{ title: string; description: string; questions: QuestionLocal[] } | null>(null)
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -324,27 +340,139 @@ export default function QuizzesPage() {
   // ── Load quizzes ──
   const loadQuizzes = useCallback(async () => {
     if (!user?.id) return
-    const { data } = await supabase
-      .from('quizzes')
-      .select('id, title, description, created_at')
-      .eq('teacher_id', user.id)
-      .order('created_at', { ascending: false })
-    if (data) {
-      // Count questions per quiz
-      const withCounts = await Promise.all(data.map(async q => {
-        const { count } = await supabase.from('quiz_questions').select('id', { count: 'exact', head: true }).eq('quiz_id', q.id)
-        return { id: q.id, title: q.title, description: q.description || '', questionCount: count ?? 0, createdAt: q.created_at }
-      }))
-      setQuizzes(withCounts)
+
+    if (isCreator) {
+      const { data } = await supabase
+        .from('quizzes')
+        .select('id, title, description, created_at')
+        .eq('teacher_id', user.id)
+        .order('created_at', { ascending: false })
+      if (data) {
+        const withCounts = await Promise.all(data.map(async q => {
+          const { count } = await supabase.from('quiz_questions').select('id', { count: 'exact', head: true }).eq('quiz_id', q.id)
+          return { id: q.id, title: q.title, description: q.description || '', questionCount: count ?? 0, createdAt: q.created_at }
+        }))
+        setQuizzes(withCounts)
+      }
+    } else {
+      // Student: load quizzes shared via quiz_targets
+      const { data: directTargets } = await supabase
+        .from('quiz_targets')
+        .select('quiz_id')
+        .eq('target_type', 'student')
+        .eq('target_id', user.id)
+
+      const { data: myGroups } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .eq('student_id', user.id)
+
+      let groupQuizIds: string[] = []
+      if (myGroups && myGroups.length > 0) {
+        const gids = myGroups.map(g => g.group_id)
+        const { data: groupTargets } = await supabase
+          .from('quiz_targets')
+          .select('quiz_id')
+          .eq('target_type', 'group')
+          .in('target_id', gids)
+        if (groupTargets) groupQuizIds = groupTargets.map(t => t.quiz_id)
+      }
+
+      const directIds = directTargets?.map(t => t.quiz_id) || []
+      const allIds = [...new Set([...directIds, ...groupQuizIds])]
+
+      if (allIds.length > 0) {
+        const { data } = await supabase
+          .from('quizzes')
+          .select('id, title, description, created_at')
+          .in('id', allIds)
+          .order('created_at', { ascending: false })
+        if (data) {
+          const withCounts = await Promise.all(data.map(async q => {
+            const { count } = await supabase.from('quiz_questions').select('id', { count: 'exact', head: true }).eq('quiz_id', q.id)
+            return { id: q.id, title: q.title, description: q.description || '', questionCount: count ?? 0, createdAt: q.created_at }
+          }))
+          setQuizzes(withCounts)
+        }
+      } else {
+        setQuizzes([])
+      }
     }
+
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
   useEffect(() => { loadQuizzes() }, [loadQuizzes])
 
+  // ── Load groups + students for targeting (teacher only) ──
+  useEffect(() => {
+    if (!user?.id || !isCreator) return
+    async function loadTargets() {
+      const { data: grps } = await supabase.from('groups').select('id, name').eq('teacher_id', user!.id)
+      if (grps) {
+        const groupsWithCount: GroupOption[] = []
+        for (const g of grps) {
+          const { count } = await supabase.from('group_members').select('id', { count: 'exact', head: true }).eq('group_id', g.id)
+          groupsWithCount.push({ id: g.id, name: g.name, memberCount: count || 0 })
+        }
+        setGroups(groupsWithCount)
+      }
+      const { data: enrolled } = await supabase.from('teacher_students').select('student_id').eq('teacher_id', user!.id).eq('status', 'active')
+      if (enrolled && enrolled.length > 0) {
+        const ids = enrolled.map(e => e.student_id)
+        const { data: profiles } = await supabase.from('profiles').select('id, full_name, avatar_url').in('id', ids)
+        if (profiles) setStudentsOptions(profiles.map(p => ({ id: p.id, name: p.full_name || 'Student', avatarUrl: p.avatar_url })))
+      }
+    }
+    loadTargets()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isCreator])
+
+  // ── Load targets when opening a quiz for editing ──
+  useEffect(() => {
+    if (!editingId || !isCreator) return
+    async function loadQuizTargets() {
+      const { data: targets } = await supabase.from('quiz_targets').select('*').eq('quiz_id', editingId!)
+      if (targets && targets.length > 0) {
+        const first = targets[0]
+        if (first.target_type === 'group') {
+          setTargetMode('groups')
+          setSelectedGroups(new Set(targets.map(t => t.target_id)))
+          setSelectedStudents(new Set())
+        } else {
+          setTargetMode('students')
+          setSelectedStudents(new Set(targets.map(t => t.target_id)))
+          setSelectedGroups(new Set())
+        }
+      } else {
+        setSelectedGroups(new Set())
+        setSelectedStudents(new Set())
+      }
+    }
+    loadQuizTargets()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId])
+
   // ── Open builder ──
   async function openQuiz(quizId: string) {
+    // Student: open read-only viewer
+    if (!isCreator) {
+      const { data: quiz } = await supabase.from('quizzes').select('*').eq('id', quizId).single()
+      if (!quiz) return
+      const { data: qs } = await supabase.from('quiz_questions').select('*').eq('quiz_id', quiz.id).order('sort_order')
+      setViewingQuiz({
+        title: quiz.title,
+        description: quiz.description || '',
+        questions: (qs || []).map(q => ({
+          id: q.id, questionText: q.question_text, questionType: (q.question_type || 'multiple_choice') as QuestionType,
+          options: Array.isArray(q.options) ? q.options as string[] : [],
+          correctIndex: q.correct_index, correctAnswer: q.correct_answer || '',
+          timeLimit: q.time_limit, sortOrder: q.sort_order, collapsed: false,
+        })),
+      })
+      return
+    }
     const { data: quiz } = await supabase.from('quizzes').select('*').eq('id', quizId).single()
     if (!quiz) return
     setEditingId(quiz.id)
@@ -413,6 +541,13 @@ export default function QuizzesPage() {
       await supabase.from('quiz_questions').insert(rows)
     }
 
+    // Save targets
+    await supabase.from('quiz_targets').delete().eq('quiz_id', editingId)
+    const targets: { quiz_id: string; target_type: 'group' | 'student'; target_id: string }[] = targetMode === 'groups'
+      ? Array.from(selectedGroups).map(gid => ({ quiz_id: editingId, target_type: 'group' as const, target_id: gid }))
+      : Array.from(selectedStudents).map(sid => ({ quiz_id: editingId, target_type: 'student' as const, target_id: sid }))
+    if (targets.length > 0) await supabase.from('quiz_targets').insert(targets)
+
     setSaving(false)
     showToast('✅ Quiz saved')
     loadQuizzes()
@@ -472,7 +607,69 @@ export default function QuizzesPage() {
   const filteredQuizzes = quizzes.filter(q => q.title.toLowerCase().includes(search.toLowerCase()))
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  BUILDER VIEW
+  //  STUDENT READ-ONLY QUIZ VIEW
+  // ══════════════════════════════════════════════════════════════════════════
+  if (viewingQuiz) {
+    const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
+    return (
+      <div style={{ maxWidth: '780px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+          <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={() => setViewingQuiz(null)}>Back</Button>
+          <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{viewingQuiz.title}</h1>
+        </div>
+        {viewingQuiz.description && (
+          <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+            <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-muted)' }}>{viewingQuiz.description}</p>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {viewingQuiz.questions.map((q, qi) => {
+            const qType = QUESTION_TYPES.find(t => t.value === q.questionType)
+            return (
+              <div key={q.id} className="card" style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--primary-400)' }}>Q{qi + 1}</span>
+                  {qType && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>{qType.label}</span>}
+                  {q.timeLimit > 0 && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: 'auto' }}><Clock size={12} style={{ verticalAlign: -2 }} /> {q.timeLimit}s</span>}
+                </div>
+                <p style={{ margin: '0 0 12px', fontSize: '0.92rem', fontWeight: 500, color: 'var(--text-primary)' }}>{q.questionText || 'No question text'}</p>
+                {q.questionType === 'multiple_choice' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {q.options.map((opt, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>{optionLabels[i]}</span>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{opt || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {q.questionType === 'true_false' && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1, padding: '10px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-primary)' }}>True</div>
+                    <div style={{ flex: 1, padding: '10px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-primary)' }}>False</div>
+                  </div>
+                )}
+                {(q.questionType === 'short_answer' || q.questionType === 'fill_blank') && (
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    {q.questionType === 'short_answer' ? 'Short answer response' : 'Fill in the blank'}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {viewingQuiz.questions.length === 0 && (
+            <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>This quiz has no questions yet.</p>
+            </div>
+          )}
+        </div>
+        {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
+      </div>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  BUILDER VIEW (Teachers only)
   // ══════════════════════════════════════════════════════════════════════════
   if (editingId) {
     return (
@@ -499,6 +696,62 @@ export default function QuizzesPage() {
                 onChange={e => setDescription(e.target.value)} style={{ resize: 'vertical', minHeight: '60px' }} />
             </div>
           </div>
+        </div>
+
+        {/* Assignment – assign to groups or students */}
+        <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+            <Users size={16} color="var(--primary-400)" />
+            <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Share With</span>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+            <button type="button" onClick={() => { setTargetMode('groups'); setSelectedStudents(new Set()) }}
+              style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', fontWeight: 500, border: '1px solid var(--border-default)', cursor: 'pointer', background: targetMode === 'groups' ? 'var(--primary-500)' : 'transparent', color: targetMode === 'groups' ? '#fff' : 'var(--text-secondary)' }}>
+              <FolderOpen size={13} style={{ marginRight: 4, verticalAlign: -2 }} /> Groups
+            </button>
+            <button type="button" onClick={() => { setTargetMode('students'); setSelectedGroups(new Set()) }}
+              style={{ padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', fontWeight: 500, border: '1px solid var(--border-default)', cursor: 'pointer', background: targetMode === 'students' ? 'var(--primary-500)' : 'transparent', color: targetMode === 'students' ? '#fff' : 'var(--text-secondary)' }}>
+              <Users size={13} style={{ marginRight: 4, verticalAlign: -2 }} /> Students
+            </button>
+          </div>
+          <Input placeholder={targetMode === 'groups' ? 'Search groups…' : 'Search students…'} value={targetSearch} onChange={e => setTargetSearch(e.target.value)} leftIcon={<Search size={14} />} />
+          <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {targetMode === 'groups' ? (
+              groups.filter(g => g.name.toLowerCase().includes(targetSearch.toLowerCase())).map(g => (
+                <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: selectedGroups.has(g.id) ? 'rgba(99,102,241,0.12)' : 'transparent' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selectedGroups.has(g.id) ? 'var(--primary-500)' : 'var(--border-default)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: selectedGroups.has(g.id) ? 'var(--primary-500)' : 'transparent', flexShrink: 0 }}
+                    onClick={() => setSelectedGroups(prev => { const n = new Set(prev); if (n.has(g.id)) n.delete(g.id); else n.add(g.id); return n })}>
+                    {selectedGroups.has(g.id) && <Check size={12} color="#fff" />}
+                  </div>
+                  <FolderOpen size={14} color="var(--primary-400)" />
+                  <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{g.name}</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{g.memberCount} members</span>
+                </label>
+              ))
+            ) : (
+              studentsOptions.filter(s => s.name.toLowerCase().includes(targetSearch.toLowerCase())).map(s => (
+                <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: selectedStudents.has(s.id) ? 'rgba(99,102,241,0.12)' : 'transparent' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selectedStudents.has(s.id) ? 'var(--primary-500)' : 'var(--border-default)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: selectedStudents.has(s.id) ? 'var(--primary-500)' : 'transparent', flexShrink: 0 }}
+                    onClick={() => setSelectedStudents(prev => { const n = new Set(prev); if (n.has(s.id)) n.delete(s.id); else n.add(s.id); return n })}>
+                    {selectedStudents.has(s.id) && <Check size={12} color="#fff" />}
+                  </div>
+                  <Avatar src={s.avatarUrl} name={s.name} size="sm" />
+                  <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{s.name}</span>
+                </label>
+              ))
+            )}
+            {targetMode === 'groups' && groups.length === 0 && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No groups created yet</p>
+            )}
+            {targetMode === 'students' && studentsOptions.length === 0 && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No enrolled students</p>
+            )}
+          </div>
+          {(selectedGroups.size > 0 || selectedStudents.size > 0) && (
+            <div style={{ marginTop: '8px', fontSize: '0.78rem', color: 'var(--primary-400)' }}>
+              {targetMode === 'groups' ? `${selectedGroups.size} group(s) selected` : `${selectedStudents.size} student(s) selected`}
+            </div>
+          )}
         </div>
 
         {/* Questions */}
@@ -549,7 +802,7 @@ export default function QuizzesPage() {
         <div>
           <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>Quizzes</h1>
           <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-            Create and manage quizzes to present during live sessions
+            {isCreator ? 'Create and manage quizzes to present during live sessions' : 'Browse available quizzes'}
           </p>
         </div>
         {isCreator && <Button icon={<Plus size={15} />} onClick={createNew}>New Quiz</Button>}
@@ -570,7 +823,7 @@ export default function QuizzesPage() {
       ) : filteredQuizzes.length > 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
           {filteredQuizzes.map(q => (
-            <QuizCard key={q.id} quiz={q} onClick={() => openQuiz(q.id)} onDelete={() => deleteQuiz(q.id)} />
+            <QuizCard key={q.id} quiz={q} onClick={() => openQuiz(q.id)} onDelete={() => deleteQuiz(q.id)} readOnly={!isCreator} />
           ))}
         </div>
       ) : (
@@ -580,9 +833,9 @@ export default function QuizzesPage() {
           </div>
           <h3 style={{ margin: '0 0 8px', color: 'var(--text-primary)', fontWeight: 600 }}>No quizzes yet</h3>
           <p style={{ margin: '0 0 24px', fontSize: '0.875rem', color: 'var(--text-muted)', maxWidth: '320px', marginLeft: 'auto', marginRight: 'auto' }}>
-            Create your first quiz and use it in live sessions
+            {isCreator ? 'Create your first quiz and use it in live sessions' : 'No quizzes are available yet. Check back soon.'}
           </p>
-          <Button icon={<Plus size={15} />} onClick={createNew}>Create Your First Quiz</Button>
+          {isCreator && <Button icon={<Plus size={15} />} onClick={createNew}>Create Your First Quiz</Button>}
         </div>
       )}
 

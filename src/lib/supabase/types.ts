@@ -142,6 +142,14 @@ export type SessionCourse = {
   course_id: string
 }
 
+export type QuizTarget = {
+  id: string
+  quiz_id: string
+  target_type: 'group' | 'student'
+  target_id: string
+  created_at: string
+}
+
 export type Conversation = {
   id: string
   type: 'direct' | 'group'
@@ -259,6 +267,12 @@ export type Database = {
         Row: SessionCourse
         Insert: Omit<SessionCourse, 'id'>
         Update: Partial<Omit<SessionCourse, 'id'>>
+        Relationships: []
+      }
+      quiz_targets: {
+        Row: QuizTarget
+        Insert: Omit<QuizTarget, 'id' | 'created_at'>
+        Update: Partial<Omit<QuizTarget, 'id' | 'created_at'>>
         Relationships: []
       }
       conversations: {

@@ -587,7 +587,79 @@ export default function CoursesPage() {
   )
 
   // ══════════════════════════════════════════════════════════════════════════
-  // COURSE BUILDER VIEW
+  // STUDENT READ-ONLY COURSE VIEW
+  // ══════════════════════════════════════════════════════════════════════════
+  if (editing && !isCreator) {
+    return (
+      <div style={{ maxWidth: '860px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <button type="button" onClick={() => setEditing(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            <ArrowLeft size={16} /> Back to Courses
+          </button>
+        </div>
+
+        {/* Course info */}
+        <div className="card" style={{ padding: '24px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <span style={{ padding: '2px 10px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 600, background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>{editing.subject}</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{editing.level}</span>
+          </div>
+          <h1 style={{ margin: '0 0 8px', fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>{editing.title}</h1>
+          {editing.description && <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>{editing.description}</p>}
+        </div>
+
+        {/* Topics & Lessons read-only */}
+        {editing.topics.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {editing.topics.map(topic => (
+              <div key={topic.id} className="card" style={{ overflow: 'hidden' }}>
+                <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FolderOpen size={16} color="var(--primary-400)" />
+                  <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{topic.title || 'Untitled Topic'}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{topic.lessons.length} lesson{topic.lessons.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div style={{ padding: '8px 16px 16px' }}>
+                  {topic.lessons.map(lesson => (
+                    <div key={lesson.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', marginBottom: '8px', background: 'var(--bg-secondary)' }}>
+                      <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {lesson.type === 'video' ? <Video size={14} color="#8b5cf6" /> : <FileText size={14} color="#6366f1" />}
+                        <span style={{ fontWeight: 500, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{lesson.title || 'Untitled Lesson'}</span>
+                      </div>
+                      <div style={{ padding: '0 14px 14px' }}>
+                        {lesson.type === 'video' && lesson.videoUrl ? (
+                          <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#000' }}>
+                            <video src={lesson.videoUrl} controls style={{ width: '100%', maxHeight: '400px' }} />
+                          </div>
+                        ) : lesson.content ? (
+                          <div className="prose" style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: lesson.content }} />
+                        ) : (
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-disabled)', fontStyle: 'italic' }}>No content</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {topic.lessons.length === 0 && (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '8px 0' }}>No lessons in this topic</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+            <BookOpen size={28} color="var(--text-muted)" style={{ marginBottom: '10px' }} />
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>This course has no content yet.</p>
+          </div>
+        )}
+
+        {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
+      </div>
+    )
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // COURSE BUILDER VIEW (Teachers only)
   // ══════════════════════════════════════════════════════════════════════════
   if (editing) {
     return (
@@ -598,19 +670,17 @@ export default function CoursesPage() {
             style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             <ArrowLeft size={16} /> Back to Courses
           </button>
-          {isCreator && (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Button variant="danger" size="sm" icon={<Trash2 size={14} />} onClick={() => deleteCourse(editing.id)}>Delete</Button>
-              <Button variant="ghost" icon={editing.published ? <Eye size={14} /> : <EyeOff size={14} />}
-                onClick={() => setEditing({ ...editing, published: !editing.published })}>
-                {editing.published ? 'Published' : 'Draft'}
-              </Button>
-              <Button icon={<Save size={14} />} loading={saving} onClick={async () => { await saveCourse(); setEditing(null) }}>Save</Button>
-              {!editing.published && (
-                <Button variant="primary" icon={<Check size={14} />} loading={saving} onClick={async () => { await saveCourse(true); setEditing(null) }}>Publish</Button>
-              )}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button variant="danger" size="sm" icon={<Trash2 size={14} />} onClick={() => deleteCourse(editing.id)}>Delete</Button>
+            <Button variant="ghost" icon={editing.published ? <Eye size={14} /> : <EyeOff size={14} />}
+              onClick={() => setEditing({ ...editing, published: !editing.published })}>
+              {editing.published ? 'Published' : 'Draft'}
+            </Button>
+            <Button icon={<Save size={14} />} loading={saving} onClick={async () => { await saveCourse(); setEditing(null) }}>Save</Button>
+            {!editing.published && (
+              <Button variant="primary" icon={<Check size={14} />} loading={saving} onClick={async () => { await saveCourse(true); setEditing(null) }}>Publish</Button>
+            )}
+          </div>
         </div>
 
         {/* Course meta */}
