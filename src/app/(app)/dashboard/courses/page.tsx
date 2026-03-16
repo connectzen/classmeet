@@ -435,7 +435,7 @@ export default function CoursesPage() {
   }
 
   // ─ Save course (full persist) ─
-  async function saveCourse() {
+  async function saveCourse(publishOverride?: boolean) {
     if (!editing || !user?.id) return
     setSaving(true)
     try {
@@ -453,7 +453,11 @@ export default function CoursesPage() {
       await cleanupOrphanedImages(allLessonHtmls, editing.id, user.id, supabase)
 
       // Update local state with resolved URLs
-      const editingResolved = { ...editing, topics: updatedTopics }
+      const editingResolved = {
+        ...editing,
+        topics: updatedTopics,
+        ...(publishOverride !== undefined ? { published: publishOverride } : {}),
+      }
       setEditing(editingResolved)
 
       // Update course meta
@@ -601,7 +605,10 @@ export default function CoursesPage() {
                 onClick={() => setEditing({ ...editing, published: !editing.published })}>
                 {editing.published ? 'Published' : 'Draft'}
               </Button>
-              <Button icon={<Save size={14} />} loading={saving} onClick={saveCourse}>Save Course</Button>
+              <Button icon={<Save size={14} />} loading={saving} onClick={async () => { await saveCourse(); setEditing(null) }}>Save</Button>
+              {!editing.published && (
+                <Button variant="primary" icon={<Check size={14} />} loading={saving} onClick={async () => { await saveCourse(true); setEditing(null) }}>Publish</Button>
+              )}
             </div>
           )}
         </div>

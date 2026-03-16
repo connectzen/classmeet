@@ -7,7 +7,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import {
   HelpCircle, Plus, Trash2, ArrowLeft, Save, Clock,
-  GripVertical, ChevronDown, ChevronRight, Check, X,
+  GripVertical, ChevronDown, ChevronRight, Check, X, Type, ToggleLeft, PenLine, FileText,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -20,15 +20,26 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+type QuestionType = 'multiple_choice' | 'true_false' | 'short_answer' | 'fill_blank'
+
 interface QuestionLocal {
   id: string
   questionText: string
+  questionType: QuestionType
   options: string[]
   correctIndex: number
+  correctAnswer: string
   timeLimit: number
   sortOrder: number
   collapsed: boolean
 }
+
+const QUESTION_TYPES: { value: QuestionType; label: string; icon: typeof HelpCircle }[] = [
+  { value: 'multiple_choice', label: 'Multiple Choice', icon: HelpCircle },
+  { value: 'true_false', label: 'True / False', icon: ToggleLeft },
+  { value: 'short_answer', label: 'Short Answer', icon: Type },
+  { value: 'fill_blank', label: 'Fill in the Blank', icon: PenLine },
+]
 
 interface QuizLocal {
   id: string
@@ -74,6 +85,25 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
     onUpdate(question.id, { options: [...question.options, ''] })
   }
 
+  function changeType(newType: QuestionType) {
+    const updates: Partial<QuestionLocal> = { questionType: newType }
+    if (newType === 'true_false') {
+      updates.options = ['True', 'False']
+      updates.correctIndex = 0
+      updates.correctAnswer = ''
+    } else if (newType === 'multiple_choice') {
+      if (question.options.length < 2) updates.options = ['', '', '', '']
+      updates.correctAnswer = ''
+    } else if (newType === 'short_answer' || newType === 'fill_blank') {
+      updates.options = []
+      updates.correctIndex = 0
+    }
+    onUpdate(question.id, updates)
+  }
+
+  const typeInfo = QUESTION_TYPES.find(t => t.value === question.questionType) || QUESTION_TYPES[0]
+  const TypeIcon = typeInfo.icon
+
   return (
     <div ref={setNodeRef} style={style} className="card" key={question.id}>
       {/* Question header */}
@@ -89,7 +119,7 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
           {question.questionText || 'Untitled Question'}
         </span>
         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-          <Clock size={11} /> {question.timeLimit}s · {question.options.length} options
+          <TypeIcon size={11} /> {typeInfo.label} · <Clock size={11} /> {question.timeLimit}s
         </span>
         <button type="button" onClick={e => { e.stopPropagation(); onRemove(question.id) }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 4, display: 'flex' }}>
@@ -100,10 +130,30 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
       {/* Question body */}
       {!question.collapsed && (
         <div style={{ padding: '16px' }}>
+          {/* Question type selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginRight: 4 }}>Type:</span>
+            {QUESTION_TYPES.map(t => {
+              const Icon = t.icon
+              return (
+                <button key={t.value} type="button" onClick={() => changeType(t.value)}
+                  style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', fontWeight: 600,
+                    border: '1px solid var(--border-default)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
+                    background: question.questionType === t.value ? 'var(--primary-500)' : 'transparent',
+                    color: question.questionType === t.value ? '#fff' : 'var(--text-muted)' }}>
+                  <Icon size={12} /> {t.label}
+                </button>
+              )
+            })}
+          </div>
+
           {/* Question text */}
           <div className="input-group" style={{ marginBottom: '14px' }}>
-            <label className="input-label">Question</label>
-            <textarea className="input" rows={2} placeholder="Type your question here…"
+            <label className="input-label">
+              {question.questionType === 'fill_blank' ? 'Question (use ___ for blanks)' : 'Question'}
+            </label>
+            <textarea className="input" rows={2}
+              placeholder={question.questionType === 'fill_blank' ? 'The capital of France is ___.' : 'Type your question here…'}
               value={question.questionText}
               onChange={e => onUpdate(question.id, { questionText: e.target.value })}
               style={{ resize: 'vertical', minHeight: '60px' }} />
@@ -124,45 +174,91 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
             ))}
           </div>
 
-          {/* Options */}
-          <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Answer Options</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {question.options.map((opt, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {/* Correct indicator */}
-                <button type="button" onClick={() => onUpdate(question.id, { correctIndex: idx })}
-                  title={question.correctIndex === idx ? 'Correct answer' : 'Mark as correct'}
-                  style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${question.correctIndex === idx ? 'var(--success-400)' : 'var(--border-default)'}`,
-                    background: question.correctIndex === idx ? 'var(--success-400)' : 'transparent',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                  {question.correctIndex === idx && <Check size={14} color="#fff" />}
-                </button>
-                {/* Option label */}
-                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', width: 20 }}>
-                  {String.fromCharCode(65 + idx)}.
-                </span>
-                <input
-                  value={opt}
-                  onChange={e => updateOption(idx, e.target.value)}
-                  placeholder={`Option ${String.fromCharCode(65 + idx)}`}
-                  className="input"
-                  style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem' }}
-                />
-                {question.options.length > 2 && (
-                  <button type="button" onClick={() => removeOption(idx)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 4, display: 'flex' }}>
-                    <X size={14} />
-                  </button>
-                )}
+          {/* Multiple Choice options */}
+          {question.questionType === 'multiple_choice' && (
+            <>
+              <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Answer Options</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {question.options.map((opt, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button type="button" onClick={() => onUpdate(question.id, { correctIndex: idx })}
+                      title={question.correctIndex === idx ? 'Correct answer' : 'Mark as correct'}
+                      style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${question.correctIndex === idx ? 'var(--success-400)' : 'var(--border-default)'}`,
+                        background: question.correctIndex === idx ? 'var(--success-400)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                      {question.correctIndex === idx && <Check size={14} color="#fff" />}
+                    </button>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', width: 20 }}>
+                      {String.fromCharCode(65 + idx)}.
+                    </span>
+                    <input value={opt} onChange={e => updateOption(idx, e.target.value)}
+                      placeholder={`Option ${String.fromCharCode(65 + idx)}`} className="input"
+                      style={{ flex: 1, padding: '8px 12px', fontSize: '0.85rem' }} />
+                    {question.options.length > 2 && (
+                      <button type="button" onClick={() => removeOption(idx)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 4, display: 'flex' }}>
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          {question.options.length < 6 && (
-            <button type="button" onClick={addOption}
-              style={{ marginTop: '8px', background: 'none', border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-sm)',
-                padding: '6px 14px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Plus size={13} /> Add Option
-            </button>
+              {question.options.length < 6 && (
+                <button type="button" onClick={addOption}
+                  style={{ marginTop: '8px', background: 'none', border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-sm)',
+                    padding: '6px 14px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Plus size={13} /> Add Option
+                </button>
+              )}
+            </>
+          )}
+
+          {/* True/False options */}
+          {question.questionType === 'true_false' && (
+            <>
+              <label className="input-label" style={{ marginBottom: '8px', display: 'block' }}>Correct Answer</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {['True', 'False'].map((label, idx) => (
+                  <button key={label} type="button" onClick={() => onUpdate(question.id, { correctIndex: idx })}
+                    style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.9rem',
+                      border: `2px solid ${question.correctIndex === idx ? 'var(--success-400)' : 'var(--border-default)'}`,
+                      background: question.correctIndex === idx ? 'rgba(34,197,94,0.1)' : 'transparent',
+                      color: question.correctIndex === idx ? 'var(--success-400)' : 'var(--text-secondary)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    {question.correctIndex === idx && <Check size={16} />}
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Short Answer */}
+          {question.questionType === 'short_answer' && (
+            <div className="input-group">
+              <label className="input-label">Correct Answer</label>
+              <input className="input" placeholder="Type the expected answer…"
+                value={question.correctAnswer}
+                onChange={e => onUpdate(question.id, { correctAnswer: e.target.value })}
+                style={{ padding: '8px 12px', fontSize: '0.85rem' }} />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                Student answers will be compared to this (case-insensitive)
+              </span>
+            </div>
+          )}
+
+          {/* Fill in the Blank */}
+          {question.questionType === 'fill_blank' && (
+            <div className="input-group">
+              <label className="input-label">Correct Answer (for the blank)</label>
+              <input className="input" placeholder="Type the correct word/phrase…"
+                value={question.correctAnswer}
+                onChange={e => onUpdate(question.id, { correctAnswer: e.target.value })}
+                style={{ padding: '8px 12px', fontSize: '0.85rem' }} />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                Use ___ in the question text to mark where the blank is
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -263,8 +359,10 @@ export default function QuizzesPage() {
     setQuestions((qs || []).map(q => ({
       id: q.id,
       questionText: q.question_text,
+      questionType: (q.question_type || 'multiple_choice') as QuestionType,
       options: Array.isArray(q.options) ? q.options as string[] : [],
       correctIndex: q.correct_index,
+      correctAnswer: q.correct_answer || '',
       timeLimit: q.time_limit,
       sortOrder: q.sort_order,
       collapsed: true,
@@ -305,8 +403,10 @@ export default function QuizzesPage() {
       const rows = questions.map((q, i) => ({
         quiz_id: editingId,
         question_text: q.questionText.trim() || 'Untitled Question',
+        question_type: q.questionType,
         options: q.options,
         correct_index: q.correctIndex,
+        correct_answer: q.correctAnswer.trim() || null,
         sort_order: i,
         time_limit: q.timeLimit,
       }))
@@ -340,8 +440,10 @@ export default function QuizzesPage() {
     setQuestions(prev => [...prev, {
       id: uid(),
       questionText: '',
+      questionType: 'multiple_choice' as QuestionType,
       options: ['', '', '', ''],
       correctIndex: 0,
+      correctAnswer: '',
       timeLimit: 30,
       sortOrder: prev.length,
       collapsed: false,
@@ -404,7 +506,6 @@ export default function QuizzesPage() {
           <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
             Questions ({questions.length})
           </h2>
-          <Button variant="ghost" size="sm" icon={<Plus size={14} />} onClick={addQuestion}>Add Question</Button>
         </div>
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -422,6 +523,13 @@ export default function QuizzesPage() {
             <HelpCircle size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 16px' }}>No questions yet. Add your first question!</p>
             <Button icon={<Plus size={15} />} onClick={addQuestion}>Add Question</Button>
+          </div>
+        )}
+
+        {/* Add Question — always at the bottom */}
+        {questions.length > 0 && (
+          <div style={{ marginTop: '12px' }}>
+            <Button variant="ghost" icon={<Plus size={15} />} onClick={addQuestion}>Add Question</Button>
           </div>
         )}
 

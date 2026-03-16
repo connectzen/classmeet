@@ -121,8 +121,10 @@ export type QuizQuestion = {
   id: string
   quiz_id: string
   question_text: string
+  question_type: 'multiple_choice' | 'true_false' | 'short_answer' | 'fill_blank'
   options: string[]
   correct_index: number
+  correct_answer: string | null
   sort_order: number
   time_limit: number
   created_at: string
