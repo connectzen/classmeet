@@ -862,7 +862,7 @@ a:hover { color: var(--primary-300); }
   border-radius: var(--radius-md);
   font-size: 0.82rem;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-decoration: none;
   border: none;
   background: transparent;
@@ -946,9 +946,27 @@ a:hover { color: var(--primary-300); }
   color: var(--primary-300);
 }
 
-/* Hide topbar nav on mobile (sidebar handles navigation) */
+.topbar-nav-mobile { display: none; }
+
+.topbar-dropdown-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+.topbar-more-dropdown {
+  min-width: 200px;
+}
+
+/* Mobile nav: hide desktop nav, show Dashboard + More */
 @media (max-width: 768px) {
   .topbar-nav { display: none; }
+  .topbar-nav-mobile {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 4px;
+  }
 }
 
 /* ============================================================
@@ -1758,6 +1776,19 @@ a:hover { color: var(--primary-300); }
     width: 80px; height: 80px;
     font-size: 1.8rem;
   }
+  /* Toolbar: hug the bottom, scroll horizontally if needed */
+  .room-bb-toolbar {
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+  }
+  .room-bb-toolbar-inner {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+  .room-bb-toolbar-inner::-webkit-scrollbar { display: none; }
 }
 
 /* ── Blackboard ────────────────────────────────────────────────────────────── */

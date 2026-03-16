@@ -29,11 +29,16 @@ export default function TopBar() {
 
   const [communityOpen, setCommunityOpen] = useState(false)
   const communityRef = useRef<HTMLDivElement>(null)
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+  const mobileMoreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (communityRef.current && !communityRef.current.contains(e.target as Node)) {
         setCommunityOpen(false)
+      }
+      if (mobileMoreRef.current && !mobileMoreRef.current.contains(e.target as Node)) {
+        setMobileMoreOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -44,6 +49,8 @@ export default function TopBar() {
   const isCommunityActive = COMMUNITY_LINKS.some(
     ({ href }) => pathname === href || pathname.startsWith(href + '/')
   )
+  const MORE_PATHS = ['/dashboard/rooms', '/dashboard/courses', '/dashboard/quizzes', '/dashboard/messages', ...COMMUNITY_LINKS.map(l => l.href)]
+  const isMoreActive = MORE_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
 
   return (
     <header className="topbar">
@@ -149,6 +156,84 @@ export default function TopBar() {
               )}
             </div>
           )}
+        </nav>
+
+        {/* Mobile nav: Dashboard + More dropdown */}
+        <nav className="topbar-nav-mobile" aria-label="Mobile navigation">
+          <Link
+            href="/dashboard"
+            className={cn('topbar-nav-link', pathname === '/dashboard' && 'active')}
+          >
+            Dashboard
+          </Link>
+
+          <div ref={mobileMoreRef} style={{ position: 'relative' }}>
+            <button
+              className={cn('topbar-nav-link', isMoreActive && 'active')}
+              onClick={() => setMobileMoreOpen(o => !o)}
+            >
+              More
+              <ChevronDown
+                size={12}
+                style={{ transition: 'transform 0.2s', transform: mobileMoreOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+              />
+            </button>
+
+            {mobileMoreOpen && (
+              <div className="topbar-dropdown topbar-more-dropdown">
+                <Link
+                  href="/dashboard/rooms"
+                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/rooms' || pathname.startsWith('/dashboard/rooms/')) && 'active')}
+                  onClick={() => setMobileMoreOpen(false)}
+                >
+                  <Video size={15} />
+                  Live Rooms
+                  {liveCount > 0 && <span className="topbar-badge" style={{ marginLeft: 'auto' }}>{liveCount}</span>}
+                </Link>
+                <Link
+                  href="/dashboard/courses"
+                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/courses' || pathname.startsWith('/dashboard/courses/')) && 'active')}
+                  onClick={() => setMobileMoreOpen(false)}
+                >
+                  <BookOpen size={15} />
+                  Courses
+                </Link>
+                <Link
+                  href="/dashboard/quizzes"
+                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/quizzes' || pathname.startsWith('/dashboard/quizzes/')) && 'active')}
+                  onClick={() => setMobileMoreOpen(false)}
+                >
+                  <HelpCircle size={15} />
+                  Quizzes
+                </Link>
+                <Link
+                  href="/dashboard/messages"
+                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/messages' || pathname.startsWith('/dashboard/messages/')) && 'active')}
+                  onClick={() => setMobileMoreOpen(false)}
+                >
+                  <MessageSquare size={15} />
+                  Messages
+                  {unreadMsgCount > 0 && <span className="topbar-badge topbar-badge-msg" style={{ marginLeft: 'auto' }}>{unreadMsgCount > 9 ? '9+' : unreadMsgCount}</span>}
+                </Link>
+                {showCommunity && (
+                  <>
+                    <div className="topbar-dropdown-divider" />
+                    {COMMUNITY_LINKS.map(({ href, label, icon: Icon }) => (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={cn('topbar-dropdown-item', (pathname === href || pathname.startsWith(href + '/')) && 'active')}
+                        onClick={() => setMobileMoreOpen(false)}
+                      >
+                        <Icon size={15} />
+                        {label}
+                      </Link>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </nav>
       </div>
 

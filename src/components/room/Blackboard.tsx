@@ -42,6 +42,10 @@ interface BlackboardProps {
   incomingEvent?: BlackboardEvent | null
 }
 
+// ── Logical canvas size — all objects live in this coordinate space ───────────
+const LOGICAL_W = 1280
+const LOGICAL_H = 720
+
 // ── Unique ID generator for fabric objects ───────────────────────────────────
 let _objIdCounter = 0
 function nextObjId() {
@@ -131,8 +135,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (event.type === 'cursor-move') {
       const el = cursorDivRef.current
       if (el) {
-        el.style.left = `${event.x}px`
-        el.style.top = `${event.y}px`
+        const z = fabricRef.current?.getZoom() ?? 1
+        el.style.left = `${event.x * z}px`
+        el.style.top = `${event.y * z}px`
         // Don't show cursor dot if the text caret is currently visible
         // (prevents late-arriving cursor-move from re-showing dot at text origin)
         const caretVisible = caretDivRef.current && caretDivRef.current.style.display === 'block'
@@ -147,9 +152,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const el = caretDivRef.current
       if (el) {
         if (event.visible) {
-          el.style.left = `${event.x}px`
-          el.style.top = `${event.y}px`
-          el.style.height = `${event.height}px`
+          const z = fabricRef.current?.getZoom() ?? 1
+          el.style.left = `${event.x * z}px`
+          el.style.top = `${event.y * z}px`
+          el.style.height = `${event.height * z}px`
           el.style.display = 'block'
           // Hide the cursor dot while the text caret is visible
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
@@ -170,27 +176,28 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         const ctx = (c as any).contextTop as CanvasRenderingContext2D | undefined
         const uc = (c as any).upperCanvasEl as HTMLCanvasElement | undefined
         if (!ctx || !uc) return
+        const z = c.getZoom()
         ctx.clearRect(0, 0, uc.width, uc.height)
         ctx.save()
         ctx.strokeStyle = event.color
-        ctx.lineWidth = event.width
+        ctx.lineWidth = event.width * z
         if (event.kind === 'line') {
           ctx.lineCap = 'round'
           ctx.beginPath()
-          ctx.moveTo(event.x1, event.y1)
-          ctx.lineTo(event.x2, event.y2)
+          ctx.moveTo(event.x1 * z, event.y1 * z)
+          ctx.lineTo(event.x2 * z, event.y2 * z)
           ctx.stroke()
         } else if (event.kind === 'rect') {
-          const rx = Math.min(event.x1, event.x2)
-          const ry = Math.min(event.y1, event.y2)
-          const rw = Math.abs(event.x2 - event.x1)
-          const rh = Math.abs(event.y2 - event.y1)
+          const rx = Math.min(event.x1, event.x2) * z
+          const ry = Math.min(event.y1, event.y2) * z
+          const rw = Math.abs(event.x2 - event.x1) * z
+          const rh = Math.abs(event.y2 - event.y1) * z
           ctx.strokeRect(rx, ry, rw, rh)
         } else if (event.kind === 'circle') {
-          const rx = Math.abs(event.x2 - event.x1) / 2
-          const ry = Math.abs(event.y2 - event.y1) / 2
-          const cx = (event.x1 + event.x2) / 2
-          const cy = (event.y1 + event.y2) / 2
+          const rx = Math.abs(event.x2 - event.x1) / 2 * z
+          const ry = Math.abs(event.y2 - event.y1) / 2 * z
+          const cx = (event.x1 + event.x2) / 2 * z
+          const cy = (event.y1 + event.y2) / 2 * z
           ctx.beginPath()
           ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2)
           ctx.stroke()
@@ -301,6 +308,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       height: h,
     })
 
+    // Scale content to fit the container while keeping a consistent logical space
+    canvas.setZoom(Math.min(w / LOGICAL_W, h / LOGICAL_H))
+
     if (isHost) {
       const brush = new fabric.PencilBrush(canvas)
       brush.color = '#ffffff'
@@ -318,6 +328,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ch = c.clientHeight
       if (cw > 0 && ch > 0) {
         fabricRef.current.setDimensions({ width: cw, height: ch })
+        fabricRef.current.setZoom(Math.min(cw / LOGICAL_W, ch / LOGICAL_H))
         fabricRef.current.renderAll()
       }
     }
@@ -666,13 +677,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
       if (!ctx) return
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
+      const z = canvas.getZoom()
       ctx.clearRect(0, 0, uc.width, uc.height)
       ctx.strokeStyle = strokeColorRef.current
-      ctx.lineWidth = strokeWidthRef.current
+      ctx.lineWidth = strokeWidthRef.current * z
       ctx.lineCap = 'round'
       ctx.beginPath()
-      ctx.moveTo(local.sx, local.sy)
-      ctx.lineTo(e.scenePoint.x, e.scenePoint.y)
+      ctx.moveTo(local.sx * z, local.sy * z)
+      ctx.lineTo(e.scenePoint.x * z, e.scenePoint.y * z)
       ctx.stroke()
       emitLinePreview(local.sx, local.sy, e.scenePoint.x, e.scenePoint.y)
     }
