@@ -24,6 +24,7 @@ interface BlackboardToolbarProps {
   canRedo: boolean
   toolbarVisible: boolean
   onToggleToolbar: () => void
+  hasSelection: boolean
 }
 
 const COLORS = [
@@ -76,6 +77,7 @@ export default function BlackboardToolbar({
   onClear,
   toolbarVisible,
   onToggleToolbar,
+  hasSelection,
 }: BlackboardToolbarProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
 
@@ -187,7 +189,11 @@ export default function BlackboardToolbar({
             <button className="room-bb-tool-btn" onClick={onRedo} title="Redo">
               <Redo2 size={16} />
             </button>
-            <button className="room-bb-tool-btn room-bb-tool-danger" onClick={onClear} title="Clear board">
+            <button
+              className="room-bb-tool-btn room-bb-tool-danger"
+              onClick={onClear}
+              title={hasSelection ? 'Delete selected' : 'Clear board'}
+            >
               <Trash2 size={16} />
             </button>
           </div>

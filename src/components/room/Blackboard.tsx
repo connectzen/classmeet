@@ -78,6 +78,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
+  const [hasSelection, setHasSelection] = useState(false)
   const [strokeColor, setStrokeColor] = useState('#ffffff')
   const [strokeWidth, setStrokeWidth] = useState(3)
   const [toolbarVisible, setToolbarVisible] = useState(true)
@@ -319,6 +320,13 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
 
     fabricRef.current = canvas
+
+    // Track selection for smart delete
+    if (isHost) {
+      canvas.on('selection:created', () => setHasSelection(true))
+      canvas.on('selection:updated', () => setHasSelection(true))
+      canvas.on('selection:cleared', () => setHasSelection(false))
+    }
 
     // Fit to container on resize
     const resize = () => {
@@ -989,17 +997,35 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     })
   }, [])
 
-  // ── Clear board ──────────────────────────────────────────────────────────
+  // ── Clear board / delete selected ────────────────────────────────────────
   const handleClear = useCallback(() => {
     const canvas = fabricRef.current
     if (!canvas) return
-    saveUndoState()
-    suppressEventsRef.current = true
-    canvas.clear()
-    canvas.backgroundColor = '#1a1a2e'
-    canvas.renderAll()
-    suppressEventsRef.current = false
-    onCanvasEventRef.current?.({ type: 'clear' })
+    const activeObjects = canvas.getActiveObjects()
+    if (activeObjects.length > 0) {
+      // Delete only selected object(s), broadcast each removal
+      saveUndoState()
+      suppressEventsRef.current = true
+      activeObjects.forEach(obj => {
+        canvas.remove(obj)
+        if ((obj as any).id) {
+          onCanvasEventRef.current?.({ type: 'object-removed', id: (obj as any).id })
+        }
+      })
+      canvas.discardActiveObject()
+      canvas.renderAll()
+      suppressEventsRef.current = false
+      setHasSelection(false)
+    } else {
+      // Nothing selected — clear entire board
+      saveUndoState()
+      suppressEventsRef.current = true
+      canvas.clear()
+      canvas.backgroundColor = '#1a1a2e'
+      canvas.renderAll()
+      suppressEventsRef.current = false
+      onCanvasEventRef.current?.({ type: 'clear' })
+    }
   }, [saveUndoState])
 
   // ── Apply text option changes to the currently editing IText ─────────────
@@ -1047,6 +1073,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           canRedo={redoStack.current.length > 0}
           toolbarVisible={toolbarVisible}
           onToggleToolbar={() => setToolbarVisible(v => !v)}
+          hasSelection={hasSelection}
         />
       )}
     </div>

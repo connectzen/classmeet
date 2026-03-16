@@ -668,10 +668,10 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, o
             <Users size={12} /> max {session.max_participants}
           </span>
           {isCreator && session.status !== 'ended' && (
-            <>
-              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onEdit(session)} aria-label="Edit" style={{ color: 'var(--text-muted)' }}><Pencil size={13} /></button>
-              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onDelete(session)} aria-label="Delete" style={{ color: 'var(--danger-400)' }}><Trash2 size={13} /></button>
-            </>
+            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onEdit(session)} aria-label="Edit" style={{ color: 'var(--text-muted)' }}><Pencil size={13} /></button>
+          )}
+          {isCreator && (
+            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onDelete(session)} aria-label="Delete" style={{ color: 'var(--danger-400)' }}><Trash2 size={13} /></button>
           )}
         </div>
       </div>

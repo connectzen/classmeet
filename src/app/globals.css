@@ -208,6 +208,7 @@ a:hover { color: var(--primary-300); }
 .btn-primary:hover:not(:disabled) {
   background: linear-gradient(135deg, var(--primary-400), var(--primary-500));
   box-shadow: var(--shadow-glow), var(--shadow-primary);
+  transform: translateY(-1px);
 }
 
 /* Outline */
@@ -356,6 +357,12 @@ a:hover { color: var(--primary-300); }
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
   padding: var(--space-6);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base), transform var(--transition-base);
+}
+.card:not(:focus-within):hover {
+  border-color: var(--border-default);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.22);
+  transform: translateY(-2px);
 }
 
 .card-elevated {
@@ -789,6 +796,7 @@ a:hover { color: var(--primary-300); }
   gap: var(--space-3);
   padding: 10px var(--space-3);
   border-radius: var(--radius-md);
+  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-muted);
@@ -805,6 +813,12 @@ a:hover { color: var(--primary-300); }
 .sidebar-link:hover {
   background: var(--bg-elevated);
   color: var(--text-secondary);
+  transform: translateX(3px);
+}
+.sidebar-link:hover .link-icon {
+  opacity: 1;
+  transform: scale(1.15);
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
 }
 
 .sidebar-link.active {
@@ -869,12 +883,16 @@ a:hover { color: var(--primary-300); }
   cursor: pointer;
   font-family: inherit;
   white-space: nowrap;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
 }
 
 .topbar-nav-link:hover {
   background: var(--bg-elevated);
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+.topbar-nav-link:active {
+  transform: scale(0.94);
 }
 
 .topbar-nav-link.active {
