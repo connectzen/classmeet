@@ -166,6 +166,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [blackboardEvent, setBlackboardEvent] = useState<BlackboardEvent | null>(null)
   const blackboardRef = useRef<BlackboardHandle>(null)
   const prevParticipantCount = useRef(0)
+  const prevPresentParticipantCount = useRef(0)
   // Presentation state
   const [presentMode, setPresentMode] = useState<PresentMode>('none')
   const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([])
@@ -507,8 +508,11 @@ function RoomInner({ roomName }: { roomName: string }) {
 
   // Host: re-broadcast presentation state to late-joining participants
   useEffect(() => {
-    if (!isTeacher || presentMode === 'none' || presentMode === 'blackboard') return
-    if (participants.length > prevParticipantCount.current) {
+    if (!isTeacher || presentMode === 'none' || presentMode === 'blackboard') {
+      prevPresentParticipantCount.current = participants.length
+      return
+    }
+    if (participants.length > prevPresentParticipantCount.current) {
       setTimeout(() => {
         if (presentMode === 'course' && activeCourseId) {
           const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId: activeCourseId }))
@@ -534,6 +538,7 @@ function RoomInner({ roomName }: { roomName: string }) {
         }
       }, 500)
     }
+    prevPresentParticipantCount.current = participants.length
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participants.length])
 
