@@ -505,6 +505,38 @@ function RoomInner({ roomName }: { roomName: string }) {
     prevParticipantCount.current = participants.length
   }, [participants.length, isTeacher, blackboardActive, sendBlackboardData])
 
+  // Host: re-broadcast presentation state to late-joining participants
+  useEffect(() => {
+    if (!isTeacher || presentMode === 'none' || presentMode === 'blackboard') return
+    if (participants.length > prevParticipantCount.current) {
+      setTimeout(() => {
+        if (presentMode === 'course' && activeCourseId) {
+          const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId: activeCourseId }))
+          sendPresentData(payload, { reliable: true })
+          // Also send current lesson index and scroll position
+          const navPayload = encoder.encode(JSON.stringify({ type: 'course-navigate', lessonIndex: currentLessonIndex }))
+          sendPresentData(navPayload, { reliable: true })
+          if (courseScrollTop > 0) {
+            const scrollPayload = encoder.encode(JSON.stringify({ type: 'course-scroll', scrollTop: courseScrollTop }))
+            sendPresentData(scrollPayload, { reliable: true })
+          }
+        } else if (presentMode === 'quiz' && activeQuizId) {
+          const payload = encoder.encode(JSON.stringify({ type: 'start-quiz', quizId: activeQuizId }))
+          sendPresentData(payload, { reliable: true })
+          if (currentQuestionIndex > 0) {
+            const navPayload = encoder.encode(JSON.stringify({ type: 'quiz-advance', questionIndex: currentQuestionIndex }))
+            sendPresentData(navPayload, { reliable: true })
+          }
+          if (quizRevealed) {
+            const revealPayload = encoder.encode(JSON.stringify({ type: 'quiz-reveal' }))
+            sendPresentData(revealPayload, { reliable: true })
+          }
+        }
+      }, 500)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participants.length])
+
   // Local hand raise
   const [myHandRaised, setMyHandRaised] = useState(false)
   const toggleHand = useCallback(() => {
@@ -971,20 +1003,22 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
   // Find which topic this lesson belongs to
   const currentTopic = course.topics.find(t => t.lessons.some(l => l.id === lesson?.id))
 
-  // Teacher: broadcast scroll position on scroll
+  // Teacher: broadcast scroll position on scroll (throttled to reduce traffic)
   const handleScroll = useCallback(() => {
     if (!isHost || !contentRef.current) return
     const st = contentRef.current.scrollTop
     if (scrollThrottleRef.current) clearTimeout(scrollThrottleRef.current)
     scrollThrottleRef.current = setTimeout(() => {
       onScroll(st)
-    }, 50)
+    }, 150)
   }, [isHost, onScroll])
 
-  // Student: sync scroll position from teacher
+  // Student: sync scroll position from teacher using rAF to avoid jank
   useEffect(() => {
     if (isHost || !contentRef.current) return
-    contentRef.current.scrollTop = scrollTop
+    requestAnimationFrame(() => {
+      if (contentRef.current) contentRef.current.scrollTop = scrollTop
+    })
   }, [isHost, scrollTop])
 
   return (

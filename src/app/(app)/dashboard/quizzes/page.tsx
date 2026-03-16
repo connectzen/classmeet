@@ -509,7 +509,17 @@ export default function QuizzesPage() {
     setEditingId(data.id)
     setTitle(data.title)
     setDescription(data.description || '')
-    setQuestions([])
+    setQuestions([{
+      id: uid(),
+      questionText: '',
+      questionType: 'multiple_choice' as QuestionType,
+      options: ['', '', '', ''],
+      correctIndex: 0,
+      correctAnswer: '',
+      timeLimit: 30,
+      sortOrder: 0,
+      collapsed: false,
+    }])
     showToast('✅ Quiz created')
     loadQuizzes()
   }
