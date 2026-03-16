@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Menu, Video, BookOpen, MessageSquare, Users, BarChart2, FolderOpen, ChevronDown, HelpCircle } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { useLiveSessionCount } from '@/hooks/useLiveSessionCount'
+import { useUnreadMessageCount } from '@/hooks/useUnreadMessageCount'
 import UserMenu from './UserMenu'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/lib/supabase/types'
@@ -24,6 +25,7 @@ export default function TopBar() {
   const role = user?.role as UserRole | undefined
   const isCreator = role === 'teacher' || role === 'member' || role === 'admin'
   const liveCount = useLiveSessionCount(user?.id, isCreator)
+  const unreadMsgCount = useUnreadMessageCount(user?.id)
 
   const [communityOpen, setCommunityOpen] = useState(false)
   const communityRef = useRef<HTMLDivElement>(null)
@@ -102,6 +104,11 @@ export default function TopBar() {
           >
             <MessageSquare size={14} />
             Messages
+            {unreadMsgCount > 0 && (
+              <span key={unreadMsgCount} className="topbar-badge topbar-badge-msg">
+                {unreadMsgCount > 9 ? '9+' : unreadMsgCount}
+              </span>
+            )}
           </Link>
 
           {/* Community dropdown */}

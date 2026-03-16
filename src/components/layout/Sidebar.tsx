@@ -245,15 +245,18 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Navigation */}
-        <nav className="sidebar-nav" aria-label="Main navigation" style={{ borderTop: '1px solid var(--border-subtle)', marginTop: '8px', paddingTop: '10px' }}>
+        {/* Spacer pushes system nav + footer to bottom */}
+        <div style={{ flex: 1 }} />
+
+        {/* Navigation — pinned to bottom */}
+        <nav aria-label="System navigation" style={{ padding: '4px 0', borderTop: '1px solid var(--border-subtle)' }}>
           {NAV.map((section) => {
             const visibleLinks = section.links.filter(
               (link) => !link.roles || (role && link.roles.includes(role))
             )
             if (visibleLinks.length === 0) return null
             return (
-              <div key={section.section} className="sidebar-section">
+              <div key={section.section} className="sidebar-section" style={{ marginBottom: 0, padding: '8px 0 4px' }}>
                 <div className="sidebar-section-label">{section.section}</div>
                 {visibleLinks.map((link) => {
                   const Icon = link.icon
