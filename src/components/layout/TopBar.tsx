@@ -87,15 +87,13 @@ export default function TopBar() {
           </Link>
 
           {/* Quizzes */}
-          {isCreator && (
-            <Link
-              href="/dashboard/quizzes"
-              className={cn('topbar-nav-link', (pathname === '/dashboard/quizzes' || pathname.startsWith('/dashboard/quizzes/')) && 'active')}
-            >
-              <HelpCircle size={14} />
-              Quizzes
-            </Link>
-          )}
+          <Link
+            href="/dashboard/quizzes"
+            className={cn('topbar-nav-link', (pathname === '/dashboard/quizzes' || pathname.startsWith('/dashboard/quizzes/')) && 'active')}
+          >
+            <HelpCircle size={14} />
+            Quizzes
+          </Link>
 
           {/* Messages */}
           <Link

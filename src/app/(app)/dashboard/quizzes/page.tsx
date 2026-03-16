@@ -393,7 +393,7 @@ export default function QuizzesPage() {
             const { count } = await supabase.from('quiz_questions').select('id', { count: 'exact', head: true }).eq('quiz_id', q.id)
             return { id: q.id, title: q.title, description: q.description || '', questionCount: count ?? 0, createdAt: q.created_at }
           }))
-          setQuizzes(withCounts)
+          setQuizzes(withCounts.filter(q => q.questionCount > 0))
         }
       } else {
         setQuizzes([])

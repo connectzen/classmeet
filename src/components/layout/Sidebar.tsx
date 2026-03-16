@@ -234,8 +234,19 @@ export default function Sidebar() {
           </button>
         </div>
 
+        {/* People section — teacher sees students, student sees teacher */}
+        {user?.id && (
+          <div style={{ paddingTop: '10px', overflowY: 'auto', flex: '0 1 auto', maxHeight: '40vh' }}>
+            {isCreator ? (
+              <StudentList teacherId={user.id} />
+            ) : (
+              <TeacherInfo studentId={user.id} />
+            )}
+          </div>
+        )}
+
         {/* Navigation */}
-        <nav className="sidebar-nav" aria-label="Main navigation">
+        <nav className="sidebar-nav" aria-label="Main navigation" style={{ borderTop: '1px solid var(--border-subtle)', marginTop: '8px', paddingTop: '10px' }}>
           {NAV.map((section) => {
             const visibleLinks = section.links.filter(
               (link) => !link.roles || (role && link.roles.includes(role))
@@ -263,17 +274,6 @@ export default function Sidebar() {
             )
           })}
         </nav>
-
-        {/* People section — teacher sees students, student sees teacher */}
-        {user?.id && (
-          <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: '8px', paddingTop: '8px', overflowY: 'auto', flex: '0 1 auto', maxHeight: '40vh' }}>
-            {isCreator ? (
-              <StudentList teacherId={user.id} />
-            ) : (
-              <TeacherInfo studentId={user.id} />
-            )}
-          </div>
-        )}
 
         {/* Footer */}
         <div className="sidebar-footer">

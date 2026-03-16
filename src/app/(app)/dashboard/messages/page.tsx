@@ -419,15 +419,20 @@ export default function MessagesPage() {
       .single()
 
     if (convErr || !conv) {
-      showToast('Failed to create conversation')
+      showToast(convErr?.message ? `Failed to create conversation: ${convErr.message}` : 'Failed to create conversation')
       return
     }
 
     // Add both participants
-    await supabase.from('conversation_participants').insert([
+    const { error: participantErr } = await supabase.from('conversation_participants').insert([
       { conversation_id: conv.id, user_id: user.id },
       { conversation_id: conv.id, user_id: contactId },
     ])
+
+    if (participantErr) {
+      showToast(participantErr.message ? `Failed to add participants: ${participantErr.message}` : 'Failed to add participants')
+      return
+    }
 
     setShowNewChat(false)
     await loadConversations()

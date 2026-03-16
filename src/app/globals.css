@@ -1391,6 +1391,7 @@ a:hover { color: var(--primary-300); }
   padding: 12px;
   overflow: hidden;
   background: #0f0f14;
+  min-height: 0;
 }
 .room-stage-video {
   position: relative;
@@ -1398,6 +1399,7 @@ a:hover { color: var(--primary-300); }
   border-radius: 12px;
   overflow: hidden;
   background: #18181b;
+  min-height: 0;
 }
 .room-stage-speaking {
   box-shadow: 0 0 0 3px #22c55e;
@@ -2244,4 +2246,71 @@ a:hover { color: var(--primary-300); }
   padding: 16px;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+@media (max-width: 767px) {
+  .room-presentation-header {
+    padding: 10px 12px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .room-presentation-title {
+    font-size: 0.88rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .room-presentation-subtitle {
+    font-size: 0.72rem;
+  }
+
+  .room-presentation-content {
+    padding: 12px 14px;
+  }
+
+  .room-presentation-lesson-title {
+    font-size: 1.05rem;
+    margin-bottom: 12px;
+  }
+
+  .room-presentation-text,
+  .room-presentation-text p,
+  .room-quiz-question-text,
+  .room-quiz-option-text {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .room-quiz-question-text {
+    font-size: 1.05rem;
+  }
+
+  .room-quiz-option {
+    padding: 11px 12px;
+    gap: 8px;
+    font-size: 0.86rem;
+  }
+
+  .room-presentation-nav {
+    padding: 10px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .room-bb-toolbar {
+    left: 8px;
+    bottom: 52px;
+    right: 8px;
+    max-width: calc(100% - 16px);
+  }
+
+  .room-bb-toolbar-inner {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
 }
