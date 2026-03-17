@@ -1884,7 +1884,7 @@ select option {
   display: block;
 }
 .room-stage-blackboard {
-  box-shadow: 0 0 0 2px var(--primary-500);
+  box-shadow: inset 0 0 0 2px var(--primary-500);
 }
 .room-stage-hidden {
   position: absolute !important;
