@@ -8,11 +8,11 @@ import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import {
   HelpCircle, Plus, Trash2, ArrowLeft, Save, Clock,
-  GripVertical, ChevronDown, ChevronRight, Check, X, Type, ToggleLeft, PenLine, FileText,
+  ChevronDown, ChevronRight, Check, X, Type, ToggleLeft, PenLine, FileText,
   Users, Search, FolderOpen,
 } from 'lucide-react'
 import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
 import {
@@ -60,8 +60,10 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
   onUpdate: (id: string, updates: Partial<QuestionLocal>) => void
   onRemove: (id: string) => void
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: question.id })
-  const style = { transform: CSS.Transform.toString(transform), transition }
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: question.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [hovered, setHovered] = useState(false)
 
   function updateOption(idx: number, value: string) {
     const opts = [...question.options]
@@ -102,22 +104,50 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
 
   return (
     <div ref={setNodeRef} style={style} className="card" key={question.id}>
-      {/* Question header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', cursor: 'pointer',
-        borderBottom: question.collapsed ? 'none' : '1px solid var(--border-subtle)' }}
-        onClick={() => onUpdate(question.id, { collapsed: !question.collapsed })}>
-        <span {...attributes} {...listeners} style={{ cursor: 'grab', color: 'var(--text-muted)', display: 'flex' }}
-          onClick={e => e.stopPropagation()}>
-          <GripVertical size={16} />
-        </span>
+      {/* Question header — click collapses, double-click title edits, drag anywhere */}
+      <div
+        {...attributes}
+        {...listeners}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={() => onUpdate(question.id, { collapsed: !question.collapsed })}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px',
+          cursor: 'pointer', userSelect: 'none',
+          borderBottom: question.collapsed ? 'none' : '1px solid var(--border-subtle)',
+          background: hovered ? 'rgba(0,0,0,0.04)' : 'transparent',
+          transition: 'background 0.15s',
+        }}
+      >
         {question.collapsed ? <ChevronRight size={16} color="var(--text-muted)" /> : <ChevronDown size={16} color="var(--text-muted)" />}
-        <span style={{ flex: 1, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {question.questionText || 'Untitled Question'}
-        </span>
+        {editingTitle ? (
+          <input
+            autoFocus
+            value={question.questionText}
+            onChange={e => onUpdate(question.id, { questionText: e.target.value })}
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+            onBlur={() => setEditingTitle(false)}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditingTitle(false) } }}
+            placeholder="Question text…"
+            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'text' }}
+          />
+        ) : (
+          <span
+            onPointerDown={e => e.stopPropagation()}
+            onDoubleClick={e => { e.stopPropagation(); setEditingTitle(true) }}
+            title="Double-click to edit"
+            style={{ flex: 1, fontSize: '0.9rem', fontWeight: 600, color: question.questionText ? 'var(--text-primary)' : 'var(--text-disabled)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+          >
+            {question.questionText || 'Untitled Question'}
+          </span>
+        )}
         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
           <TypeIcon size={11} /> {typeInfo.label} · <Clock size={11} /> {question.timeLimit}s
         </span>
-        <button type="button" onClick={e => { e.stopPropagation(); onRemove(question.id) }}
+        <button type="button"
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onRemove(question.id) }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 4, display: 'flex' }}>
           <Trash2 size={14} />
         </button>
@@ -328,7 +358,8 @@ export default function QuizzesPage() {
   const [viewingQuiz, setViewingQuiz] = useState<{ title: string; description: string; questions: QuestionLocal[] } | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
