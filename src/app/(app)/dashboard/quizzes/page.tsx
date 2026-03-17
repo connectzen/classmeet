@@ -532,6 +532,7 @@ export default function QuizzesPage() {
         teacher_id: user.id,
         title: 'Untitled Quiz',
         description: null,
+        pass_threshold: 70,
       }).select('id, title, description, created_at').single()
       if (error) { console.error('Quiz create error:', error); showToast(`❌ ${error.message}`); return }
       if (!data) return

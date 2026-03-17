@@ -22,11 +22,12 @@ import {
   Mic, MicOff, Video, VideoOff, Monitor, Hand, Settings,
   LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
   MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
-  Check, Clock, ArrowLeft, ArrowRight,
+  Check, Clock, ArrowLeft, ArrowRight, Award, Eye, Download,
+  ClipboardList, Star, Trophy,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
-import type { Quiz, QuizQuestion as DBQuizQuestion, Course, Topic, Lesson } from '@/lib/supabase/types'
+import type { Quiz, QuizQuestion as DBQuizQuestion, Course, Topic, Lesson, QuizSubmission } from '@/lib/supabase/types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getInitials(name: string) {
@@ -69,6 +70,10 @@ interface PresentEvent {
     | 'quiz-advance'
     | 'quiz-reveal'
     | 'quiz-answer'
+    | 'quiz-submit'
+    | 'quiz-grade'
+    | 'quiz-reveal-results'
+    | 'quiz-result-countdown'
   courseId?: string
   quizId?: string
   lessonIndex?: number
@@ -77,6 +82,9 @@ interface PresentEvent {
   answerIndex?: number
   scrollTop?: number
   order?: LayerKey[]
+  submission?: QuizSubmission
+  studentName?: string
+  countdown?: number
 }
 
 // ── Main Page ────────────────────────────────────────────────────────────────
@@ -194,7 +202,13 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [quizRevealed, setQuizRevealed] = useState(false)
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({})
-  const [courseScrollTop, setCourseScrollTop] = useState(0)  // Mobile detection – null means "not yet determined"
+  const [courseScrollTop, setCourseScrollTop] = useState(0)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [quizSubmissions, setQuizSubmissions] = useState<QuizSubmission[]>([])
+  const [showGradingPanel, setShowGradingPanel] = useState(false)
+  const [quizSubmitted, setQuizSubmitted] = useState(false)
+  const [revealingSubmission, setRevealingSubmission] = useState<QuizSubmission | null>(null)
+  const [revealCountdown, setRevealCountdown] = useState<number | null>(null)  // Mobile detection – null means "not yet determined"
   const [isMobile, setIsMobile] = useState<boolean>(initialIsMobile)
 
   useEffect(() => {
@@ -244,6 +258,7 @@ function RoomInner({ roomName }: { roomName: string }) {
         .eq('room_name', roomName)
         .single()
       if (!session) return
+      setSessionId(session.id)
 
       // Load linked courses with topics + lessons
       const { data: sessionCourses } = await supabase
@@ -411,6 +426,18 @@ function RoomInner({ roomName }: { roomName: string }) {
       setQuizRevealed(true)
     } else if (event.type === 'quiz-answer' && event.identity && event.answerIndex !== undefined) {
       setQuizAnswers(prev => ({ ...prev, [event.identity!]: event.answerIndex! }))
+    } else if (event.type === 'quiz-submit' && event.identity) {
+      // A student submitted their quiz — teacher should refresh submissions
+      if (isTeacher && activeQuizId && sessionId) {
+        fetch(`/api/quiz-submissions?quiz_id=${activeQuizId}&session_id=${sessionId}`)
+          .then(r => r.json()).then(d => { if (d.data) setQuizSubmissions(d.data) })
+      }
+    } else if (event.type === 'quiz-reveal-results' && event.submission) {
+      // Teacher is revealing a student's result
+      setRevealingSubmission(event.submission)
+      setRevealCountdown(3)
+    } else if (event.type === 'quiz-result-countdown' && event.countdown !== undefined) {
+      setRevealCountdown(event.countdown)
     }
   })
 
@@ -492,6 +519,11 @@ function RoomInner({ roomName }: { roomName: string }) {
     setCurrentQuestionIndex(0)
     setQuizRevealed(false)
     setQuizAnswers({})
+    setQuizSubmissions([])
+    setShowGradingPanel(false)
+    setQuizSubmitted(false)
+    setRevealingSubmission(null)
+    setRevealCountdown(null)
     setQuizActive(true)
     bringLayerToFront('quiz')
     updateLayerOrder('quiz', true)
@@ -561,6 +593,89 @@ function RoomInner({ roomName }: { roomName: string }) {
     }))
     sendPresentData(payload, { reliable: true })
   }, [localParticipant.identity, sendPresentData])
+
+  // Student: submit all quiz answers at once
+  const submitQuizAll = useCallback(async (studentAnswers: Record<number, number>) => {
+    if (!activeQuizId || !sessionId) return
+    const activeQ = linkedQuizzes.find(q => q.id === activeQuizId)
+    if (!activeQ) return
+
+    const responses = activeQ.questions.map((q, i) => ({
+      question_id: q.id,
+      answer_index: studentAnswers[i] ?? null,
+      answer_text: null,
+    }))
+
+    const studentName = user?.fullName || localParticipant.identity
+    const res = await fetch('/api/quiz-submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        quiz_id: activeQuizId,
+        session_id: sessionId,
+        student_name: studentName,
+        responses,
+      }),
+    })
+
+    if (res.ok) {
+      setQuizSubmitted(true)
+      // Notify everyone (especially teacher) that this student submitted
+      const payload = encoder.encode(JSON.stringify({
+        type: 'quiz-submit',
+        identity: localParticipant.identity,
+      }))
+      sendPresentData(payload, { reliable: true })
+    }
+  }, [activeQuizId, sessionId, linkedQuizzes, user?.fullName, localParticipant.identity, sendPresentData])
+
+  // Teacher: fetch quiz submissions
+  const refreshSubmissions = useCallback(async () => {
+    if (!activeQuizId || !sessionId) return
+    const res = await fetch(`/api/quiz-submissions?quiz_id=${activeQuizId}&session_id=${sessionId}`)
+    const data = await res.json()
+    if (data.data) setQuizSubmissions(data.data)
+  }, [activeQuizId, sessionId])
+
+  // Teacher: grade a submission
+  const gradeSubmission = useCallback(async (submissionId: string, score: number, maxScore: number, teacherComment: string) => {
+    const res = await fetch(`/api/quiz-submissions/${submissionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ score, max_score: maxScore, teacher_comment: teacherComment, status: 'graded' }),
+    })
+    if (res.ok) refreshSubmissions()
+  }, [refreshSubmissions])
+
+  // Teacher: reveal results to everyone with countdown
+  const revealResults = useCallback((submission: QuizSubmission) => {
+    setRevealingSubmission(submission)
+    setRevealCountdown(3)
+    const payload = encoder.encode(JSON.stringify({
+      type: 'quiz-reveal-results',
+      submission,
+    }))
+    sendPresentData(payload, { reliable: true })
+
+    // Run countdown
+    let count = 3
+    const interval = setInterval(() => {
+      count--
+      setRevealCountdown(count)
+      const cdPayload = encoder.encode(JSON.stringify({
+        type: 'quiz-result-countdown',
+        countdown: count,
+      }))
+      sendPresentData(cdPayload, { reliable: true })
+      if (count <= 0) clearInterval(interval)
+    }, 1000)
+  }, [sendPresentData])
+
+  // Dismiss result reveal
+  const dismissReveal = useCallback(() => {
+    setRevealingSubmission(null)
+    setRevealCountdown(null)
+  }, [])
 
   // Get active course/quiz data
   const activeCourse = useMemo(() =>
@@ -850,8 +965,26 @@ function RoomInner({ roomName }: { roomName: string }) {
           onAdvanceQuestion={advanceQuizQuestion}
           onRevealAnswer={revealQuizAnswer}
           onSubmitAnswer={submitQuizAnswer}
+          onSubmitQuizAll={submitQuizAll}
           localIdentity={localParticipant.identity}
+          quizSubmitted={quizSubmitted}
+          quizSubmissions={quizSubmissions}
+          showGradingPanel={showGradingPanel}
+          onToggleGradingPanel={() => { setShowGradingPanel(v => !v); refreshSubmissions() }}
+          onGradeSubmission={gradeSubmission}
+          onRevealResults={revealResults}
+          onRefreshSubmissions={refreshSubmissions}
         />
+
+        {/* Quiz result reveal overlay */}
+        {revealingSubmission && revealCountdown !== null && (
+          <QuizResultReveal
+            submission={revealingSubmission}
+            countdown={revealCountdown}
+            onDismiss={dismissReveal}
+            quizTitle={activeQuiz?.title || 'Quiz'}
+          />
+        )}
 
         {/* Bottom control bar */}
         <ControlBarCustom
@@ -1020,7 +1153,9 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
 function MainStage({ participant, screenShare, cameraTracks, blackboardActive, courseActive, quizActive, layerOrder, isHost, onCanvasEvent, incomingEvent, blackboardRef,
   activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
   quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop, courseScrollRef,
-  onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, localIdentity,
+  onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, onSubmitQuizAll, localIdentity,
+  quizSubmitted, quizSubmissions, showGradingPanel, onToggleGradingPanel,
+  onGradeSubmission, onRevealResults, onRefreshSubmissions,
 }: {
   participant: LKParticipant | undefined
   screenShare: TrackReferenceOrPlaceholder | null
@@ -1047,7 +1182,15 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   onAdvanceQuestion: (index: number) => void
   onRevealAnswer: () => void
   onSubmitAnswer: (index: number) => void
+  onSubmitQuizAll: (answers: Record<number, number>) => Promise<void>
   localIdentity: string
+  quizSubmitted: boolean
+  quizSubmissions: QuizSubmission[]
+  showGradingPanel: boolean
+  onToggleGradingPanel: () => void
+  onGradeSubmission: (id: string, score: number, maxScore: number, comment: string) => Promise<void>
+  onRevealResults: (submission: QuizSubmission) => void
+  onRefreshSubmissions: () => Promise<void>
 }) {
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
@@ -1155,8 +1298,16 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
             onAdvance={onAdvanceQuestion}
             onReveal={onRevealAnswer}
             onAnswer={onSubmitAnswer}
+            onSubmitAll={onSubmitQuizAll}
             localIdentity={localIdentity}
             teacherName={participant?.name || 'Teacher'}
+            quizSubmitted={quizSubmitted}
+            quizSubmissions={quizSubmissions}
+            showGradingPanel={showGradingPanel}
+            onToggleGradingPanel={onToggleGradingPanel}
+            onGradeSubmission={onGradeSubmission}
+            onRevealResults={onRevealResults}
+            onRefreshSubmissions={onRefreshSubmissions}
           />
         </div>
       )}
@@ -1288,7 +1439,9 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
 }
 
 // ── Quiz Presentation ────────────────────────────────────────────────────────
-function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdvance, onReveal, onAnswer, localIdentity, teacherName }: {
+function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdvance, onReveal, onAnswer, onSubmitAll, localIdentity, teacherName,
+  quizSubmitted, quizSubmissions, showGradingPanel, onToggleGradingPanel, onGradeSubmission, onRevealResults, onRefreshSubmissions,
+}: {
   quiz: LinkedQuiz
   currentIndex: number
   revealed: boolean
@@ -1297,8 +1450,16 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   onAdvance: (index: number) => void
   onReveal: () => void
   onAnswer: (index: number) => void
+  onSubmitAll: (answers: Record<number, number>) => Promise<void>
   localIdentity: string
   teacherName: string
+  quizSubmitted: boolean
+  quizSubmissions: QuizSubmission[]
+  showGradingPanel: boolean
+  onToggleGradingPanel: () => void
+  onGradeSubmission: (id: string, score: number, maxScore: number, comment: string) => Promise<void>
+  onRevealResults: (submission: QuizSubmission) => void
+  onRefreshSubmissions: () => Promise<void>
 }) {
   const totalQuestions = quiz.questions.length
 
@@ -1306,6 +1467,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   const [studentIndex, setStudentIndex] = useState(0)
   // Students track their own answers locally per question index
   const [studentAnswers, setStudentAnswers] = useState<Record<number, number>>({})
+  const [submitting, setSubmitting] = useState(false)
 
   const activeIndex = isHost ? currentIndex : studentIndex
   const question = quiz.questions[activeIndex]
@@ -1324,12 +1486,19 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   }, [answers])
 
   const totalAnswers = Object.keys(answers).length
+  const answeredCount = Object.keys(studentAnswers).length
 
-  // Student: answer the current question and broadcast it
+  // Student: answer the current question (locally only, no broadcast)
   const handleStudentAnswer = useCallback((optionIndex: number) => {
     setStudentAnswers(prev => ({ ...prev, [activeIndex]: optionIndex }))
-    onAnswer(optionIndex)
-  }, [activeIndex, onAnswer])
+  }, [activeIndex])
+
+  // Student: submit all answers
+  const handleSubmitAll = useCallback(async () => {
+    setSubmitting(true)
+    await onSubmitAll(studentAnswers)
+    setSubmitting(false)
+  }, [studentAnswers, onSubmitAll])
 
   if (!question) {
     return (
@@ -1345,6 +1514,42 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
 
   const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
 
+  // Teacher: show grading panel instead of quiz questions
+  if (isHost && showGradingPanel) {
+    return (
+      <QuizGradingPanel
+        quiz={quiz}
+        submissions={quizSubmissions}
+        onClose={onToggleGradingPanel}
+        onGrade={onGradeSubmission}
+        onRevealResults={onRevealResults}
+        onRefresh={onRefreshSubmissions}
+      />
+    )
+  }
+
+  // Student: quiz already submitted
+  if (!isHost && quizSubmitted) {
+    return (
+      <div className="room-presentation">
+        <div className="room-presentation-header">
+          <HelpCircle size={16} />
+          <span className="room-presentation-title">{quiz.title}</span>
+        </div>
+        <div className="room-presentation-content room-quiz-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          <div className="room-quiz-submitted-icon">
+            <Check size={48} />
+          </div>
+          <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Quiz Submitted!</h2>
+          <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center' }}>
+            Waiting for {teacherName} to grade your submission...
+          </p>
+          <div className="room-quiz-submitted-pulse" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="room-presentation">
       <div className="room-presentation-header">
@@ -1354,6 +1559,11 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
         <span className="room-presentation-counter" style={{ marginLeft: 'auto' }}>
           Q{activeIndex + 1}/{totalQuestions}
         </span>
+        {isHost && (
+          <button className="btn btn-outline btn-sm" style={{ marginLeft: 8 }} onClick={onToggleGradingPanel}>
+            <ClipboardList size={14} /> Grade ({quizSubmissions.length})
+          </button>
+        )}
       </div>
 
       <div className="room-presentation-content room-quiz-content">
@@ -1374,16 +1584,14 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             const count = answerCounts[i] || 0
             const pct = totalAnswers > 0 ? Math.round((count / totalAnswers) * 100) : 0
 
-            // Teacher: show reveal state; Student: show selected + immediate feedback after answering
             let optClass = 'room-quiz-option'
             if (isHost) {
               if (revealed && isCorrect) optClass += ' room-quiz-option-correct'
               if (revealed && isMyAnswer && !isCorrect) optClass += ' room-quiz-option-wrong'
               if (!revealed && isMyAnswer) optClass += ' room-quiz-option-selected'
             } else {
-              if (hasAnswered && isCorrect) optClass += ' room-quiz-option-correct'
-              if (hasAnswered && isMyAnswer && !isCorrect) optClass += ' room-quiz-option-wrong'
-              if (!hasAnswered && isMyAnswer) optClass += ' room-quiz-option-selected'
+              // Student: only show selection, no correct/wrong feedback until submitted
+              if (isMyAnswer) optClass += ' room-quiz-option-selected'
             }
 
             return (
@@ -1391,28 +1599,22 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                 key={i}
                 className={optClass}
                 onClick={() => {
-                  if (!isHost && !hasAnswered) handleStudentAnswer(i)
+                  if (!isHost) handleStudentAnswer(i)
                 }}
-                disabled={isHost || hasAnswered}
+                disabled={isHost}
               >
                 <span className="room-quiz-option-label">{optionLabels[i]}</span>
                 <span className="room-quiz-option-text">{opt}</span>
-                {((isHost && revealed) || (!isHost && hasAnswered)) && (
+                {isHost && revealed && (
                   <span className="room-quiz-option-stats">
                     {isCorrect && <Check size={14} />}
-                    {isHost && <span>{count} ({pct}%)</span>}
+                    <span>{count} ({pct}%)</span>
                   </span>
                 )}
               </button>
             )
           })}
         </div>
-
-        {!isHost && hasAnswered && (
-          <div className="room-quiz-waiting">
-            <span>{myAnswer === question.correct_index ? '✓ Correct!' : '✗ Incorrect'}</span>
-          </div>
-        )}
       </div>
 
       {/* Teacher navigation + reveal controls */}
@@ -1445,7 +1647,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
         </div>
       )}
 
-      {/* Student self-paced navigation */}
+      {/* Student self-paced navigation + submit button */}
       {!isHost && (
         <div className="room-presentation-nav">
           <button
@@ -1453,11 +1655,20 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             disabled={studentIndex === 0}
             onClick={() => setStudentIndex(prev => prev - 1)}
           >
-            <ArrowLeft size={16} /> Previous
+            <ArrowLeft size={16} /> Prev
           </button>
-          <span className="room-presentation-counter">
-            {Object.keys(studentAnswers).length} of {totalQuestions} answered
-          </span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="room-presentation-counter">
+              {answeredCount}/{totalQuestions}
+            </span>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={answeredCount === 0 || submitting}
+              onClick={handleSubmitAll}
+            >
+              {submitting ? 'Submitting...' : 'Submit Quiz'}
+            </button>
+          </div>
           <button
             className="btn btn-outline btn-sm"
             disabled={studentIndex >= totalQuestions - 1}
@@ -1467,6 +1678,240 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Quiz Grading Panel (Teacher) ─────────────────────────────────────────────
+function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults, onRefresh }: {
+  quiz: LinkedQuiz
+  submissions: QuizSubmission[]
+  onClose: () => void
+  onGrade: (id: string, score: number, maxScore: number, comment: string) => Promise<void>
+  onRevealResults: (submission: QuizSubmission) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [responses, setResponses] = useState<Array<{ question_id: string; answer_index: number | null; is_correct: boolean | null }>>([])
+  const [comment, setComment] = useState('')
+  const [grading, setGrading] = useState(false)
+
+  const selected = submissions.find(s => s.id === selectedId) || null
+
+  // Load responses when a submission is selected
+  useEffect(() => {
+    if (!selectedId) { setResponses([]); return }
+    fetch(`/api/quiz-responses?submission_id=${selectedId}`)
+      .then(r => r.json())
+      .then(d => { if (d.data) setResponses(d.data) })
+  }, [selectedId])
+
+  const handleGrade = useCallback(async () => {
+    if (!selected) return
+    setGrading(true)
+    // Calculate final score from responses (auto-graded + teacher overrides)
+    let score = 0
+    for (const r of responses) {
+      if (r.is_correct) score++
+    }
+    await onGrade(selected.id, score, quiz.questions.length, comment)
+    setGrading(false)
+    setSelectedId(null)
+    setComment('')
+  }, [selected, responses, comment, quiz.questions.length, onGrade])
+
+  const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
+
+  return (
+    <div className="room-presentation">
+      <div className="room-presentation-header">
+        <ClipboardList size={16} />
+        <span className="room-presentation-title">Grade: {quiz.title}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button className="btn btn-outline btn-sm" onClick={onRefresh}>Refresh</button>
+          <button className="btn btn-outline btn-sm" onClick={onClose}><X size={14} /> Close</button>
+        </div>
+      </div>
+
+      <div className="room-presentation-content room-grading-content">
+        {!selected ? (
+          /* Submission list */
+          <div className="room-grading-list">
+            {submissions.length === 0 ? (
+              <div className="room-presentation-empty">No submissions yet</div>
+            ) : (
+              submissions.map(sub => (
+                <div key={sub.id} className={`room-grading-item ${sub.status === 'graded' ? 'room-grading-item-graded' : ''}`}>
+                  <div className="room-grading-item-info">
+                    <span className="room-grading-item-name">{sub.student_name}</span>
+                    <span className={`room-grading-item-status room-grading-status-${sub.status}`}>
+                      {sub.status === 'graded' ? `${sub.score}/${sub.max_score} (${sub.percentage}%)` : sub.status}
+                    </span>
+                  </div>
+                  <div className="room-grading-item-actions">
+                    {sub.status === 'graded' ? (
+                      <button className="btn btn-primary btn-sm" onClick={() => onRevealResults(sub)}>
+                        <Eye size={14} /> Reveal
+                      </button>
+                    ) : (
+                      <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || '') }}>
+                        <Award size={14} /> Grade
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          /* Grading detail view */
+          <div className="room-grading-detail">
+            <div className="room-grading-detail-header">
+              <button className="btn btn-outline btn-sm" onClick={() => setSelectedId(null)}>
+                <ArrowLeft size={14} /> Back
+              </button>
+              <span style={{ fontWeight: 600 }}>{selected.student_name}</span>
+            </div>
+
+            <div className="room-grading-questions">
+              {quiz.questions.map((q, qi) => {
+                const resp = responses.find(r => r.question_id === q.id)
+                const studentAnswer = resp?.answer_index
+                const isCorrect = resp?.is_correct
+
+                return (
+                  <div key={q.id} className="room-grading-question">
+                    <div className="room-grading-q-header">
+                      <span className="room-quiz-question-number">Q{qi + 1}</span>
+                      <span className="room-quiz-question-text" style={{ fontSize: '0.9rem' }}>{q.question_text}</span>
+                      {isCorrect !== null && (
+                        <span className={isCorrect ? 'room-grading-correct' : 'room-grading-wrong'}>
+                          {isCorrect ? '✓' : '✗'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="room-grading-q-options">
+                      {q.options.map((opt, oi) => {
+                        let cls = 'room-grading-q-opt'
+                        if (oi === q.correct_index) cls += ' room-grading-q-opt-correct'
+                        if (oi === studentAnswer) cls += ' room-grading-q-opt-selected'
+                        if (oi === studentAnswer && oi !== q.correct_index) cls += ' room-grading-q-opt-wrong'
+                        return (
+                          <div key={oi} className={cls}>
+                            <span className="room-quiz-option-label">{optionLabels[oi]}</span>
+                            <span>{opt}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="room-grading-comment">
+              <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
+              <textarea
+                className="room-grading-textarea"
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder="Add a comment for this student..."
+                rows={3}
+              />
+            </div>
+
+            <div className="room-grading-actions">
+              <button className="btn btn-primary" disabled={grading} onClick={handleGrade}>
+                {grading ? 'Grading...' : 'Confirm Grade'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Quiz Result Reveal (Cinematic overlay) ───────────────────────────────────
+function QuizResultReveal({ submission, countdown, onDismiss, quizTitle }: {
+  submission: QuizSubmission
+  countdown: number
+  onDismiss: () => void
+  quizTitle: string
+}) {
+  const certRef = useRef<HTMLDivElement>(null)
+  const showResult = countdown <= 0
+
+  const handleDownload = useCallback(async () => {
+    if (!certRef.current) return
+    try {
+      const html2canvas = (await import('html2canvas')).default
+      const canvas = await html2canvas(certRef.current, { backgroundColor: null, scale: 2 })
+      const link = document.createElement('a')
+      link.download = `certificate-${submission.student_name.replace(/\s+/g, '-')}.png`
+      link.href = canvas.toDataURL('image/png')
+      link.click()
+    } catch {
+      // html2canvas may not be installed yet — silent fail
+    }
+  }, [submission.student_name])
+
+  return (
+    <div className="quiz-reveal-overlay" onClick={onDismiss}>
+      <div className="quiz-reveal-container" onClick={e => e.stopPropagation()}>
+        {!showResult ? (
+          /* Countdown */
+          <div className="quiz-reveal-countdown">
+            <div className="quiz-reveal-student-name">{submission.student_name}</div>
+            <div className="quiz-reveal-countdown-number" key={countdown}>
+              {countdown}
+            </div>
+          </div>
+        ) : (
+          /* Certificate card */
+          <div className="quiz-reveal-result">
+            {submission.passed && <div className="quiz-reveal-confetti" />}
+            <div className="quiz-reveal-certificate" ref={certRef}>
+              <div className="quiz-cert-header">
+                <Trophy size={40} className="quiz-cert-trophy" />
+                <h2 className="quiz-cert-title">
+                  {submission.passed ? 'Congratulations!' : 'Quiz Complete'}
+                </h2>
+              </div>
+              <div className="quiz-cert-name">{submission.student_name}</div>
+              <div className="quiz-cert-quiz">{quizTitle}</div>
+              <div className="quiz-cert-score">
+                <div className="quiz-cert-score-circle" data-passed={submission.passed}>
+                  <span className="quiz-cert-score-value">{submission.percentage}%</span>
+                </div>
+                <div className="quiz-cert-score-detail">
+                  {submission.score}/{submission.max_score} correct
+                </div>
+              </div>
+              <div className={`quiz-cert-badge ${submission.passed ? 'quiz-cert-badge-pass' : 'quiz-cert-badge-fail'}`}>
+                {submission.passed ? (
+                  <><Star size={16} /> PASSED</>
+                ) : (
+                  <>Keep Learning!</>
+                )}
+              </div>
+              {submission.teacher_comment && (
+                <div className="quiz-cert-comment">
+                  <em>&ldquo;{submission.teacher_comment}&rdquo;</em>
+                </div>
+              )}
+            </div>
+            <div className="quiz-reveal-actions">
+              <button className="btn btn-outline btn-sm" onClick={handleDownload}>
+                <Download size={14} /> Download Certificate
+              </button>
+              <button className="btn btn-outline btn-sm" onClick={onDismiss}>
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

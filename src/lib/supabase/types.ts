@@ -113,6 +113,7 @@ export type Quiz = {
   teacher_id: string
   title: string
   description: string | null
+  pass_threshold: number
   created_at: string
   updated_at: string
 }
@@ -147,6 +148,37 @@ export type QuizTarget = {
   quiz_id: string
   target_type: 'group' | 'student'
   target_id: string
+  created_at: string
+}
+
+export type QuizSubmission = {
+  id: string
+  quiz_id: string
+  session_id: string
+  student_id: string
+  student_name: string
+  started_at: string
+  submitted_at: string | null
+  status: 'in_progress' | 'submitted' | 'graded'
+  score: number
+  max_score: number
+  percentage: number
+  passed: boolean
+  teacher_comment: string | null
+  graded_by: string | null
+  graded_at: string | null
+  created_at: string
+}
+
+export type QuizResponse = {
+  id: string
+  submission_id: string
+  question_id: string
+  answer_index: number | null
+  answer_text: string | null
+  is_correct: boolean | null
+  teacher_comment: string | null
+  sort_order: number
   created_at: string
 }
 
@@ -247,7 +279,7 @@ export type Database = {
       }
       quizzes: {
         Row: Quiz
-        Insert: Omit<Quiz, 'id' | 'created_at' | 'updated_at'>
+        Insert: Omit<Quiz, 'id' | 'created_at' | 'updated_at' | 'pass_threshold'> & { pass_threshold?: number }
         Update: Partial<Omit<Quiz, 'id' | 'created_at'>>
         Relationships: []
       }
@@ -273,6 +305,18 @@ export type Database = {
         Row: QuizTarget
         Insert: Omit<QuizTarget, 'id' | 'created_at'>
         Update: Partial<Omit<QuizTarget, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      quiz_submissions: {
+        Row: QuizSubmission
+        Insert: Omit<QuizSubmission, 'id' | 'created_at' | 'started_at' | 'submitted_at' | 'score' | 'max_score' | 'percentage' | 'passed' | 'graded_at'>
+        Update: Partial<Omit<QuizSubmission, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      quiz_responses: {
+        Row: QuizResponse
+        Insert: Omit<QuizResponse, 'id' | 'created_at'>
+        Update: Partial<Omit<QuizResponse, 'id' | 'created_at'>>
         Relationships: []
       }
       conversations: {
