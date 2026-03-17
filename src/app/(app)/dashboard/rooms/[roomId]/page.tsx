@@ -1840,7 +1840,7 @@ function ControlBarCustom({
               title={isBlackboardActive ? 'Hide blackboard (Ctrl+B)' : 'Show blackboard (Ctrl+B)'}
             >
               <PenTool size={20} />
-              <span className="room-control-label">Blackboard</span>
+              <span className="room-control-label">Board</span>
             </button>
           </>
         )}
