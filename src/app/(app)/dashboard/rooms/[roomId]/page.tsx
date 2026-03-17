@@ -1740,8 +1740,8 @@ function ControlBarCustom({
       </div>
 
       <div className="room-controls-group">
-        {/* Course / Quiz / Blackboard — teacher only, hide on mobile */}
-        {!isMobile && isTeacher && (
+        {/* Course / Quiz / Blackboard — teacher only */}
+        {isTeacher && (
           <>
             <div style={{ position: 'relative' }} ref={courseMenuRef}>
               <button
