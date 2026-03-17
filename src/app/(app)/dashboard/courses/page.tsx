@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
@@ -74,23 +74,6 @@ function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson,
   )
   const [editingTitle, setEditingTitle] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handleHeaderClick() {
-    if (editingTitle) return
-    if (clickTimerRef.current !== null) {
-      clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = null
-      setEditingTitle(true)
-    } else {
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null
-        const collapsing = !topic.collapsed
-        onUpdate(topic.id, { collapsed: collapsing })
-        if (collapsing) topic.lessons.forEach(l => onUpdateLesson(topic.id, l.id, { collapsed: true }))
-      }, 300)
-    }
-  }
 
   function handleLessonDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -105,13 +88,17 @@ function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson,
     <div ref={setNodeRef} style={style} className="card" key={topic.id}
       data-topic-wrapper=""
       >
-      {/* Topic header — click collapses, double-click edits title, long-press drags */}
+      {/* Topic header — click collapses, double-click title edits, drag anywhere */}
       <div
         {...attributes}
         {...listeners}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onClick={handleHeaderClick}
+        onClick={() => {
+          const collapsing = !topic.collapsed
+          onUpdate(topic.id, { collapsed: collapsing })
+          if (collapsing) topic.lessons.forEach(l => onUpdateLesson(topic.id, l.id, { collapsed: true }))
+        }}
         style={{
           display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px',
           cursor: 'pointer', userSelect: 'none',
@@ -134,7 +121,12 @@ function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson,
             style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'text' }}
           />
         ) : (
-          <span style={{ flex: 1, fontSize: '0.95rem', fontWeight: 600, color: topic.title ? 'var(--text-primary)' : 'var(--text-disabled)' }}>
+          <span
+            onPointerDown={e => e.stopPropagation()}
+            onDoubleClick={e => { e.stopPropagation(); setEditingTitle(true) }}
+            title="Double-click to rename"
+            style={{ flex: 1, fontSize: '0.95rem', fontWeight: 600, color: topic.title ? 'var(--text-primary)' : 'var(--text-disabled)', cursor: 'pointer' }}
+          >
             {topic.title || 'Topic title…'}
           </span>
         )}
@@ -184,31 +176,16 @@ function SortableLesson({ lesson, onUpdate, onRemove }: {
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   const [editingTitle, setEditingTitle] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handleHeaderClick() {
-    if (editingTitle) return
-    if (clickTimerRef.current !== null) {
-      clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = null
-      setEditingTitle(true)
-    } else {
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null
-        onUpdate(lesson.id, { collapsed: !lesson.collapsed })
-      }, 300)
-    }
-  }
 
   return (
     <div ref={setNodeRef} style={{ ...style, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', marginBottom: '8px', background: 'var(--bg-secondary)' }}>
-      {/* Lesson header — click collapses, double-click edits title, long-press drags */}
+      {/* Lesson header — click collapses, double-click title edits, drag anywhere */}
       <div
         {...attributes}
         {...listeners}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onClick={handleHeaderClick}
+        onClick={() => onUpdate(lesson.id, { collapsed: !lesson.collapsed })}
         style={{
           display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px',
           cursor: 'pointer', userSelect: 'none',
@@ -232,7 +209,12 @@ function SortableLesson({ lesson, onUpdate, onRemove }: {
             style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)', outline: 'none', cursor: 'text' }}
           />
         ) : (
-          <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 500, color: lesson.title ? 'var(--text-primary)' : 'var(--text-disabled)' }}>
+          <span
+            onPointerDown={e => e.stopPropagation()}
+            onDoubleClick={e => { e.stopPropagation(); setEditingTitle(true) }}
+            title="Double-click to rename"
+            style={{ flex: 1, fontSize: '0.85rem', fontWeight: 500, color: lesson.title ? 'var(--text-primary)' : 'var(--text-disabled)', cursor: 'pointer' }}
+          >
             {lesson.title || 'Lesson title…'}
           </span>
         )}
