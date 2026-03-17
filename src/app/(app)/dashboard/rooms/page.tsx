@@ -158,7 +158,7 @@ function CreateSessionModal({ onClose, onCreated, groups, students, quizzes, cou
           {mode === 'scheduled' && (
             <div className="input-group">
               <label className="input-label">Start Date &amp; Time</label>
-              <input type="datetime-local" className="input" required min={minDatetime} value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
+              <input type="datetime-local" className="input" required min={minDatetime} value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} onClick={e => (e.target as HTMLInputElement).showPicker?.()} />
               <span className="input-helper">Countdown will begin immediately after saving</span>
             </div>
           )}
@@ -465,7 +465,7 @@ function EditSessionModal({ session, onClose, onUpdated, groups, students, quizz
           {session.status === 'scheduled' && (
             <div className="input-group">
               <label className="input-label">Start Date &amp; Time</label>
-              <input type="datetime-local" className="input" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
+              <input type="datetime-local" className="input" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} onClick={e => (e.target as HTMLInputElement).showPicker?.()} />
             </div>
           )}
 
