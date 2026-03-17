@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
@@ -9,7 +9,7 @@ import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import {
   BookOpen, Plus, GraduationCap, X, Users, Clock, Search,
-  ChevronDown, ChevronRight, GripVertical, Trash2, FileText,
+  ChevronDown, ChevronRight, Trash2, FileText,
   Video, Save, ArrowLeft, Eye, EyeOff, FolderOpen, Check,
 } from 'lucide-react'
 import {
@@ -65,13 +65,31 @@ function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson,
   onRemoveLesson: (topicId: string, lessonId: string) => void
   onReorderLessons: (topicId: string, oldIndex: number, newIndex: number) => void
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: topic.id })
-  const style = { transform: CSS.Transform.toString(transform), transition }
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: topic.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   const [editingTitle, setEditingTitle] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handleHeaderClick() {
+    if (editingTitle) return
+    if (clickTimerRef.current !== null) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+      setEditingTitle(true)
+    } else {
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null
+        const collapsing = !topic.collapsed
+        onUpdate(topic.id, { collapsed: collapsing })
+        if (collapsing) topic.lessons.forEach(l => onUpdateLesson(topic.id, l.id, { collapsed: true }))
+      }, 300)
+    }
+  }
 
   function handleLessonDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -86,39 +104,45 @@ function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson,
     <div ref={setNodeRef} style={style} className="card" key={topic.id}
       data-topic-wrapper=""
       >
-      {/* Topic header — single click collapses, double-click on title edits */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', cursor: 'pointer', borderBottom: topic.collapsed ? 'none' : '1px solid var(--border-subtle)' }}
-        onClick={() => onUpdate(topic.id, { collapsed: !topic.collapsed })}>
-        <span {...attributes} {...listeners} style={{ cursor: 'grab', color: 'var(--text-muted)', display: 'flex' }}
-          onClick={e => e.stopPropagation()}>
-          <GripVertical size={16} />
-        </span>
+      {/* Topic header — click collapses, double-click edits title, long-press drags */}
+      <div
+        {...attributes}
+        {...listeners}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={handleHeaderClick}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px',
+          cursor: 'pointer', userSelect: 'none',
+          borderBottom: topic.collapsed ? 'none' : '1px solid var(--border-subtle)',
+          background: hovered ? 'rgba(0,0,0,0.04)' : 'transparent',
+          transition: 'background 0.15s',
+        }}
+      >
         {topic.collapsed ? <ChevronRight size={16} color="var(--text-muted)" /> : <ChevronDown size={16} color="var(--text-muted)" />}
         {editingTitle ? (
           <input
             autoFocus
             value={topic.title}
             onChange={e => onUpdate(topic.id, { title: e.target.value })}
+            onPointerDown={e => e.stopPropagation()}
             onClick={e => e.stopPropagation()}
             onBlur={() => setEditingTitle(false)}
             onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditingTitle(false) } }}
             placeholder="Topic title…"
-            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none' }}
+            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'text' }}
           />
         ) : (
-          <span
-            onClick={e => e.stopPropagation()}
-            onDoubleClick={e => { e.stopPropagation(); setEditingTitle(true) }}
-            title="Double-click to edit"
-            style={{ flex: 1, fontSize: '0.95rem', fontWeight: 600, color: topic.title ? 'var(--text-primary)' : 'var(--text-disabled)', userSelect: 'none', cursor: 'text' }}
-          >
+          <span style={{ flex: 1, fontSize: '0.95rem', fontWeight: 600, color: topic.title ? 'var(--text-primary)' : 'var(--text-disabled)' }}>
             {topic.title || 'Topic title…'}
           </span>
         )}
         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
           {topic.lessons.length} lesson{topic.lessons.length !== 1 ? 's' : ''}
         </span>
-        <button type="button" onClick={e => { e.stopPropagation(); onRemove(topic.id) }}
+        <button type="button"
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onRemove(topic.id) }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 4, display: 'flex' }}>
           <Trash2 size={14} />
         </button>
@@ -155,19 +179,43 @@ function SortableLesson({ lesson, onUpdate, onRemove }: {
   onUpdate: (id: string, updates: Partial<LessonLocal>) => void
   onRemove: (id: string) => void
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: lesson.id })
-  const style = { transform: CSS.Transform.toString(transform), transition }
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: lesson.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   const [editingTitle, setEditingTitle] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handleHeaderClick() {
+    if (editingTitle) return
+    if (clickTimerRef.current !== null) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+      setEditingTitle(true)
+    } else {
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null
+        onUpdate(lesson.id, { collapsed: !lesson.collapsed })
+      }, 300)
+    }
+  }
 
   return (
     <div ref={setNodeRef} style={{ ...style, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', marginBottom: '8px', background: 'var(--bg-secondary)' }}>
-      {/* Lesson header — single click collapses, double-click on title edits */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', cursor: 'pointer', borderBottom: lesson.collapsed ? 'none' : '1px solid var(--border-subtle)' }}
-        onClick={() => onUpdate(lesson.id, { collapsed: !lesson.collapsed })}>
-        <span {...attributes} {...listeners} style={{ cursor: 'grab', color: 'var(--text-muted)', display: 'flex' }}
-          onClick={e => e.stopPropagation()}>
-          <GripVertical size={14} />
-        </span>
+      {/* Lesson header — click collapses, double-click edits title, long-press drags */}
+      <div
+        {...attributes}
+        {...listeners}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={handleHeaderClick}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px',
+          cursor: 'pointer', userSelect: 'none',
+          borderBottom: lesson.collapsed ? 'none' : '1px solid var(--border-subtle)',
+          background: hovered ? 'rgba(0,0,0,0.04)' : 'transparent',
+          transition: 'background 0.15s',
+        }}
+      >
         {lesson.type === 'video' ? <Video size={14} color="#8b5cf6" /> : <FileText size={14} color="#6366f1" />}
         {lesson.collapsed ? <ChevronRight size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
         {editingTitle ? (
@@ -175,29 +223,29 @@ function SortableLesson({ lesson, onUpdate, onRemove }: {
             autoFocus
             value={lesson.title}
             onChange={e => onUpdate(lesson.id, { title: e.target.value })}
+            onPointerDown={e => e.stopPropagation()}
             onClick={e => e.stopPropagation()}
             onBlur={() => setEditingTitle(false)}
             onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditingTitle(false) } }}
             placeholder="Lesson title…"
-            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)', outline: 'none' }}
+            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)', outline: 'none', cursor: 'text' }}
           />
         ) : (
-          <span
-            onClick={e => e.stopPropagation()}
-            onDoubleClick={e => { e.stopPropagation(); setEditingTitle(true) }}
-            title="Double-click to edit"
-            style={{ flex: 1, fontSize: '0.85rem', fontWeight: 500, color: lesson.title ? 'var(--text-primary)' : 'var(--text-disabled)', userSelect: 'none', cursor: 'text' }}
-          >
+          <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 500, color: lesson.title ? 'var(--text-primary)' : 'var(--text-disabled)' }}>
             {lesson.title || 'Lesson title…'}
           </span>
         )}
-        <select value={lesson.type} onClick={e => e.stopPropagation()}
+        <select value={lesson.type}
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           onChange={e => { e.stopPropagation(); onUpdate(lesson.id, { type: e.target.value as 'text' | 'video' }) }}
           style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', fontSize: '0.72rem', padding: '2px 6px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <option value="text">Text</option>
           <option value="video">Video</option>
         </select>
-        <button type="button" onClick={e => { e.stopPropagation(); onRemove(lesson.id) }}
+        <button type="button"
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onRemove(lesson.id) }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-400)', padding: 4, display: 'flex' }}>
           <Trash2 size={13} />
         </button>
@@ -600,7 +648,7 @@ export default function CoursesPage() {
 
   // ─ DnD for topics ─
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   function handleTopicDragEnd(event: DragEndEvent) {
