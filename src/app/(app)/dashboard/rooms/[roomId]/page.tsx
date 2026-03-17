@@ -664,6 +664,10 @@ function RoomInner({ roomName }: { roomName: string }) {
     sendHandData(payload, { reliable: true })
   }, [myHandRaised, localParticipant.identity, sendHandData])
 
+  const lowerAllHands = useCallback(() => {
+    setRaisedHands(new Set())
+  }, [])
+
   // Find the teacher participant (first non-student, or the host)
   const teacherParticipant = useMemo(() => {
     // If local user is teacher, they are the teacher
@@ -822,6 +826,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           isTeacher={isTeacher}
           localParticipant={localParticipant}
           onToggleHand={toggleHand}
+          onLowerAllHands={lowerAllHands}
           onSettings={() => setShowSettings(true)}
           onLeave={handleLeave}
           raisedHandCount={raisedHands.size}
@@ -1495,6 +1500,7 @@ interface ControlBarProps {
   isTeacher: boolean
   localParticipant: ReturnType<typeof useLocalParticipant>['localParticipant']
   onToggleHand: () => void
+  onLowerAllHands: () => void
   onSettings: () => void
   onLeave: () => void
   raisedHandCount: number
@@ -1515,7 +1521,7 @@ interface ControlBarProps {
 
 function ControlBarCustom({
   isMicEnabled, isCamEnabled, isScreenShareEnabled, isHandRaised,
-  isTeacher, localParticipant, onToggleHand, onSettings, onLeave, raisedHandCount, isMobile,
+  isTeacher, localParticipant, onToggleHand, onLowerAllHands, onSettings, onLeave, raisedHandCount, isMobile,
   isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
   onToggleBlackboard, linkedCourses, linkedQuizzes,
   onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz,
@@ -1674,18 +1680,30 @@ function ControlBarCustom({
           </button>
         )}
 
-        {/* Raise Hand */}
-        <button
-          className={`room-control-btn ${isHandRaised ? 'room-control-btn-hand' : ''}`}
-          onClick={onToggleHand}
-          title={isHandRaised ? 'Lower hand' : 'Raise hand'}
-        >
-          <Hand size={isMobile ? 18 : 20} />
-          {!isMobile && <span className="room-control-label">{isHandRaised ? 'Lower Hand' : 'Raise Hand'}</span>}
-          {raisedHandCount > 0 && isTeacher && (
-            <span className="room-hand-badge">{raisedHandCount}</span>
-          )}
-        </button>
+        {/* Raise Hand (students) / Lower All Hands (teachers) */}
+        {isTeacher ? (
+          <button
+            className={`room-control-btn ${raisedHandCount > 0 ? 'room-control-btn-hand' : ''}`}
+            onClick={onLowerAllHands}
+            title={`Lower all hands${raisedHandCount > 0 ? ` (${raisedHandCount})` : ''}`}
+            disabled={raisedHandCount === 0}
+          >
+            <Hand size={isMobile ? 18 : 20} />
+            {!isMobile && <span className="room-control-label">Lower All</span>}
+            {raisedHandCount > 0 && (
+              <span className="room-hand-badge">{raisedHandCount}</span>
+            )}
+          </button>
+        ) : (
+          <button
+            className={`room-control-btn ${isHandRaised ? 'room-control-btn-hand' : ''}`}
+            onClick={onToggleHand}
+            title={isHandRaised ? 'Lower hand' : 'Raise hand'}
+          >
+            <Hand size={isMobile ? 18 : 20} />
+            {!isMobile && <span className="room-control-label">{isHandRaised ? 'Lower Hand' : 'Raise Hand'}</span>}
+          </button>
+        )}
 
         {/* Settings — hide on mobile */}
         {!isMobile && (
