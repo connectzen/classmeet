@@ -169,8 +169,9 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set())
   const initialIsMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : false
   // Panel visibility tracks desktop and mobile independently.
-  const [desktopShowParticipants, setDesktopShowParticipants] = useState(!initialIsMobile)
-  const [desktopShowChat, setDesktopShowChat] = useState(!initialIsMobile)
+  // Desktop panels always default to visible so resizing from mobile to desktop shows them.
+  const [desktopShowParticipants, setDesktopShowParticipants] = useState(true)
+  const [desktopShowChat, setDesktopShowChat] = useState(true)
   const [mobileShowParticipants, setMobileShowParticipants] = useState(false)
   const [mobileShowChat, setMobileShowChat] = useState(false)
   // Settings modal
@@ -1196,6 +1197,16 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
     }, 150)
   }, [isHost, onScroll])
 
+  // Prevent wheel events from propagating to browser (avoids page zoom)
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!isHost || !contentRef.current) return
+    const el = contentRef.current
+    const maxScroll = el.scrollHeight - el.clientHeight
+    if (maxScroll > 0) {
+      e.stopPropagation()
+    }
+  }, [isHost])
+
   // Student: sync scroll position from teacher ratio using rAF
   useEffect(() => {
     if (isHost || !contentRef.current) return
@@ -1222,6 +1233,7 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
         }}
         className="room-presentation-content"
         onScroll={isHost ? handleScroll : undefined}
+        onWheel={isHost ? handleWheel : undefined}
         style={!isHost ? { overflow: 'hidden' } : undefined}
       >
         {lesson ? (

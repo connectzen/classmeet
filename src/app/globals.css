@@ -1478,6 +1478,7 @@ select option {
   overflow: hidden;
   background: #0f0f14;
   min-height: 0;
+  touch-action: manipulation;
 }
 .room-stage-video {
   position: relative;
@@ -1864,6 +1865,20 @@ select option {
     height: 18px;
     margin: 0 2px;
   }
+  /* Popups inside toolbar-inner are hidden on mobile (rendered outside instead) */
+  .room-bb-toolbar-inner .room-bb-color-picker,
+  .room-bb-toolbar-inner .room-bb-size-picker {
+    display: none;
+  }
+}
+
+/* Mobile popups — rendered outside toolbar to escape backdrop-filter containing block */
+.room-bb-popup-mobile {
+  position: absolute;
+  bottom: 100px;
+  left: 8px;
+  z-index: 9999;
+  transform: none;
 }
 
 /* ── Blackboard ────────────────────────────────────────────────────────────── */
@@ -2237,6 +2252,7 @@ select option {
   flex-direction: column;
   height: 100%;
   width: 100%;
+  min-height: 0;
 }
 .room-presentation-header {
   display: flex;
@@ -2260,6 +2276,9 @@ select option {
   flex: 1;
   overflow-y: auto;
   padding: 24px 32px;
+  min-height: 0;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 .room-presentation-topic {
   font-size: 0.75rem;

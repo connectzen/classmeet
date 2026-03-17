@@ -194,7 +194,8 @@ export default function BlackboardToolbar({
                 <span className="room-bb-color-dot" style={{ backgroundColor: strokeColor }} />
               </button>
 
-              {showColorPicker && (
+              {/* Desktop: render popup inside toolbar */}
+              {showColorPicker && !isMobileView && (
                 <div className="room-bb-color-picker">
                   {COLORS.map(c => (
                     <button
@@ -230,7 +231,8 @@ export default function BlackboardToolbar({
                   />
                 </button>
 
-                {showSizePicker && (
+                {/* Desktop: render popup inside toolbar */}
+                {showSizePicker && !isMobileView && (
                   <div className="room-bb-size-picker">
                     {STROKE_SIZES.map(s => (
                       <button
@@ -317,6 +319,47 @@ export default function BlackboardToolbar({
           </div>
         )}
       </div>
+
+      {/* ── Mobile: color picker popup (outside toolbar to avoid backdrop-filter containing block) */}
+      {isMobileView && showColorPicker && (
+        <div className="room-bb-color-picker room-bb-popup-mobile">
+          {COLORS.map(c => (
+            <button
+              key={c}
+              className={`room-bb-color-swatch ${strokeColor === c ? 'room-bb-color-swatch-active' : ''}`}
+              style={{ backgroundColor: c }}
+              onClick={() => { onColorChange(c); setShowColorPicker(false) }}
+              title={c}
+            />
+          ))}
+          <input
+            type="color"
+            value={strokeColor}
+            onChange={e => { onColorChange(e.target.value); setShowColorPicker(false) }}
+            className="room-bb-color-input"
+            title="Custom color"
+          />
+        </div>
+      )}
+
+      {/* ── Mobile: stroke size picker popup (outside toolbar to avoid backdrop-filter containing block) */}
+      {isMobileView && showSizePicker && isDrawingTool && (
+        <div className="room-bb-size-picker room-bb-popup-mobile">
+          {STROKE_SIZES.map(s => (
+            <button
+              key={s.value}
+              className={`room-bb-size-picker-item ${strokeWidth === s.value ? 'room-bb-size-picker-active' : ''}`}
+              onClick={() => { onStrokeWidthChange(s.value); setShowSizePicker(false) }}
+            >
+              <span
+                className="room-bb-size-dot"
+                style={{ width: s.value * 2, height: s.value * 2, flexShrink: 0 }}
+              />
+              <span>{s.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── Mobile: floating vertical text options panel ─────────────────────── */}
       {isMobileView && showTextPanel && (
