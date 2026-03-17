@@ -13,7 +13,7 @@ import {
   Video, Save, ArrowLeft, Eye, EyeOff, FolderOpen, Check,
 } from 'lucide-react'
 import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
 import {
@@ -68,7 +68,8 @@ function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson,
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: topic.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   const [editingTitle, setEditingTitle] = useState(false)
@@ -648,7 +649,8 @@ export default function CoursesPage() {
 
   // ─ DnD for topics ─
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   function handleTopicDragEnd(event: DragEndEvent) {
@@ -890,10 +892,7 @@ export default function CoursesPage() {
         </div>)}
 
         {/* Curriculum */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Curriculum</h2>
-          <Button variant="ghost" size="sm" icon={<Plus size={14} />} onClick={addTopic}>Add Topic</Button>
-        </div>
+        <h2 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Curriculum</h2>
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTopicDragEnd}>
           <SortableContext items={editing.topics.map(t => t.id)} strategy={verticalListSortingStrategy}>
@@ -909,13 +908,18 @@ export default function CoursesPage() {
         </DndContext>
 
         {editing.topics.length === 0 && (
-          <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+          <div className="card" style={{ padding: '40px', textAlign: 'center', marginBottom: '10px' }}>
             <BookOpen size={28} color="var(--text-muted)" style={{ marginBottom: '10px' }} />
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-              No topics yet. Click &quot;Add Topic&quot; to start building your curriculum.
+              No topics yet. Add your first topic below.
             </p>
           </div>
         )}
+
+        <button type="button" onClick={addTopic}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', width: '100%', border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer', marginTop: editing.topics.length > 0 ? '10px' : 0 }}>
+          <Plus size={14} /> Add Topic
+        </button>
 
         {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
       </div>
