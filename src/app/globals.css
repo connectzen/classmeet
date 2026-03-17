@@ -1473,6 +1473,7 @@ select option {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   padding: 12px;
   overflow: hidden;
   background: #0f0f14;
@@ -1826,6 +1827,9 @@ select option {
   .room-main-stage {
     padding: 4px;
   }
+  .room-stage-layer {
+    inset: 4px;
+  }
   .room-stage-avatar {
     width: 80px; height: 80px;
     font-size: 1.8rem;
@@ -1865,6 +1869,16 @@ select option {
   height: 100% !important;
   pointer-events: none;
   visibility: hidden;
+}
+.room-stage-layer {
+  position: absolute !important;
+  inset: 12px;
+}
+.room-stage-layer-front {
+  pointer-events: auto;
+}
+.room-stage-layer-back {
+  pointer-events: none;
 }
 
 /* Floating toolbar */

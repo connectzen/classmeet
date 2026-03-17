@@ -21,8 +21,8 @@ import type { Participant as LKParticipant } from 'livekit-client'
 import {
   Mic, MicOff, Video, VideoOff, Monitor, Hand, Settings,
   LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
-  MonitorOff, Volume2, PenTool, ChevronDown, BookOpen, HelpCircle,
-  ChevronUp, Check, Clock, ArrowLeft, ArrowRight,
+  MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
+  Check, Clock, ArrowLeft, ArrowRight,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
@@ -47,7 +47,7 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 // ── Presentation types ───────────────────────────────────────────────────────
-type PresentMode = 'none' | 'blackboard' | 'course' | 'quiz'
+type LayerKey = 'blackboard' | 'course' | 'quiz'
 
 interface LinkedCourse extends Course {
   topics: (Topic & { lessons: Lesson[] })[]
@@ -58,7 +58,17 @@ interface LinkedQuiz extends Quiz {
 }
 
 interface PresentEvent {
-  type: 'start-course' | 'start-quiz' | 'stop' | 'course-navigate' | 'course-scroll' | 'quiz-advance' | 'quiz-reveal' | 'quiz-answer'
+  type:
+    | 'start-course'
+    | 'stop-course'
+    | 'start-quiz'
+    | 'stop-quiz'
+    | 'layer-order'
+    | 'course-navigate'
+    | 'course-scroll'
+    | 'quiz-advance'
+    | 'quiz-reveal'
+    | 'quiz-answer'
   courseId?: string
   quizId?: string
   lessonIndex?: number
@@ -66,6 +76,7 @@ interface PresentEvent {
   identity?: string
   answerIndex?: number
   scrollTop?: number
+  order?: LayerKey[]
 }
 
 // ── Main Page ────────────────────────────────────────────────────────────────
@@ -157,8 +168,8 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Raised hands (set of participant identities)
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set())
   // Panel visibility (desktop: default open, mobile: default closed)
-  const [showParticipants, setShowParticipants] = useState(false)
-  const [showChat, setShowChat] = useState(false)
+  const [showParticipants, setShowParticipants] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 768 : false))
+  const [showChat, setShowChat] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 768 : false))
   // Settings modal
   const [showSettings, setShowSettings] = useState(false)
   // Blackboard
@@ -168,17 +179,19 @@ function RoomInner({ roomName }: { roomName: string }) {
   const prevParticipantCount = useRef(0)
   const prevPresentParticipantCount = useRef(0)
   // Presentation state
-  const [presentMode, setPresentMode] = useState<PresentMode>('none')
   const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([])
   const [linkedQuizzes, setLinkedQuizzes] = useState<LinkedQuiz[]>([])
+  const [courseActive, setCourseActive] = useState(false)
+  const [quizActive, setQuizActive] = useState(false)
   const [activeCourseId, setActiveCourseId] = useState<string | null>(null)
   const [activeQuizId, setActiveQuizId] = useState<string | null>(null)
+  const [layerOrder, setLayerOrder] = useState<LayerKey[]>([])
   const [currentLessonIndex, setCurrentLessonIndex] = useState(0)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [quizRevealed, setQuizRevealed] = useState(false)
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({})
   const [courseScrollTop, setCourseScrollTop] = useState(0)  // Mobile detection – null means "not yet determined"
-  const [isMobile, setIsMobile] = useState<boolean | null>(null)
+  const [isMobile, setIsMobile] = useState<boolean>(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false))
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -187,18 +200,15 @@ function RoomInner({ roomName }: { roomName: string }) {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Default desktop panels open – only after first mobile check
-  useEffect(() => {
-    if (isMobile === false) {
-      setShowParticipants(true)
-      setShowChat(true)
-    } else if (isMobile === true) {
-      setShowParticipants(false)
-      setShowChat(false)
-    }
-  }, [isMobile])
-
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'member'
+
+  const bringLayerToFront = useCallback((layer: LayerKey) => {
+    setLayerOrder(prev => [...prev.filter(item => item !== layer), layer])
+  }, [])
+
+  const removeLayerFromOrder = useCallback((layer: LayerKey) => {
+    setLayerOrder(prev => prev.filter(item => item !== layer))
+  }, [])
 
   // Load linked courses/quizzes for this session
   useEffect(() => {
@@ -299,8 +309,10 @@ function RoomInner({ roomName }: { roomName: string }) {
     const event = JSON.parse(decoder.decode(msg.payload)) as BlackboardEvent
     if (event.type === 'activate') {
       setBlackboardActive(true)
+      bringLayerToFront('blackboard')
     } else if (event.type === 'deactivate') {
       setBlackboardActive(false)
+      removeLayerFromOrder('blackboard')
     } else if (
       event.type === 'drawing-live' ||
       event.type === 'drawing-live-end' ||
@@ -340,46 +352,29 @@ function RoomInner({ roomName }: { roomName: string }) {
     sendBlackboardData(payload, { reliable: !ephemeral })
   }, [sendBlackboardData])
 
-  // Host: toggle blackboard on/off
-  const toggleBlackboard = useCallback(() => {
-    const next = !blackboardActive
-    setBlackboardActive(next)
-    if (next) setPresentMode('blackboard')
-    else if (presentMode === 'blackboard') setPresentMode('none')
-    const event: BlackboardEvent = next ? { type: 'activate' } : { type: 'deactivate' }
-    const payload = encoder.encode(JSON.stringify(event))
-    sendBlackboardData(payload, { reliable: true })
-    // Send snapshot after activation so late-joining is seamless
-    if (next) {
-      setTimeout(() => {
-        const snapshot = blackboardRef.current?.getSnapshot()
-        if (snapshot) {
-          const snapPayload = encoder.encode(JSON.stringify({ type: 'snapshot', data: snapshot }))
-          sendBlackboardData(snapPayload, { reliable: true })
-        }
-      }, 200)
-    }
-  }, [blackboardActive, presentMode, sendBlackboardData])
-
   // Presentation data channel — syncs course/quiz presentation state
   const { send: sendPresentData } = useDataChannel(PRESENT_TOPIC, (msg) => {
     const event = JSON.parse(decoder.decode(msg.payload)) as PresentEvent
     if (event.type === 'start-course') {
-      setPresentMode('course')
+      setCourseActive(true)
       setActiveCourseId(event.courseId || null)
-      setCurrentLessonIndex(0)
-      setBlackboardActive(false)
+      setCurrentLessonIndex(event.lessonIndex ?? 0)
+      bringLayerToFront('course')
+    } else if (event.type === 'stop-course') {
+      setCourseActive(false)
+      removeLayerFromOrder('course')
     } else if (event.type === 'start-quiz') {
-      setPresentMode('quiz')
+      setQuizActive(true)
       setActiveQuizId(event.quizId || null)
-      setCurrentQuestionIndex(0)
+      setCurrentQuestionIndex(event.questionIndex ?? 0)
       setQuizRevealed(false)
       setQuizAnswers({})
-      setBlackboardActive(false)
-    } else if (event.type === 'stop') {
-      setPresentMode('none')
-      setActiveCourseId(null)
-      setActiveQuizId(null)
+      bringLayerToFront('quiz')
+    } else if (event.type === 'stop-quiz') {
+      setQuizActive(false)
+      removeLayerFromOrder('quiz')
+    } else if (event.type === 'layer-order' && event.order) {
+      setLayerOrder(event.order)
     } else if (event.type === 'course-navigate') {
       setCurrentLessonIndex(event.lessonIndex ?? 0)
       setCourseScrollTop(0)
@@ -396,36 +391,111 @@ function RoomInner({ roomName }: { roomName: string }) {
     }
   })
 
-  // Teacher: start presenting a course
-  const startCourse = useCallback((courseId: string) => {
-    setPresentMode('course')
-    setActiveCourseId(courseId)
-    setCurrentLessonIndex(0)
-    setBlackboardActive(false)
-    const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId }))
+  const syncLayerOrder = useCallback((order: LayerKey[]) => {
+    const payload = encoder.encode(JSON.stringify({ type: 'layer-order', order }))
     sendPresentData(payload, { reliable: true })
   }, [sendPresentData])
 
-  // Teacher: start presenting a quiz
-  const startQuiz = useCallback((quizId: string) => {
-    setPresentMode('quiz')
+  const updateLayerOrder = useCallback((layer: LayerKey, makeActive: boolean) => {
+    let nextOrder: LayerKey[] = []
+    setLayerOrder(prev => {
+      nextOrder = makeActive
+        ? [...prev.filter(item => item !== layer), layer]
+        : prev.filter(item => item !== layer)
+      return nextOrder
+    })
+    syncLayerOrder(nextOrder)
+  }, [syncLayerOrder])
+
+  // Host: toggle blackboard on/off
+  const toggleBlackboard = useCallback(() => {
+    const next = !blackboardActive
+    setBlackboardActive(next)
+    if (next) bringLayerToFront('blackboard')
+    else removeLayerFromOrder('blackboard')
+    updateLayerOrder('blackboard', next)
+
+    const event: BlackboardEvent = next ? { type: 'activate' } : { type: 'deactivate' }
+    const payload = encoder.encode(JSON.stringify(event))
+    sendBlackboardData(payload, { reliable: true })
+
+    // Send snapshot after activation so late-joining is seamless
+    if (next) {
+      setTimeout(() => {
+        const snapshot = blackboardRef.current?.getSnapshot()
+        if (snapshot) {
+          const snapPayload = encoder.encode(JSON.stringify({ type: 'snapshot', data: snapshot }))
+          sendBlackboardData(snapPayload, { reliable: true })
+        }
+      }, 200)
+    }
+  }, [blackboardActive, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendBlackboardData])
+
+  // Teacher: activate course layer
+  const activateCourse = useCallback((courseId: string, lessonIndex = 0) => {
+    setActiveCourseId(courseId)
+    setCurrentLessonIndex(lessonIndex)
+    setCourseActive(true)
+    bringLayerToFront('course')
+    updateLayerOrder('course', true)
+    const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId, lessonIndex }))
+    sendPresentData(payload, { reliable: true })
+  }, [bringLayerToFront, updateLayerOrder, sendPresentData])
+
+  const toggleCourse = useCallback(() => {
+    if (!activeCourseId) return
+    if (courseActive) {
+      setCourseActive(false)
+      removeLayerFromOrder('course')
+      updateLayerOrder('course', false)
+      const payload = encoder.encode(JSON.stringify({ type: 'stop-course' }))
+      sendPresentData(payload, { reliable: true })
+      return
+    }
+    setCourseActive(true)
+    bringLayerToFront('course')
+    updateLayerOrder('course', true)
+    const payload = encoder.encode(JSON.stringify({
+      type: 'start-course',
+      courseId: activeCourseId,
+      lessonIndex: currentLessonIndex,
+    }))
+    sendPresentData(payload, { reliable: true })
+  }, [activeCourseId, courseActive, currentLessonIndex, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
+
+  // Teacher: activate quiz layer
+  const activateQuiz = useCallback((quizId: string) => {
     setActiveQuizId(quizId)
     setCurrentQuestionIndex(0)
     setQuizRevealed(false)
     setQuizAnswers({})
-    setBlackboardActive(false)
-    const payload = encoder.encode(JSON.stringify({ type: 'start-quiz', quizId }))
+    setQuizActive(true)
+    bringLayerToFront('quiz')
+    updateLayerOrder('quiz', true)
+    const payload = encoder.encode(JSON.stringify({ type: 'start-quiz', quizId, questionIndex: 0 }))
     sendPresentData(payload, { reliable: true })
-  }, [sendPresentData])
+  }, [bringLayerToFront, updateLayerOrder, sendPresentData])
 
-  // Teacher: stop presenting
-  const stopPresenting = useCallback(() => {
-    setPresentMode('none')
-    setActiveCourseId(null)
-    setActiveQuizId(null)
-    const payload = encoder.encode(JSON.stringify({ type: 'stop' }))
+  const toggleQuiz = useCallback(() => {
+    if (!activeQuizId) return
+    if (quizActive) {
+      setQuizActive(false)
+      removeLayerFromOrder('quiz')
+      updateLayerOrder('quiz', false)
+      const payload = encoder.encode(JSON.stringify({ type: 'stop-quiz' }))
+      sendPresentData(payload, { reliable: true })
+      return
+    }
+    setQuizActive(true)
+    bringLayerToFront('quiz')
+    updateLayerOrder('quiz', true)
+    const payload = encoder.encode(JSON.stringify({
+      type: 'start-quiz',
+      quizId: activeQuizId,
+      questionIndex: currentQuestionIndex,
+    }))
     sendPresentData(payload, { reliable: true })
-  }, [sendPresentData])
+  }, [activeQuizId, quizActive, currentQuestionIndex, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
 
   // Teacher: navigate course lesson
   const navigateCourseLesson = useCallback((index: number) => {
@@ -508,14 +578,14 @@ function RoomInner({ roomName }: { roomName: string }) {
 
   // Host: re-broadcast presentation state to late-joining participants
   useEffect(() => {
-    if (!isTeacher || presentMode === 'none' || presentMode === 'blackboard') {
+    if (!isTeacher || (!courseActive && !quizActive && !blackboardActive)) {
       prevPresentParticipantCount.current = participants.length
       return
     }
     if (participants.length > prevPresentParticipantCount.current) {
       setTimeout(() => {
-        if (presentMode === 'course' && activeCourseId) {
-          const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId: activeCourseId }))
+        if (courseActive && activeCourseId) {
+          const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId: activeCourseId, lessonIndex: currentLessonIndex }))
           sendPresentData(payload, { reliable: true })
           // Also send current lesson index and scroll position
           const navPayload = encoder.encode(JSON.stringify({ type: 'course-navigate', lessonIndex: currentLessonIndex }))
@@ -524,8 +594,9 @@ function RoomInner({ roomName }: { roomName: string }) {
             const scrollPayload = encoder.encode(JSON.stringify({ type: 'course-scroll', scrollTop: courseScrollTop }))
             sendPresentData(scrollPayload, { reliable: true })
           }
-        } else if (presentMode === 'quiz' && activeQuizId) {
-          const payload = encoder.encode(JSON.stringify({ type: 'start-quiz', quizId: activeQuizId }))
+        }
+        if (quizActive && activeQuizId) {
+          const payload = encoder.encode(JSON.stringify({ type: 'start-quiz', quizId: activeQuizId, questionIndex: currentQuestionIndex }))
           sendPresentData(payload, { reliable: true })
           if (currentQuestionIndex > 0) {
             const navPayload = encoder.encode(JSON.stringify({ type: 'quiz-advance', questionIndex: currentQuestionIndex }))
@@ -536,11 +607,31 @@ function RoomInner({ roomName }: { roomName: string }) {
             sendPresentData(revealPayload, { reliable: true })
           }
         }
+        if (blackboardActive) {
+          const activatePayload = encoder.encode(JSON.stringify({ type: 'activate' }))
+          sendBlackboardData(activatePayload, { reliable: true })
+        }
+        const orderPayload = encoder.encode(JSON.stringify({ type: 'layer-order', order: layerOrder }))
+        sendPresentData(orderPayload, { reliable: true })
       }, 500)
     }
     prevPresentParticipantCount.current = participants.length
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participants.length])
+  }, [
+    participants.length,
+    isTeacher,
+    courseActive,
+    quizActive,
+    blackboardActive,
+    activeCourseId,
+    activeQuizId,
+    currentLessonIndex,
+    currentQuestionIndex,
+    courseScrollTop,
+    quizRevealed,
+    layerOrder,
+    sendPresentData,
+    sendBlackboardData,
+  ])
 
   // Local hand raise
   const [myHandRaised, setMyHandRaised] = useState(false)
@@ -677,11 +768,13 @@ function RoomInner({ roomName }: { roomName: string }) {
           screenShare={activeScreenShare}
           cameraTracks={cameraTracks}
           blackboardActive={blackboardActive}
+          courseActive={courseActive}
+          quizActive={quizActive}
+          layerOrder={layerOrder}
           isHost={isTeacher}
           onCanvasEvent={handleBlackboardEvent}
           incomingEvent={blackboardEvent}
           blackboardRef={blackboardRef}
-          presentMode={presentMode}
           activeCourse={activeCourse}
           activeQuiz={activeQuiz}
           allLessons={allLessons}
@@ -713,12 +806,16 @@ function RoomInner({ roomName }: { roomName: string }) {
           isMobile={!!isMobile}
           isBlackboardActive={blackboardActive}
           onToggleBlackboard={toggleBlackboard}
-          presentMode={presentMode}
+          isCourseActive={courseActive}
+          isQuizActive={quizActive}
+          activeCourseId={activeCourseId}
+          activeQuizId={activeQuizId}
           linkedCourses={linkedCourses}
           linkedQuizzes={linkedQuizzes}
-          onStartCourse={startCourse}
-          onStartQuiz={startQuiz}
-          onStopPresenting={stopPresenting}
+          onToggleCourse={toggleCourse}
+          onToggleQuiz={toggleQuiz}
+          onSelectCourse={activateCourse}
+          onSelectQuiz={activateQuiz}
         />
       </div>
 
@@ -857,8 +954,8 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
 }
 
 // ── Main Stage ───────────────────────────────────────────────────────────────
-function MainStage({ participant, screenShare, cameraTracks, blackboardActive, isHost, onCanvasEvent, incomingEvent, blackboardRef,
-  presentMode, activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
+function MainStage({ participant, screenShare, cameraTracks, blackboardActive, courseActive, quizActive, layerOrder, isHost, onCanvasEvent, incomingEvent, blackboardRef,
+  activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
   quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop,
   onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, localIdentity,
 }: {
@@ -866,11 +963,13 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
   screenShare: TrackReferenceOrPlaceholder | null
   cameraTracks: TrackReferenceOrPlaceholder[]
   blackboardActive: boolean
+  courseActive: boolean
+  quizActive: boolean
+  layerOrder: LayerKey[]
   isHost: boolean
   onCanvasEvent: (event: BlackboardEvent) => void
   incomingEvent: BlackboardEvent | null
   blackboardRef: React.RefObject<BlackboardHandle | null>
-  presentMode: PresentMode
   activeCourse: LinkedCourse | null
   activeQuiz: LinkedQuiz | null
   allLessons: Lesson[]
@@ -889,69 +988,22 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
 
-  const showCoursePresentation = presentMode === 'course' && activeCourse
-  const showQuizPresentation = presentMode === 'quiz' && activeQuiz
-  const showScreenShare = !blackboardActive && !showCoursePresentation && !showQuizPresentation && screenShare && screenShare.publication?.track
-  const showCamera = !blackboardActive && !showScreenShare && !showCoursePresentation && !showQuizPresentation
+  const showCoursePresentation = courseActive && activeCourse
+  const showQuizPresentation = quizActive && activeQuiz
+  const showScreenShare = !!(screenShare && screenShare.publication?.track)
+  const showCamera = !showScreenShare
   const camTrack = cameraTracks.find(t => t.participant?.identity === participant?.identity)
+  const frontLayer = layerOrder[layerOrder.length - 1] || null
+  const getLayerZIndex = (layer: LayerKey) => {
+    const idx = layerOrder.indexOf(layer)
+    return idx === -1 ? 10 : 20 + idx
+  }
 
   return (
     <div className="room-main-stage">
-      {/* Blackboard — always mounted for persistence, hidden via CSS */}
-      <div
-        className={`room-stage-video room-stage-blackboard ${blackboardActive ? '' : 'room-stage-hidden'}`}
-      >
-        <Blackboard
-          ref={blackboardRef}
-          isHost={isHost}
-          onCanvasEvent={onCanvasEvent}
-          incomingEvent={incomingEvent}
-        />
-        <div className="room-stage-overlay">
-          <div className="room-stage-label">
-            <PenTool size={14} />
-            <span>Blackboard{isHost ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Course presentation */}
-      {showCoursePresentation && activeCourse && (
-        <div className="room-stage-video room-stage-presentation">
-          <CoursePresentation
-            course={activeCourse}
-            lessons={allLessons}
-            currentIndex={currentLessonIndex}
-            isHost={isHost}
-            onNavigate={onNavigateLesson}
-            onScroll={onScrollCourse}
-            scrollTop={courseScrollTop}
-            teacherName={participant?.name || 'Teacher'}
-          />
-        </div>
-      )}
-
-      {/* Quiz presentation */}
-      {showQuizPresentation && activeQuiz && (
-        <div className="room-stage-video room-stage-presentation">
-          <QuizPresentation
-            quiz={activeQuiz}
-            currentIndex={currentQuestionIndex}
-            revealed={quizRevealed}
-            answers={quizAnswers}
-            isHost={isHost}
-            onAdvance={onAdvanceQuestion}
-            onReveal={onRevealAnswer}
-            onAnswer={onSubmitAnswer}
-            localIdentity={localIdentity}
-            teacherName={participant?.name || 'Teacher'}
-          />
-        </div>
-      )}
-
-      {/* Screen share */}
+      {/* Base media layer */}
       {showScreenShare && screenShare && (
-        <div className="room-stage-video room-stage-screenshare">
+        <div className="room-stage-video room-stage-screenshare" style={{ zIndex: 1 }}>
           <VideoTrack trackRef={screenShare as TrackReferenceOrPlaceholder & { publication: { track: object } }} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           <div className="room-stage-overlay">
             <div className="room-stage-label">
@@ -962,9 +1014,8 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
         </div>
       )}
 
-      {/* Camera view */}
       {showCamera && (
-        <div className={`room-stage-video ${isSpeaking ? 'room-stage-speaking' : ''}`}>
+        <div className={`room-stage-video ${isSpeaking ? 'room-stage-speaking' : ''}`} style={{ zIndex: 1 }}>
           {camTrack && camTrack.publication?.track ? (
             <VideoTrack trackRef={camTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
@@ -985,6 +1036,66 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, i
           )}
         </div>
       )}
+
+      {/* Blackboard — always mounted for persistence, hidden when inactive */}
+      <div
+        className={`room-stage-video room-stage-blackboard room-stage-layer ${blackboardActive ? '' : 'room-stage-hidden'} ${frontLayer === 'blackboard' ? 'room-stage-layer-front' : 'room-stage-layer-back'}`}
+        style={{ zIndex: getLayerZIndex('blackboard') }}
+      >
+        <Blackboard
+          ref={blackboardRef}
+          isHost={isHost}
+          onCanvasEvent={onCanvasEvent}
+          incomingEvent={incomingEvent}
+        />
+        <div className="room-stage-overlay">
+          <div className="room-stage-label">
+            <PenTool size={14} />
+            <span>Blackboard{isHost ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Course presentation */}
+      {showCoursePresentation && activeCourse && (
+        <div
+          className={`room-stage-video room-stage-presentation room-stage-layer ${frontLayer === 'course' ? 'room-stage-layer-front' : 'room-stage-layer-back'}`}
+          style={{ zIndex: getLayerZIndex('course') }}
+        >
+          <CoursePresentation
+            course={activeCourse}
+            lessons={allLessons}
+            currentIndex={currentLessonIndex}
+            isHost={isHost}
+            onNavigate={onNavigateLesson}
+            onScroll={onScrollCourse}
+            scrollTop={courseScrollTop}
+            teacherName={participant?.name || 'Teacher'}
+          />
+        </div>
+      )}
+
+      {/* Quiz presentation */}
+      {showQuizPresentation && activeQuiz && (
+        <div
+          className={`room-stage-video room-stage-presentation room-stage-layer ${frontLayer === 'quiz' ? 'room-stage-layer-front' : 'room-stage-layer-back'}`}
+          style={{ zIndex: getLayerZIndex('quiz') }}
+        >
+          <QuizPresentation
+            quiz={activeQuiz}
+            currentIndex={currentQuestionIndex}
+            revealed={quizRevealed}
+            answers={quizAnswers}
+            isHost={isHost}
+            onAdvance={onAdvanceQuestion}
+            onReveal={onRevealAnswer}
+            onAnswer={onSubmitAnswer}
+            localIdentity={localIdentity}
+            teacherName={participant?.name || 'Teacher'}
+          />
+        </div>
+      )}
+
     </div>
   )
 }
@@ -1367,23 +1478,30 @@ interface ControlBarProps {
   raisedHandCount: number
   isMobile?: boolean
   isBlackboardActive: boolean
+  isCourseActive: boolean
+  isQuizActive: boolean
+  activeCourseId: string | null
+  activeQuizId: string | null
   onToggleBlackboard: () => void
-  presentMode: PresentMode
   linkedCourses: LinkedCourse[]
   linkedQuizzes: LinkedQuiz[]
-  onStartCourse: (courseId: string) => void
-  onStartQuiz: (quizId: string) => void
-  onStopPresenting: () => void
+  onToggleCourse: () => void
+  onToggleQuiz: () => void
+  onSelectCourse: (courseId: string, lessonIndex: number) => void
+  onSelectQuiz: (quizId: string) => void
 }
 
 function ControlBarCustom({
   isMicEnabled, isCamEnabled, isScreenShareEnabled, isHandRaised,
   isTeacher, localParticipant, onToggleHand, onSettings, onLeave, raisedHandCount, isMobile,
-  isBlackboardActive, onToggleBlackboard, presentMode, linkedCourses, linkedQuizzes,
-  onStartCourse, onStartQuiz, onStopPresenting,
+  isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
+  onToggleBlackboard, linkedCourses, linkedQuizzes,
+  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz,
 }: ControlBarProps) {
-  const [showPresentMenu, setShowPresentMenu] = useState(false)
-  const presentMenuRef = useRef<HTMLDivElement>(null)
+  const [showCourseMenu, setShowCourseMenu] = useState(false)
+  const [showQuizMenu, setShowQuizMenu] = useState(false)
+  const courseMenuRef = useRef<HTMLDivElement>(null)
+  const quizMenuRef = useRef<HTMLDivElement>(null)
 
   const toggleMic = useCallback(() => {
     localParticipant.setMicrophoneEnabled(!isMicEnabled)
@@ -1397,19 +1515,107 @@ function ControlBarCustom({
     localParticipant.setScreenShareEnabled(!isScreenShareEnabled)
   }, [localParticipant, isScreenShareEnabled])
 
-  // Close dropdown on outside click
+  const handleCourseButton = useCallback(() => {
+    if (isCourseActive || activeCourseId) {
+      onToggleCourse()
+      setShowCourseMenu(false)
+      return
+    }
+    setShowCourseMenu(v => !v)
+    setShowQuizMenu(false)
+  }, [isCourseActive, activeCourseId, onToggleCourse])
+
+  const handleQuizButton = useCallback(() => {
+    if (isQuizActive || activeQuizId) {
+      onToggleQuiz()
+      setShowQuizMenu(false)
+      return
+    }
+    setShowQuizMenu(v => !v)
+    setShowCourseMenu(false)
+  }, [isQuizActive, activeQuizId, onToggleQuiz])
+
+  const handleCoursePick = useCallback((courseId: string, lessonIndex: number) => {
+    onSelectCourse(courseId, lessonIndex)
+    setShowCourseMenu(false)
+  }, [onSelectCourse])
+
+  const handleQuizPick = useCallback((quizId: string) => {
+    onSelectQuiz(quizId)
+    setShowQuizMenu(false)
+  }, [onSelectQuiz])
+
+  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (presentMenuRef.current && !presentMenuRef.current.contains(e.target as Node)) {
-        setShowPresentMenu(false)
+      if (courseMenuRef.current && !courseMenuRef.current.contains(e.target as Node)) {
+        setShowCourseMenu(false)
+      }
+      if (quizMenuRef.current && !quizMenuRef.current.contains(e.target as Node)) {
+        setShowQuizMenu(false)
       }
     }
-    if (showPresentMenu) document.addEventListener('mousedown', handler)
+    if (showCourseMenu || showQuizMenu) document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [showPresentMenu])
+  }, [showCourseMenu, showQuizMenu])
 
-  const isPresentActive = presentMode !== 'none'
-  const hasContent = linkedCourses.length > 0 || linkedQuizzes.length > 0
+  useEffect(() => {
+    if (!isTeacher || isMobile) return
+
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false
+      if (target.isContentEditable) return true
+      const tag = target.tagName.toLowerCase()
+      return tag === 'input' || tag === 'textarea' || tag === 'select'
+    }
+
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      if (e.isComposing) return
+      if (isEditableTarget(e.target)) return
+
+      const key = e.key.toLowerCase()
+      if (key === 'b') {
+        e.preventDefault()
+        onToggleBlackboard()
+        return
+      }
+
+      if (key === 'c') {
+        e.preventDefault()
+        if (isCourseActive || activeCourseId) {
+          onToggleCourse()
+        } else {
+          setShowCourseMenu(true)
+          setShowQuizMenu(false)
+        }
+        return
+      }
+
+      if (key === 'q') {
+        e.preventDefault()
+        if (isQuizActive || activeQuizId) {
+          onToggleQuiz()
+        } else {
+          setShowQuizMenu(true)
+          setShowCourseMenu(false)
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [
+    isTeacher,
+    isMobile,
+    isCourseActive,
+    activeCourseId,
+    isQuizActive,
+    activeQuizId,
+    onToggleBlackboard,
+    onToggleCourse,
+    onToggleQuiz,
+  ])
 
   return (
     <div className={`room-controls ${isMobile ? 'room-controls-mobile' : ''}`}>
@@ -1446,70 +1652,6 @@ function ControlBarCustom({
           </button>
         )}
 
-        {/* Present — teacher only, hide on mobile */}
-        {!isMobile && isTeacher && (
-          <div style={{ position: 'relative' }} ref={presentMenuRef}>
-            <button
-              className={`room-control-btn ${isPresentActive ? 'room-control-btn-active' : ''}`}
-              onClick={() => {
-                if (isPresentActive) {
-                  // If presenting, stop
-                  if (presentMode === 'blackboard') onToggleBlackboard()
-                  else onStopPresenting()
-                } else {
-                  setShowPresentMenu(v => !v)
-                }
-              }}
-              title={isPresentActive ? 'Stop presenting' : 'Present'}
-            >
-              <Monitor size={20} />
-              <span className="room-control-label">
-                {isPresentActive ? 'Stop' : 'Present'}
-              </span>
-              {!isPresentActive && <ChevronUp size={12} style={{ marginLeft: -4, opacity: 0.6 }} />}
-            </button>
-
-            {/* Present dropdown menu */}
-            {showPresentMenu && (
-              <div className="room-present-menu">
-                <div className="room-present-menu-item" onClick={() => { onToggleBlackboard(); setShowPresentMenu(false) }}>
-                  <PenTool size={16} />
-                  <span>Blackboard</span>
-                </div>
-                {linkedCourses.length > 0 && (
-                  <>
-                    <div className="room-present-menu-divider" />
-                    <div className="room-present-menu-label">Courses</div>
-                    {linkedCourses.map(c => (
-                      <div key={c.id} className="room-present-menu-item" onClick={() => { onStartCourse(c.id); setShowPresentMenu(false) }}>
-                        <BookOpen size={16} />
-                        <span>{c.title}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-                {linkedQuizzes.length > 0 && (
-                  <>
-                    <div className="room-present-menu-divider" />
-                    <div className="room-present-menu-label">Quizzes</div>
-                    {linkedQuizzes.map(q => (
-                      <div key={q.id} className="room-present-menu-item" onClick={() => { onStartQuiz(q.id); setShowPresentMenu(false) }}>
-                        <HelpCircle size={16} />
-                        <span>{q.title}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-                {!hasContent && (
-                  <div className="room-present-menu-empty">
-                    No courses or quizzes linked to this session
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Raise Hand */}
         <button
           className={`room-control-btn ${isHandRaised ? 'room-control-btn-hand' : ''}`}
@@ -1532,11 +1674,82 @@ function ControlBarCustom({
         )}
       </div>
 
-      {/* Leave */}
-      <button className="room-control-btn room-control-btn-leave" onClick={onLeave} title="Leave room">
-        <LogOut size={isMobile ? 18 : 20} />
-        {!isMobile && <span className="room-control-label">Leave</span>}
-      </button>
+      <div className="room-controls-group">
+        {/* Course / Quiz / Blackboard — teacher only, hide on mobile */}
+        {!isMobile && isTeacher && (
+          <>
+            <div style={{ position: 'relative' }} ref={courseMenuRef}>
+              <button
+                className={`room-control-btn ${isCourseActive ? 'room-control-btn-active' : ''}`}
+                onClick={handleCourseButton}
+                title={isCourseActive ? 'Hide course (Ctrl+C)' : 'Show course (Ctrl+C)'}
+              >
+                <BookOpen size={20} />
+                <span className="room-control-label">Course</span>
+              </button>
+
+              {showCourseMenu && (
+                <div className="room-present-menu">
+                  <div className="room-present-menu-label">Choose Course Lesson</div>
+                  {linkedCourses.flatMap(course => {
+                    const lessons = course.topics.flatMap(topic => topic.lessons)
+                    return lessons.map((lesson, lessonIndex) => (
+                      <div key={`${course.id}-${lesson.id}`} className="room-present-menu-item" onClick={() => handleCoursePick(course.id, lessonIndex)}>
+                        <BookOpen size={16} />
+                        <span>{course.title} - {lesson.title}</span>
+                      </div>
+                    ))
+                  })}
+                  {linkedCourses.length === 0 && (
+                    <div className="room-present-menu-empty">No courses linked to this session</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ position: 'relative' }} ref={quizMenuRef}>
+              <button
+                className={`room-control-btn ${isQuizActive ? 'room-control-btn-active' : ''}`}
+                onClick={handleQuizButton}
+                title={isQuizActive ? 'Hide quiz (Ctrl+Q)' : 'Show quiz (Ctrl+Q)'}
+              >
+                <HelpCircle size={20} />
+                <span className="room-control-label">Quiz</span>
+              </button>
+
+              {showQuizMenu && (
+                <div className="room-present-menu">
+                  <div className="room-present-menu-label">Choose Quiz</div>
+                  {linkedQuizzes.map(q => (
+                    <div key={q.id} className="room-present-menu-item" onClick={() => handleQuizPick(q.id)}>
+                      <HelpCircle size={16} />
+                      <span>{q.title}</span>
+                    </div>
+                  ))}
+                  {linkedQuizzes.length === 0 && (
+                    <div className="room-present-menu-empty">No quizzes linked to this session</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
+              className={`room-control-btn ${isBlackboardActive ? 'room-control-btn-active' : ''}`}
+              onClick={onToggleBlackboard}
+              title={isBlackboardActive ? 'Hide blackboard (Ctrl+B)' : 'Show blackboard (Ctrl+B)'}
+            >
+              <PenTool size={20} />
+              <span className="room-control-label">Blackboard</span>
+            </button>
+          </>
+        )}
+
+        {/* Leave */}
+        <button className="room-control-btn room-control-btn-leave" onClick={onLeave} title="Leave room">
+          <LogOut size={isMobile ? 18 : 20} />
+          {!isMobile && <span className="room-control-label">Leave</span>}
+        </button>
+      </div>
     </div>
   )
 }
@@ -1544,7 +1757,6 @@ function ControlBarCustom({
 // ── Settings Modal ──────────────────────────────────────────────────────────
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const room = useRoomContext()
-  const { localParticipant } = useLocalParticipant()
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
   const [selectedAudio, setSelectedAudio] = useState('')
