@@ -1691,14 +1691,34 @@ function ControlBarCustom({
               {showCourseMenu && (
                 <div className="room-present-menu">
                   <div className="room-present-menu-label">Choose Course Lesson</div>
-                  {linkedCourses.flatMap(course => {
-                    const lessons = course.topics.flatMap(topic => topic.lessons)
-                    return lessons.map((lesson, lessonIndex) => (
-                      <div key={`${course.id}-${lesson.id}`} className="room-present-menu-item" onClick={() => handleCoursePick(course.id, lessonIndex)}>
-                        <BookOpen size={16} />
-                        <span>{course.title} - {lesson.title}</span>
+                  {linkedCourses.map((course, courseIdx) => {
+                    let lessonIndexCursor = -1
+                    return (
+                      <div key={course.id}>
+                        <div className="room-present-menu-label">{course.title}</div>
+                        {course.topics.map(topic => (
+                          <div key={topic.id}>
+                            <div className="room-present-menu-label" style={{ paddingTop: 2, textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>
+                              {topic.title}
+                            </div>
+                            {topic.lessons.map(lesson => {
+                              lessonIndexCursor += 1
+                              return (
+                                <div
+                                  key={`${course.id}-${lesson.id}`}
+                                  className="room-present-menu-item"
+                                  onClick={() => handleCoursePick(course.id, lessonIndexCursor)}
+                                >
+                                  <BookOpen size={16} />
+                                  <span>{lesson.title}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ))}
+                        {courseIdx < linkedCourses.length - 1 && <div className="room-present-menu-divider" />}
                       </div>
-                    ))
+                    )
                   })}
                   {linkedCourses.length === 0 && (
                     <div className="room-present-menu-empty">No courses linked to this session</div>
