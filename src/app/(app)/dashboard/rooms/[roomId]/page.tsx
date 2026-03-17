@@ -1743,11 +1743,12 @@ function ControlBarCustom({
                             </div>
                             {topic.lessons.map(lesson => {
                               lessonIndexCursor += 1
+                              const lessonIdx = lessonIndexCursor
                               return (
                                 <div
                                   key={`${course.id}-${lesson.id}`}
                                   className="room-present-menu-item"
-                                  onClick={() => handleCoursePick(course.id, lessonIndexCursor)}
+                                  onClick={() => handleCoursePick(course.id, lessonIdx)}
                                 >
                                   <BookOpen size={16} />
                                   <span>{lesson.title}</span>
