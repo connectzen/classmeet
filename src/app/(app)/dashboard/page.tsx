@@ -10,15 +10,98 @@ import Button from '@/components/ui/Button'
 import {
   Video, BookOpen, Users, BarChart2, Plus, ArrowRight,
   Clock, Sparkles, LogIn, GraduationCap, PenLine, CalendarDays, Zap,
-  Radio, Circle, MessageSquare,
+  Radio, Circle, MessageSquare, Wifi, WifiOff,
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import { isCreatorRole } from '@/lib/utils'
+import { useCountdown } from '@/hooks/useCountdown'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Stat   { label: string; value: string; icon: React.ElementType; color: string; bg: string }
 interface Action { label: string; desc: string; icon: React.ElementType; color: string; href?: string; comingSoon?: boolean }
 interface StudentSession { id: string; title: string; status: 'live' | 'scheduled' | 'ended'; room_name: string; teacher_id: string; scheduled_at: string | null; started_at: string | null; teacher_name?: string }
+
+// ─── Dashboard Session Card ───────────────────────────────────────────────────
+function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin: () => void }) {
+  const countdown = useCountdown(session.status === 'scheduled' ? session.scheduled_at : null)
+  const isLive = session.status === 'live'
+  const statusColor = isLive ? 'var(--success-400)' : 'var(--info-400)'
+
+  return (
+    <div className="card" style={{
+      padding: '20px', display: 'flex', flexDirection: 'column', minHeight: '260px',
+      borderColor: isLive ? 'rgba(74,222,128,0.25)' : undefined,
+      cursor: 'pointer',
+    }} onClick={isLive ? onJoin : undefined}>
+      {/* Title */}
+      <h3 style={{ margin: '0 0 10px', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+        {session.title}
+      </h3>
+
+      {/* Status row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {isLive ? <Wifi size={13} color={statusColor} /> : <WifiOff size={13} color={statusColor} />}
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor, letterSpacing: '0.06em' }}>
+            {isLive ? 'LIVE' : 'SCHEDULED'}
+          </span>
+        </div>
+        {!isLive && (
+          <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--info-400)', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '9999px' }}>
+            Starts in
+          </span>
+        )}
+      </div>
+
+      {/* Center */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
+        {isLive && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '2.8rem', fontWeight: 800, color: 'var(--success-400)', letterSpacing: '0.06em', lineHeight: 1 }}>ONGOING</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--success-400)', opacity: 0.7, letterSpacing: '0.1em', marginTop: '4px' }}>NOW</div>
+          </div>
+        )}
+        {!isLive && countdown !== null && countdown.secondsLeft > 0 && (
+          <div style={{ textAlign: 'center', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+            {countdown.h > 0 && (
+              <span style={{ fontSize: '3.5rem', fontWeight: 800, color: 'var(--info-400)', letterSpacing: '-0.02em' }}>
+                {countdown.h}<span style={{ fontSize: '1.4rem', fontWeight: 600, opacity: 0.75 }}>h </span>
+              </span>
+            )}
+            <span style={{ fontSize: '3.5rem', fontWeight: 800, color: 'var(--info-400)', letterSpacing: '-0.02em' }}>
+              {countdown.h > 0 ? String(countdown.m).padStart(2, '0') : countdown.m}
+              <span style={{ fontSize: '1.4rem', fontWeight: 600, opacity: 0.75 }}>m </span>
+            </span>
+            <span style={{ fontSize: '3.5rem', fontWeight: 800, color: 'var(--info-400)', letterSpacing: '-0.02em' }}>
+              {String(countdown.s).padStart(2, '0')}
+              <span style={{ fontSize: '1.4rem', fontWeight: 600, opacity: 0.75 }}>s</span>
+            </span>
+          </div>
+        )}
+        {!isLive && countdown !== null && countdown.secondsLeft === 0 && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--success-400)' }}>Starting!</div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom */}
+      <div style={{ marginTop: 'auto' }}>
+        {isLive ? (
+          <button onClick={e => { e.stopPropagation(); onJoin() }}
+            style={{ width: '100%', padding: '8px', background: 'var(--primary-500)', color: '#fff', border: 'none', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+            <Wifi size={14} /> Join Session
+          </button>
+        ) : (
+          <button disabled
+            style={{ width: '100%', padding: '8px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', fontWeight: 500, cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+            <Clock size={14} /> Not live yet
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 // ─── Stats per role ───────────────────────────────────────────────────────────
 const TEACHER_STATS: Stat[] = [
@@ -322,51 +405,13 @@ export default function DashboardPage() {
               View all <ArrowRight size={12} />
             </Button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {studentSessions.slice(0, 5).map(s => (
-              <div
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }}>
+            {studentSessions.slice(0, 6).map(s => (
+              <DashSessionCard
                 key={s.id}
-                className="card card-interactive"
-                onClick={() => {
-                  if (s.status === 'live') router.push(`/dashboard/rooms/${encodeURIComponent(s.room_name)}`)
-                  else router.push('/dashboard/rooms')
-                }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (s.status === 'live' ? router.push(`/dashboard/rooms/${encodeURIComponent(s.room_name)}`) : router.push('/dashboard/rooms'))}
-                style={{
-                  padding: '14px 16px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '14px',
-                  border: s.status === 'live' ? '1px solid var(--danger-400)' : undefined,
-                  background: s.status === 'live' ? 'rgba(239,68,68,0.04)' : undefined,
-                }}
-              >
-                <div style={{
-                  width: 40, height: 40, borderRadius: 'var(--radius-md)', flexShrink: 0,
-                  background: s.status === 'live' ? 'rgba(239,68,68,0.12)' : 'rgba(99,102,241,0.1)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {s.status === 'live'
-                    ? <Video size={18} color="var(--danger-400)" />
-                    : <CalendarDays size={18} color="var(--primary-400)" />
-                  }
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {s.title}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {s.teacher_name} · {s.status === 'live' ? 'Started ' + (s.started_at ? new Date(s.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'just now') : s.scheduled_at ? new Date(s.scheduled_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No date set'}
-                  </div>
-                </div>
-                <span style={{
-                  padding: '3px 10px', borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 700,
-                  background: s.status === 'live' ? 'var(--danger-500)' : 'rgba(99,102,241,0.15)',
-                  color: s.status === 'live' ? '#fff' : 'var(--primary-400)',
-                }}>
-                  {s.status === 'live' ? 'JOIN NOW' : 'SCHEDULED'}
-                </span>
-              </div>
+                session={s}
+                onJoin={() => router.push(`/dashboard/rooms/${encodeURIComponent(s.room_name)}`)}
+              />
             ))}
           </div>
         </div>
