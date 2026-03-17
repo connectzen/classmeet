@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { DrawingTool, TextOptions } from './Blackboard'
 import {
   Pencil, Minus, Square, Circle, Highlighter, Eraser, Type, MousePointer2,
@@ -320,8 +321,8 @@ export default function BlackboardToolbar({
         )}
       </div>
 
-      {/* ── Mobile: color picker popup (outside toolbar to avoid backdrop-filter containing block) */}
-      {isMobileView && showColorPicker && (
+      {/* ── Mobile: portaled popups to escape overflow:hidden and backdrop-filter ── */}
+      {isMobileView && showColorPicker && createPortal(
         <div className="room-bb-color-picker room-bb-popup-mobile">
           {COLORS.map(c => (
             <button
@@ -339,11 +340,11 @@ export default function BlackboardToolbar({
             className="room-bb-color-input"
             title="Custom color"
           />
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {/* ── Mobile: stroke size picker popup (outside toolbar to avoid backdrop-filter containing block) */}
-      {isMobileView && showSizePicker && isDrawingTool && (
+      {isMobileView && showSizePicker && isDrawingTool && createPortal(
         <div className="room-bb-size-picker room-bb-popup-mobile">
           {STROKE_SIZES.map(s => (
             <button
@@ -358,7 +359,8 @@ export default function BlackboardToolbar({
               <span>{s.label}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* ── Mobile: floating vertical text options panel ─────────────────────── */}

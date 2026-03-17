@@ -1872,12 +1872,12 @@ select option {
   }
 }
 
-/* Mobile popups — rendered outside toolbar to escape backdrop-filter containing block */
+/* Mobile popups — portaled to body to escape overflow:hidden and backdrop-filter */
 .room-bb-popup-mobile {
-  position: absolute;
-  bottom: 100px;
+  position: fixed;
+  bottom: 120px;
   left: 8px;
-  z-index: 9999;
+  z-index: 10002;
   transform: none;
 }
 
