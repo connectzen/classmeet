@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
-import { Video, Plus, LogIn, Users, Clock, X, Wifi, WifiOff, CalendarClock, Timer, Check, Search, FolderOpen, Trash2, StopCircle, Pencil, BookOpen, HelpCircle } from 'lucide-react'
+import { Video, Plus, LogIn, Users, Clock, X, Wifi, WifiOff, CalendarClock, Check, Search, FolderOpen, Trash2, StopCircle, Pencil, BookOpen, HelpCircle } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import { useCountdown } from '@/hooks/useCountdown'
 
@@ -623,19 +623,28 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, o
   const statusLabel = session.status.toUpperCase()
 
   return (
-    <div className="card" style={{ padding: '20px', borderColor: session.status === 'live' ? 'rgba(74,222,128,0.25)' : undefined, opacity: session.status === 'ended' ? 0.7 : 1 }}>
-      {/* Status badge */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+    <div className="card" style={{
+      padding: '20px', display: 'flex', flexDirection: 'column', minHeight: '300px',
+      borderColor: session.status === 'live' ? 'rgba(74,222,128,0.25)' : undefined,
+      opacity: session.status === 'ended' ? 0.7 : 1,
+    }}>
+      {/* Title — top */}
+      <h3 style={{ margin: '0 0 10px', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+        {session.title}
+      </h3>
+
+      {/* Status row: badge | "Starts in" label | edit | delete */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {session.status === 'live'
-            ? <Wifi size={13} color={statusColor} />
-            : <WifiOff size={13} color={statusColor} />}
+          {session.status === 'live' ? <Wifi size={13} color={statusColor} /> : <WifiOff size={13} color={statusColor} />}
           <span style={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor, letterSpacing: '0.06em' }}>{statusLabel}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Users size={12} /> max {session.max_participants}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {session.status === 'scheduled' && (
+            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--info-400)', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '9999px', letterSpacing: '0.04em' }}>
+              Starts in
+            </span>
+          )}
           {isCreator && session.status !== 'ended' && (
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onEdit(session)} aria-label="Edit" style={{ color: 'var(--text-muted)' }}><Pencil size={13} /></button>
           )}
@@ -645,23 +654,52 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, o
         </div>
       </div>
 
-      <h3 style={{ margin: '0 0 4px', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>{session.title}</h3>
-      <p style={{ margin: '0 0 14px', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-        {session.description || `Room: ${session.room_name}`}
-      </p>
+      {/* Center — grows to fill, content centered */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 0' }}>
 
-      {/* Countdown for scheduled */}
-      {session.status === 'scheduled' && countdown !== null && countdown.secondsLeft > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', padding: '10px 14px', background: 'rgba(59,130,246,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(59,130,246,0.2)' }}>
-          <Timer size={14} color="var(--info-400)" />
-          <span style={{ fontSize: '0.82rem', color: 'var(--info-400)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            Starts in {countdown.h > 0 ? `${countdown.h}h ` : ''}{countdown.m}m {String(countdown.s).padStart(2, '0')}s
-          </span>
-        </div>
-      )}
+        {/* Scheduled: big countdown */}
+        {session.status === 'scheduled' && countdown !== null && countdown.secondsLeft > 0 && (
+          <div style={{ textAlign: 'center', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+            {countdown.h > 0 && (
+              <span style={{ fontSize: '4rem', fontWeight: 800, color: 'var(--info-400)', letterSpacing: '-0.02em' }}>
+                {countdown.h}<span style={{ fontSize: '1.6rem', fontWeight: 600, opacity: 0.75 }}>h </span>
+              </span>
+            )}
+            <span style={{ fontSize: '4rem', fontWeight: 800, color: 'var(--info-400)', letterSpacing: '-0.02em' }}>
+              {countdown.h > 0 ? String(countdown.m).padStart(2, '0') : countdown.m}
+              <span style={{ fontSize: '1.6rem', fontWeight: 600, opacity: 0.75 }}>m </span>
+            </span>
+            <span style={{ fontSize: '4rem', fontWeight: 800, color: 'var(--info-400)', letterSpacing: '-0.02em' }}>
+              {String(countdown.s).padStart(2, '0')}
+              <span style={{ fontSize: '1.6rem', fontWeight: 600, opacity: 0.75 }}>s</span>
+            </span>
+          </div>
+        )}
 
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: '8px' }}>
+        {/* Scheduled: ready to go live */}
+        {session.status === 'scheduled' && isReady && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--success-400)', letterSpacing: '-0.01em' }}>Ready!</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--success-400)', opacity: 0.75, marginTop: '4px' }}>Time to go live</div>
+          </div>
+        )}
+
+        {/* Live: ongoing indicator */}
+        {session.status === 'live' && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '2.8rem', fontWeight: 800, color: 'var(--success-400)', letterSpacing: '0.06em', lineHeight: 1 }}>ONGOING</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--success-400)', opacity: 0.7, letterSpacing: '0.1em', marginTop: '4px' }}>NOW</div>
+          </div>
+        )}
+
+        {/* Ended */}
+        {session.status === 'ended' && (
+          <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>ENDED</div>
+        )}
+      </div>
+
+      {/* Bottom actions */}
+      <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
         {session.status === 'live' && (
           <>
             <Button size="sm" icon={<Wifi size={13} />} onClick={() => onEnter(session)} style={{ flex: 1 }}>
@@ -673,9 +711,7 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, o
           </>
         )}
         {session.status === 'scheduled' && isCreator && isReady && (
-          <Button size="sm" icon={<Video size={13} />} onClick={() => onGoLive(session)} style={{ flex: 1 }}>
-            Go Live Now!
-          </Button>
+          <Button size="sm" icon={<Video size={13} />} onClick={() => onGoLive(session)} style={{ flex: 1 }}>Go Live Now!</Button>
         )}
         {session.status === 'scheduled' && (!isReady || !isCreator) && (
           <Button size="sm" variant="outline" icon={<Clock size={13} />} disabled style={{ flex: 1 }}>
@@ -683,9 +719,7 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, o
           </Button>
         )}
         {session.status === 'ended' && (
-          <Button size="sm" variant="outline" icon={<Clock size={13} />} disabled style={{ flex: 1 }}>
-            Session ended
-          </Button>
+          <Button size="sm" variant="outline" icon={<Clock size={13} />} disabled style={{ flex: 1 }}>Session ended</Button>
         )}
       </div>
     </div>
