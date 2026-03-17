@@ -1872,15 +1872,6 @@ select option {
   }
 }
 
-/* Mobile popups — portaled to body to escape overflow:hidden and backdrop-filter */
-.room-bb-popup-mobile {
-  position: fixed;
-  bottom: 120px;
-  left: 8px;
-  z-index: 10002;
-  transform: none;
-}
-
 /* ── Blackboard ────────────────────────────────────────────────────────────── */
 .room-blackboard {
   position: relative;
@@ -2104,6 +2095,17 @@ select option {
 .room-bb-color-input::-webkit-color-swatch {
   border-radius: 6px;
   border: 1px solid #52525b;
+}
+
+/* Mobile popups — portaled to body to escape overflow:hidden and backdrop-filter.
+   Must appear after .room-bb-color-picker / .room-bb-size-picker so cascade wins. */
+.room-bb-popup-mobile.room-bb-color-picker,
+.room-bb-popup-mobile.room-bb-size-picker {
+  position: fixed;
+  bottom: 120px;
+  left: 8px;
+  z-index: 10002;
+  transform: none;
 }
 
 /* Text options sub-toolbar */
