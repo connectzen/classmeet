@@ -576,6 +576,8 @@ function RoomInner({ roomName }: { roomName: string }) {
     return activeCourse.topics.flatMap(t => t.lessons)
   }, [activeCourse])
 
+  const courseContentScrollRef = useRef<HTMLDivElement | null>(null)
+
   // Teacher: arrow keys navigate lessons while a course is active
   useEffect(() => {
     if (!isTeacher || !courseActive || !activeCourse) return
@@ -596,6 +598,12 @@ function RoomInner({ roomName }: { roomName: string }) {
         e.preventDefault()
         const prev = currentLessonIndex - 1
         if (prev >= 0) navigateCourseLesson(prev)
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (courseContentScrollRef.current) courseContentScrollRef.current.scrollTop += 150
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (courseContentScrollRef.current) courseContentScrollRef.current.scrollTop -= 150
       }
     }
     document.addEventListener('keydown', handler)
@@ -837,6 +845,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           onNavigateLesson={navigateCourseLesson}
           onScrollCourse={scrollCourseContent}
           courseScrollTop={courseScrollTop}
+          courseScrollRef={courseContentScrollRef}
           onAdvanceQuestion={advanceQuizQuestion}
           onRevealAnswer={revealQuizAnswer}
           onSubmitAnswer={submitQuizAnswer}
@@ -1009,7 +1018,7 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
 // ── Main Stage ───────────────────────────────────────────────────────────────
 function MainStage({ participant, screenShare, cameraTracks, blackboardActive, courseActive, quizActive, layerOrder, isHost, onCanvasEvent, incomingEvent, blackboardRef,
   activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
-  quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop,
+  quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop, courseScrollRef,
   onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, localIdentity,
 }: {
   participant: LKParticipant | undefined
@@ -1033,6 +1042,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   onNavigateLesson: (index: number) => void
   onScrollCourse: (scrollTop: number) => void
   courseScrollTop: number
+  courseScrollRef: React.MutableRefObject<HTMLDivElement | null>
   onAdvanceQuestion: (index: number) => void
   onRevealAnswer: () => void
   onSubmitAnswer: (index: number) => void
@@ -1123,6 +1133,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
             onNavigate={onNavigateLesson}
             onScroll={onScrollCourse}
             scrollTop={courseScrollTop}
+            scrollRef={courseScrollRef}
             teacherName={participant?.name || 'Teacher'}
           />
         </div>
@@ -1154,7 +1165,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
 }
 
 // ── Course Presentation ──────────────────────────────────────────────────────
-function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate, onScroll, scrollTop, teacherName }: {
+function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate, onScroll, scrollTop, scrollRef, teacherName }: {
   course: LinkedCourse
   lessons: Lesson[]
   currentIndex: number
@@ -1162,6 +1173,7 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
   onNavigate: (index: number) => void
   onScroll: (scrollTop: number) => void
   scrollTop: number
+  scrollRef?: React.MutableRefObject<HTMLDivElement | null>
   teacherName: string
 }) {
   const lesson = lessons[currentIndex]
@@ -1204,7 +1216,10 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
       </div>
 
       <div
-        ref={contentRef}
+        ref={(el) => {
+          contentRef.current = el
+          if (scrollRef) scrollRef.current = el
+        }}
         className="room-presentation-content"
         onScroll={isHost ? handleScroll : undefined}
         style={!isHost ? { overflow: 'hidden' } : undefined}

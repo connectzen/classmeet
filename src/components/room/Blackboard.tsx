@@ -286,13 +286,21 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     applyLiveEvent: handleLiveEvent,
   }))
 
-  // ── Save state for undo ──────────────────────────────────────────────────
-  const saveUndoState = useCallback(() => {
+  // ── Undo state capture: captureUndo saves pre-mutation state, commitUndo pushes it ──
+  const preUndoStateRef = useRef<string | null>(null)
+
+  const captureUndo = useCallback(() => {
     const canvas = fabricRef.current
     if (!canvas || isUndoRedoRef.current) return
-    undoStack.current.push(JSON.stringify(canvas.toObject(['id'])))
+    preUndoStateRef.current = JSON.stringify(canvas.toObject(['id']))
+  }, [])
+
+  const commitUndo = useCallback(() => {
+    if (preUndoStateRef.current === null) return
+    undoStack.current.push(preUndoStateRef.current)
     if (undoStack.current.length > 50) undoStack.current.shift()
     redoStack.current = []
+    preUndoStateRef.current = null
     setCanUndo(undoStack.current.length > 0)
     setCanRedo(false)
   }, [])
@@ -374,10 +382,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       emitCursor(pointer.x, pointer.y)
     }
 
-    const onMouseDown = () => {
-      if (!canvas.isDrawingMode) return
-      isDrawingRef.current = true
-      livePointsRef.current = []
+    const onMouseDown = (e: any) => {
+      if (canvas.isDrawingMode) {
+        captureUndo()
+        isDrawingRef.current = true
+        livePointsRef.current = []
+      } else if (canvas.selection && e.target) {
+        captureUndo()
+      }
     }
 
     const onMouseMove = (e: any) => {
@@ -403,7 +415,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const path = e.path as fabric.FabricObject
       const id = nextObjId()
       ;(path as any).id = id
-      saveUndoState()
+      commitUndo()
       onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify(path.toObject(['id'])), id })
     }
 
@@ -413,7 +425,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (!obj || (obj as any)._fromPath) return
       if (!(obj as any).id) (obj as any).id = nextObjId()
       if (obj.type === 'path') return
-      saveUndoState()
+      commitUndo()
       onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
     }
 
@@ -421,7 +433,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (suppressEventsRef.current) return
       const obj = e.target as fabric.FabricObject
       if (!obj || !(obj as any).id) return
-      saveUndoState()
+      commitUndo()
       onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify(obj.toObject(['id'])), id: (obj as any).id })
     }
 
@@ -478,7 +490,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('object:removed', onObjectRemoved)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHost, saveUndoState])
+  }, [isHost, captureUndo, commitUndo])
 
   // ── Participant: apply incoming events ────────────────────────────────────
   useEffect(() => {
@@ -674,6 +686,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const mouseDown = (e: any) => {
       if (local.id) return // guard against double-fire
+      captureUndo()
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
@@ -721,7 +734,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement
       if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
-      saveUndoState()
+      commitUndo()
       onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((line as any).toObject(['id'])), id: local.id })
       onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
@@ -736,7 +749,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [saveUndoState])
+  }, [captureUndo, commitUndo])
 
   // ── Rectangle drawing handlers (live fabric object, sync render) ──
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
@@ -744,6 +757,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const mouseDown = (e: any) => {
       if (local.drawing) return
+      captureUndo()
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
@@ -787,7 +801,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const mouseUp = () => {
       if (!local.drawing || !local.shape) return
       local.drawing = false
-      saveUndoState()
+      commitUndo()
       onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((local.shape as any).toObject(['id'])), id: local.id })
       onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
@@ -803,7 +817,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [saveUndoState])
+  }, [captureUndo, commitUndo])
 
   // ── Circle/Ellipse drawing handlers (live fabric object, sync render) ──
   const setupCircleDrawing = useCallback((canvas: fabric.Canvas) => {
@@ -811,6 +825,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const mouseDown = (e: any) => {
       if (local.drawing) return
+      captureUndo()
       local.id = nextObjId()
       local.sx = e.scenePoint.x
       local.sy = e.scenePoint.y
@@ -850,7 +865,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const mouseUp = () => {
       if (!local.drawing || !local.shape) return
       local.drawing = false
-      saveUndoState()
+      commitUndo()
       onCanvasEventRef.current?.({ type: 'object-added', data: JSON.stringify((local.shape as any).toObject(['id'])), id: local.id })
       onCanvasEventRef.current?.({ type: 'shape-preview-end' })
       local.id = ''
@@ -866,7 +881,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [saveUndoState])
+  }, [captureUndo, commitUndo])
 
   // ── Text tool handler ────────────────────────────────────────────────────
   const setupTextTool = useCallback((canvas: fabric.Canvas) => {
@@ -890,6 +905,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         strokeWidth: 0,
       })
       ;(text as any).id = id
+      captureUndo()
       suppressEventsRef.current = true
       canvas.add(text)
       suppressEventsRef.current = false
@@ -937,14 +953,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           onCanvasEventRef.current?.({ type: 'object-removed', id })
           return
         }
-        saveUndoState()
+        commitUndo()
         // Emit final confirmed state
         onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
       })
     }
     ;(canvas as any).__toolMouseDown = mouseDown
     canvas.on('mouse:down', mouseDown)
-  }, [saveUndoState])
+  }, [captureUndo, commitUndo])
 
   // ── Color change: update active brush ────────────────────────────────────
   const handleColorChange = useCallback((color: string) => {
@@ -1012,7 +1028,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const activeObjects = canvas.getActiveObjects()
     if (activeObjects.length > 0) {
       // Delete only selected object(s), broadcast each removal
-      saveUndoState()
+      captureUndo()
       suppressEventsRef.current = true
       activeObjects.forEach(obj => {
         canvas.remove(obj)
@@ -1024,17 +1040,19 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.renderAll()
       suppressEventsRef.current = false
       setHasSelection(false)
+      commitUndo()
     } else {
       // Nothing selected — clear entire board
-      saveUndoState()
+      captureUndo()
       suppressEventsRef.current = true
       canvas.clear()
       canvas.backgroundColor = '#1a1a2e'
       canvas.renderAll()
       suppressEventsRef.current = false
       onCanvasEventRef.current?.({ type: 'clear' })
+      commitUndo()
     }
-  }, [saveUndoState])
+  }, [captureUndo, commitUndo])
 
   // ── Apply text option changes to the currently editing IText ─────────────
   useEffect(() => {
