@@ -167,9 +167,12 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [spotlightIdentity, setSpotlightIdentity] = useState<string | null>(null)
   // Raised hands (set of participant identities)
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set())
-  // Panel visibility (desktop: default open, mobile: default closed)
-  const [showParticipants, setShowParticipants] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 768 : false))
-  const [showChat, setShowChat] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 768 : false))
+  const initialIsMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  // Panel visibility tracks desktop and mobile independently.
+  const [desktopShowParticipants, setDesktopShowParticipants] = useState(!initialIsMobile)
+  const [desktopShowChat, setDesktopShowChat] = useState(!initialIsMobile)
+  const [mobileShowParticipants, setMobileShowParticipants] = useState(false)
+  const [mobileShowChat, setMobileShowChat] = useState(false)
   // Settings modal
   const [showSettings, setShowSettings] = useState(false)
   // Blackboard
@@ -191,7 +194,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [quizRevealed, setQuizRevealed] = useState(false)
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({})
   const [courseScrollTop, setCourseScrollTop] = useState(0)  // Mobile detection – null means "not yet determined"
-  const [isMobile, setIsMobile] = useState<boolean>(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false))
+  const [isMobile, setIsMobile] = useState<boolean>(initialIsMobile)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -201,6 +204,25 @@ function RoomInner({ roomName }: { roomName: string }) {
   }, [])
 
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'member'
+
+  const showParticipants = isMobile ? mobileShowParticipants : desktopShowParticipants
+  const showChat = isMobile ? mobileShowChat : desktopShowChat
+
+  const setParticipantsVisible = useCallback((next: boolean | ((prev: boolean) => boolean)) => {
+    if (isMobile) {
+      setMobileShowParticipants(prev => typeof next === 'function' ? (next as (v: boolean) => boolean)(prev) : next)
+      return
+    }
+    setDesktopShowParticipants(prev => typeof next === 'function' ? (next as (v: boolean) => boolean)(prev) : next)
+  }, [isMobile])
+
+  const setChatVisible = useCallback((next: boolean | ((prev: boolean) => boolean)) => {
+    if (isMobile) {
+      setMobileShowChat(prev => typeof next === 'function' ? (next as (v: boolean) => boolean)(prev) : next)
+      return
+    }
+    setDesktopShowChat(prev => typeof next === 'function' ? (next as (v: boolean) => boolean)(prev) : next)
+  }, [isMobile])
 
   const bringLayerToFront = useCallback((layer: LayerKey) => {
     setLayerOrder(prev => [...prev.filter(item => item !== layer), layer])
@@ -729,7 +751,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           raisedHands={raisedHands}
           isTeacher={isTeacher}
           onPromote={handlePromote}
-          onClose={() => setShowParticipants(false)}
+          onClose={() => setParticipantsVisible(false)}
         />
       )}
 
@@ -739,7 +761,7 @@ function RoomInner({ roomName }: { roomName: string }) {
         <div className="room-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {!isMobile && !showParticipants && (
-              <button className="room-icon-btn" onClick={() => setShowParticipants(true)} title="Show participants">
+              <button className="room-icon-btn" onClick={() => setParticipantsVisible(true)} title="Show participants">
                 <Users size={18} />
               </button>
             )}
@@ -752,11 +774,11 @@ function RoomInner({ roomName }: { roomName: string }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {isMobile && (
-              <button className="room-icon-btn" onClick={() => setShowParticipants(v => !v)} title="Participants">
+              <button className="room-icon-btn" onClick={() => setParticipantsVisible(v => !v)} title="Participants">
                 <Users size={18} />
               </button>
             )}
-            <button className="room-icon-btn" onClick={() => setShowChat(v => !v)} title={showChat ? 'Hide chat' : 'Show chat'}>
+            <button className="room-icon-btn" onClick={() => setChatVisible(v => !v)} title={showChat ? 'Hide chat' : 'Show chat'}>
               <MessageSquare size={18} />
             </button>
           </div>
@@ -803,7 +825,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           onSettings={() => setShowSettings(true)}
           onLeave={handleLeave}
           raisedHandCount={raisedHands.size}
-          isMobile={!!isMobile}
+          isMobile={isMobile}
           isBlackboardActive={blackboardActive}
           onToggleBlackboard={toggleBlackboard}
           isCourseActive={courseActive}
@@ -821,12 +843,12 @@ function RoomInner({ roomName }: { roomName: string }) {
 
       {/* Chat panel — overlay on mobile, sidebar on desktop */}
       {showChat && (
-        <ChatPanel onClose={() => setShowChat(false)} isMobile={!!isMobile} />
+        <ChatPanel onClose={() => setChatVisible(false)} isMobile={isMobile} />
       )}
 
       {/* Mobile: participants overlay panel */}
       {isMobile && showParticipants && (
-        <div className="room-mobile-overlay" onClick={() => setShowParticipants(false)}>
+        <div className="room-mobile-overlay" onClick={() => setParticipantsVisible(false)}>
           <div className="room-mobile-panel" onClick={e => e.stopPropagation()}>
             <ParticipantsPanel
               participants={participants}
@@ -836,7 +858,7 @@ function RoomInner({ roomName }: { roomName: string }) {
               raisedHands={raisedHands}
               isTeacher={isTeacher}
               onPromote={handlePromote}
-              onClose={() => setShowParticipants(false)}
+              onClose={() => setParticipantsVisible(false)}
             />
           </div>
         </div>
