@@ -1830,6 +1830,8 @@ select option {
   }
   .room-stage-layer {
     inset: 4px;
+    width: auto !important;
+    height: auto !important;
   }
   .room-stage-avatar {
     width: 80px; height: 80px;
@@ -1884,7 +1886,7 @@ select option {
   display: block;
 }
 .room-stage-blackboard {
-  box-shadow: inset 0 0 0 2px var(--primary-500);
+  box-shadow: 0 0 0 2px var(--primary-500);
 }
 .room-stage-hidden {
   position: absolute !important;
@@ -1896,6 +1898,8 @@ select option {
 .room-stage-layer {
   position: absolute !important;
   inset: 12px;
+  width: auto !important;
+  height: auto !important;
 }
 .room-stage-layer-front {
   pointer-events: auto;
@@ -2102,10 +2106,10 @@ select option {
 .room-bb-popup-mobile.room-bb-color-picker,
 .room-bb-popup-mobile.room-bb-size-picker {
   position: fixed;
-  bottom: 120px;
-  left: 8px;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 10002;
-  transform: none;
 }
 
 /* Text options sub-toolbar */
