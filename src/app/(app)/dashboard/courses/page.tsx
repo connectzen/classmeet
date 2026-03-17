@@ -56,9 +56,10 @@ interface GroupOption { id: string; name: string; memberCount: number }
 interface StudentOption { id: string; name: string; avatarUrl: string | null }
 
 // ── Sortable Topic ────────────────────────────────────────────────────────────
-function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson, onRemoveLesson, onReorderLessons }: {
+function SortableTopic({ topic, onUpdate, onCollapse, onRemove, onAddLesson, onUpdateLesson, onRemoveLesson, onReorderLessons }: {
   topic: TopicLocal
   onUpdate: (id: string, updates: Partial<TopicLocal>) => void
+  onCollapse: (id: string, collapsed: boolean) => void
   onRemove: (id: string) => void
   onAddLesson: (topicId: string) => void
   onUpdateLesson: (topicId: string, lessonId: string, updates: Partial<LessonLocal>) => void
@@ -94,11 +95,7 @@ function SortableTopic({ topic, onUpdate, onRemove, onAddLesson, onUpdateLesson,
         {...listeners}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onClick={() => {
-          const collapsing = !topic.collapsed
-          onUpdate(topic.id, { collapsed: collapsing })
-          if (collapsing) topic.lessons.forEach(l => onUpdateLesson(topic.id, l.id, { collapsed: true }))
-        }}
+        onClick={() => onCollapse(topic.id, !topic.collapsed)}
         style={{
           display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px',
           cursor: 'pointer', userSelect: 'none',
@@ -584,6 +581,13 @@ export default function CoursesPage() {
     if (!editing) return
     setEditing({ ...editing, topics: editing.topics.map(t => t.id === id ? { ...t, ...updates } : t) })
   }
+  function collapseTopicWithLessons(id: string, collapsed: boolean) {
+    if (!editing) return
+    setEditing({ ...editing, topics: editing.topics.map(t => t.id === id ? {
+      ...t, collapsed,
+      lessons: collapsed ? t.lessons.map(l => ({ ...l, collapsed: true })) : t.lessons,
+    } : t) })
+  }
   function removeTopic(id: string) {
     if (!editing) return
     setEditing({ ...editing, topics: editing.topics.filter(t => t.id !== id) })
@@ -881,7 +885,7 @@ export default function CoursesPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {editing.topics.map(topic => (
                 <SortableTopic key={topic.id} topic={topic}
-                  onUpdate={updateTopic} onRemove={removeTopic}
+                  onUpdate={updateTopic} onCollapse={collapseTopicWithLessons} onRemove={removeTopic}
                   onAddLesson={addLesson} onUpdateLesson={updateLesson}
                   onRemoveLesson={removeLesson} onReorderLessons={reorderLessons} />
               ))}
