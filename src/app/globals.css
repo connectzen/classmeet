@@ -1993,34 +1993,54 @@ select option {
   border: 1px solid #27272a;
 }
 
-/* Stroke size selector */
-.room-bb-size-group {
-  gap: 2px;
-}
-.room-bb-size-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.12s;
-}
-.room-bb-size-btn:hover {
-  background: #3f3f46;
-}
-.room-bb-size-active {
-  background: rgba(99, 102, 241, 0.2);
-}
-.room-bb-size-active:hover {
-  background: rgba(99, 102, 241, 0.3);
-}
+/* Stroke size dot (used in button and dropdown) */
 .room-bb-size-dot {
   border-radius: 50%;
   background: #e4e4e7;
+  display: inline-block;
+}
+
+/* Stroke size dropdown popup */
+.room-bb-size-picker {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1c1c22;
+  border: 1px solid #3f3f46;
+  border-radius: 10px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 200;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  min-width: 110px;
+}
+.room-bb-size-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.room-bb-size-picker-item:hover {
+  background: #3f3f46;
+  color: var(--text-primary);
+}
+.room-bb-size-picker-active {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--primary-400);
+}
+.room-bb-size-picker-active:hover {
+  background: rgba(99, 102, 241, 0.3);
 }
 
 /* Color picker popup */

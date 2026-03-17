@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { DrawingTool, TextOptions } from './Blackboard'
 import {
   Pencil, Minus, Square, Circle, Highlighter, Eraser, Type, MousePointer2,
@@ -33,34 +33,34 @@ const COLORS = [
 ]
 
 const STROKE_SIZES = [
-  { label: 'S', value: 2 },
-  { label: 'M', value: 4 },
-  { label: 'L', value: 7 },
+  { label: 'Small',  value: 2 },
+  { label: 'Medium', value: 4 },
+  { label: 'Large',  value: 7 },
 ]
 
 const FONT_SIZES = [
-  { label: 'Small', value: 16 },
+  { label: 'Small',  value: 16 },
   { label: 'Normal', value: 24 },
-  { label: 'Large', value: 32 },
-  { label: 'XL', value: 40 },
-  { label: '2XL', value: 56 },
+  { label: 'Large',  value: 32 },
+  { label: 'XL',     value: 40 },
+  { label: '2XL',    value: 56 },
 ]
 
 const FONT_FAMILIES = [
-  { label: 'Courier New', value: 'Courier New, monospace' },
-  { label: 'Arial', value: 'Arial, sans-serif' },
-  { label: 'Calibri', value: 'Calibri, sans-serif' },
-  { label: 'Segoe UI', value: 'Segoe UI, sans-serif' },
-  { label: 'Verdana', value: 'Verdana, sans-serif' },
-  { label: 'Trebuchet', value: 'Trebuchet MS, sans-serif' },
-  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Courier New',   value: 'Courier New, monospace' },
+  { label: 'Arial',         value: 'Arial, sans-serif' },
+  { label: 'Calibri',       value: 'Calibri, sans-serif' },
+  { label: 'Segoe UI',      value: 'Segoe UI, sans-serif' },
+  { label: 'Verdana',       value: 'Verdana, sans-serif' },
+  { label: 'Trebuchet',     value: 'Trebuchet MS, sans-serif' },
+  { label: 'Georgia',       value: 'Georgia, serif' },
   { label: 'Times New Roman', value: 'Times New Roman, serif' },
-  { label: 'Palatino', value: 'Palatino Linotype, Palatino, serif' },
-  { label: 'Cambria', value: 'Cambria, serif' },
-  { label: 'Impact', value: 'Impact, Haettenschweiler, sans-serif' },
-  { label: 'Comic Sans', value: 'Comic Sans MS, cursive' },
-  { label: 'Segoe Print', value: 'Segoe Print, cursive' },
-  { label: 'Consolas', value: 'Consolas, Lucida Console, monospace' },
+  { label: 'Palatino',      value: 'Palatino Linotype, Palatino, serif' },
+  { label: 'Cambria',       value: 'Cambria, serif' },
+  { label: 'Impact',        value: 'Impact, Haettenschweiler, sans-serif' },
+  { label: 'Comic Sans',    value: 'Comic Sans MS, cursive' },
+  { label: 'Segoe Print',   value: 'Segoe Print, cursive' },
+  { label: 'Consolas',      value: 'Consolas, Lucida Console, monospace' },
 ]
 
 export default function BlackboardToolbar({
@@ -82,11 +82,14 @@ export default function BlackboardToolbar({
   hasSelection,
 }: BlackboardToolbarProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const [showSizePicker, setShowSizePicker] = useState(false)
   const [isMobileView, setIsMobileView] = useState(false)
+  // Text panel: open when T is active on mobile; closed by hover-leave or T toggle
   const [showTextPanel, setShowTextPanel] = useState(false)
-  const textPanelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Track whether cursor has entered the text panel (for hover-to-close)
+  const textPanelEnteredRef = useRef(false)
 
-  // Detect mobile viewport
+  // Mobile detection
   useEffect(() => {
     const check = () => setIsMobileView(window.innerWidth < 768)
     check()
@@ -94,33 +97,50 @@ export default function BlackboardToolbar({
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Schedule text panel auto-hide after 3s inactivity
-  const scheduleTextPanelHide = useCallback(() => {
-    if (textPanelTimerRef.current) clearTimeout(textPanelTimerRef.current)
-    textPanelTimerRef.current = setTimeout(() => setShowTextPanel(false), 3000)
-  }, [])
-
-  // Open/close text panel when text tool is activated on mobile
+  // Auto-open text panel on mobile when text tool becomes active; close when deactivated
   useEffect(() => {
     if (activeTool === 'text' && isMobileView) {
+      textPanelEnteredRef.current = false
       setShowTextPanel(true)
-      scheduleTextPanelHide()
     } else {
       setShowTextPanel(false)
-      if (textPanelTimerRef.current) clearTimeout(textPanelTimerRef.current)
     }
-  }, [activeTool, isMobileView, scheduleTextPanelHide])
+  }, [activeTool, isMobileView])
 
-  const tools: { tool: DrawingTool; icon: React.ReactNode; label: string }[] = [
-    { tool: 'select', icon: <MousePointer2 size={15} />, label: 'Select & Move' },
-    { tool: 'pen', icon: <Pencil size={15} />, label: 'Pen' },
-    { tool: 'line', icon: <Minus size={15} />, label: 'Line' },
-    { tool: 'rect', icon: <Square size={15} />, label: 'Rectangle' },
-    { tool: 'circle', icon: <Circle size={15} />, label: 'Circle' },
-    { tool: 'highlighter', icon: <Highlighter size={15} />, label: 'Highlighter' },
-    { tool: 'eraser', icon: <Eraser size={15} />, label: 'Eraser' },
-    { tool: 'text', icon: <Type size={15} />, label: 'Text' },
+  // T button: toggle text tool on/off (clicking active T switches back to pen)
+  const handleTextToolClick = () => {
+    if (activeTool === 'text') {
+      onToolChange('pen')
+    } else {
+      onToolChange('text')
+    }
+  }
+
+  // Text panel: cursor entered — start tracking so leave will close it
+  const handleTextPanelEnter = () => {
+    textPanelEnteredRef.current = true
+  }
+
+  // Text panel: cursor left after entering — close the panel
+  const handleTextPanelLeave = () => {
+    if (textPanelEnteredRef.current) {
+      textPanelEnteredRef.current = false
+      setShowTextPanel(false)
+    }
+  }
+
+  const drawingTools: { tool: DrawingTool; icon: React.ReactNode; label: string }[] = [
+    { tool: 'select',      icon: <MousePointer2 size={15} />, label: 'Select & Move' },
+    { tool: 'pen',         icon: <Pencil size={15} />,        label: 'Pen' },
+    { tool: 'line',        icon: <Minus size={15} />,         label: 'Line' },
+    { tool: 'rect',        icon: <Square size={15} />,        label: 'Rectangle' },
+    { tool: 'circle',      icon: <Circle size={15} />,        label: 'Circle' },
+    { tool: 'highlighter', icon: <Highlighter size={15} />,   label: 'Highlighter' },
+    { tool: 'eraser',      icon: <Eraser size={15} />,        label: 'Eraser' },
   ]
+
+  const isDrawingTool = ['pen', 'line', 'rect', 'circle', 'highlighter', 'eraser'].includes(activeTool)
+  const currentSize = STROKE_SIZES.find(s => s.value === strokeWidth) ?? STROKE_SIZES[1]
 
   return (
     <>
@@ -137,9 +157,10 @@ export default function BlackboardToolbar({
         {/* Main toolbar */}
         {toolbarVisible && (
           <div className="room-bb-toolbar-inner">
-            {/* Drawing tools */}
+
+            {/* Drawing tools (all except text) */}
             <div className="room-bb-tool-group">
-              {tools.map(({ tool, icon, label }) => (
+              {drawingTools.map(({ tool, icon, label }) => (
                 <button
                   key={tool}
                   className={`room-bb-tool-btn ${activeTool === tool ? 'room-bb-tool-active' : ''}`}
@@ -151,6 +172,15 @@ export default function BlackboardToolbar({
               ))}
             </div>
 
+            {/* Text tool — separate, toggleable */}
+            <button
+              className={`room-bb-tool-btn ${activeTool === 'text' ? 'room-bb-tool-active' : ''}`}
+              onClick={handleTextToolClick}
+              title={activeTool === 'text' ? 'Deactivate text tool' : 'Text'}
+            >
+              <Type size={15} />
+            </button>
+
             <div className="room-bb-divider" />
 
             {/* Color picker */}
@@ -161,10 +191,7 @@ export default function BlackboardToolbar({
                 title="Color"
               >
                 <Palette size={15} />
-                <span
-                  className="room-bb-color-dot"
-                  style={{ backgroundColor: strokeColor }}
-                />
+                <span className="room-bb-color-dot" style={{ backgroundColor: strokeColor }} />
               </button>
 
               {showColorPicker && (
@@ -189,24 +216,37 @@ export default function BlackboardToolbar({
               )}
             </div>
 
-            <div className="room-bb-divider" />
+            {/* Stroke size dropdown — only for drawing tools */}
+            {isDrawingTool && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  className={`room-bb-tool-btn ${showSizePicker ? 'room-bb-tool-active' : ''}`}
+                  onClick={() => setShowSizePicker(v => !v)}
+                  title={`Stroke: ${currentSize.label}`}
+                >
+                  <span
+                    className="room-bb-size-dot"
+                    style={{ width: strokeWidth * 2, height: strokeWidth * 2 }}
+                  />
+                </button>
 
-            {/* Stroke size — visible for drawing tools */}
-            {['pen', 'line', 'rect', 'circle', 'highlighter', 'eraser'].includes(activeTool) && (
-              <div className="room-bb-tool-group room-bb-size-group">
-                {STROKE_SIZES.map(s => (
-                  <button
-                    key={s.value}
-                    className={`room-bb-size-btn ${strokeWidth === s.value ? 'room-bb-size-active' : ''}`}
-                    onClick={() => onStrokeWidthChange(s.value)}
-                    title={`${s.label === 'S' ? 'Small' : s.label === 'M' ? 'Medium' : 'Large'} stroke`}
-                  >
-                    <span
-                      className="room-bb-size-dot"
-                      style={{ width: s.value * 2, height: s.value * 2 }}
-                    />
-                  </button>
-                ))}
+                {showSizePicker && (
+                  <div className="room-bb-size-picker">
+                    {STROKE_SIZES.map(s => (
+                      <button
+                        key={s.value}
+                        className={`room-bb-size-picker-item ${strokeWidth === s.value ? 'room-bb-size-picker-active' : ''}`}
+                        onClick={() => { onStrokeWidthChange(s.value); setShowSizePicker(false) }}
+                      >
+                        <span
+                          className="room-bb-size-dot"
+                          style={{ width: s.value * 2, height: s.value * 2, flexShrink: 0 }}
+                        />
+                        <span>{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -229,12 +269,11 @@ export default function BlackboardToolbar({
               </button>
             </div>
 
-            {/* ── Text formatting sub-toolbar — desktop only ── */}
+            {/* Text formatting options — inline on desktop */}
             {activeTool === 'text' && !isMobileView && (
               <>
                 <div className="room-bb-divider" />
                 <div className="room-bb-tool-group room-bb-text-options">
-                  {/* Font family */}
                   <select
                     className="room-bb-select"
                     value={textOptions.fontFamily}
@@ -245,8 +284,6 @@ export default function BlackboardToolbar({
                       <option key={f.value} value={f.value}>{f.label}</option>
                     ))}
                   </select>
-
-                  {/* Font size */}
                   <select
                     className="room-bb-select"
                     value={textOptions.fontSize}
@@ -257,55 +294,43 @@ export default function BlackboardToolbar({
                       <option key={s.value} value={s.value}>{s.label}</option>
                     ))}
                   </select>
-
                   <div className="room-bb-divider" />
-
-                  {/* Bold */}
                   <button
                     className={`room-bb-tool-btn ${textOptions.bold ? 'room-bb-tool-active' : ''}`}
                     onClick={() => onTextOptionsChange({ ...textOptions, bold: !textOptions.bold })}
                     title="Bold"
-                  >
-                    <Bold size={15} />
-                  </button>
-
-                  {/* Italic */}
+                  ><Bold size={15} /></button>
                   <button
                     className={`room-bb-tool-btn ${textOptions.italic ? 'room-bb-tool-active' : ''}`}
                     onClick={() => onTextOptionsChange({ ...textOptions, italic: !textOptions.italic })}
                     title="Italic"
-                  >
-                    <Italic size={15} />
-                  </button>
-
-                  {/* Underline */}
+                  ><Italic size={15} /></button>
                   <button
                     className={`room-bb-tool-btn ${textOptions.underline ? 'room-bb-tool-active' : ''}`}
                     onClick={() => onTextOptionsChange({ ...textOptions, underline: !textOptions.underline })}
                     title="Underline"
-                  >
-                    <UnderlineIcon size={15} />
-                  </button>
-
+                  ><UnderlineIcon size={15} /></button>
                 </div>
               </>
             )}
+
           </div>
         )}
       </div>
 
-      {/* ── Mobile: floating vertical text options panel ── */}
+      {/* ── Mobile: floating vertical text options panel ─────────────────────── */}
       {isMobileView && showTextPanel && (
         <div
           className="room-bb-text-panel-mobile"
-          onPointerDown={scheduleTextPanelHide}
+          onMouseEnter={handleTextPanelEnter}
+          onMouseLeave={handleTextPanelLeave}
         >
           <div className="room-bb-text-panel-title">Text Options</div>
           <select
             className="room-bb-select"
             style={{ width: '100%' }}
             value={textOptions.fontFamily}
-            onChange={e => { onTextOptionsChange({ ...textOptions, fontFamily: e.target.value }); scheduleTextPanelHide() }}
+            onChange={e => onTextOptionsChange({ ...textOptions, fontFamily: e.target.value })}
             title="Font Family"
           >
             {FONT_FAMILIES.map(f => (
@@ -316,7 +341,7 @@ export default function BlackboardToolbar({
             className="room-bb-select"
             style={{ width: '100%' }}
             value={textOptions.fontSize}
-            onChange={e => { onTextOptionsChange({ ...textOptions, fontSize: Number(e.target.value) }); scheduleTextPanelHide() }}
+            onChange={e => onTextOptionsChange({ ...textOptions, fontSize: Number(e.target.value) })}
             title="Font Size"
           >
             {FONT_SIZES.map(s => (
@@ -326,17 +351,17 @@ export default function BlackboardToolbar({
           <div className="room-bb-text-panel-row">
             <button
               className={`room-bb-tool-btn ${textOptions.bold ? 'room-bb-tool-active' : ''}`}
-              onClick={() => { onTextOptionsChange({ ...textOptions, bold: !textOptions.bold }); scheduleTextPanelHide() }}
+              onClick={() => onTextOptionsChange({ ...textOptions, bold: !textOptions.bold })}
               title="Bold"
             ><Bold size={16} /></button>
             <button
               className={`room-bb-tool-btn ${textOptions.italic ? 'room-bb-tool-active' : ''}`}
-              onClick={() => { onTextOptionsChange({ ...textOptions, italic: !textOptions.italic }); scheduleTextPanelHide() }}
+              onClick={() => onTextOptionsChange({ ...textOptions, italic: !textOptions.italic })}
               title="Italic"
             ><Italic size={16} /></button>
             <button
               className={`room-bb-tool-btn ${textOptions.underline ? 'room-bb-tool-active' : ''}`}
-              onClick={() => { onTextOptionsChange({ ...textOptions, underline: !textOptions.underline }); scheduleTextPanelHide() }}
+              onClick={() => onTextOptionsChange({ ...textOptions, underline: !textOptions.underline })}
               title="Underline"
             ><UnderlineIcon size={16} /></button>
           </div>
