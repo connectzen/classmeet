@@ -576,6 +576,32 @@ function RoomInner({ roomName }: { roomName: string }) {
     return activeCourse.topics.flatMap(t => t.lessons)
   }, [activeCourse])
 
+  // Teacher: arrow keys navigate lessons while a course is active
+  useEffect(() => {
+    if (!isTeacher || !courseActive || !activeCourse) return
+    const isEditableTarget = (t: EventTarget | null) => {
+      if (!(t instanceof HTMLElement)) return false
+      if (t.isContentEditable) return true
+      const tag = t.tagName.toLowerCase()
+      return tag === 'input' || tag === 'textarea' || tag === 'select'
+    }
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      if (e.isComposing || isEditableTarget(e.target)) return
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        const next = currentLessonIndex + 1
+        if (next < allLessons.length) navigateCourseLesson(next)
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        const prev = currentLessonIndex - 1
+        if (prev >= 0) navigateCourseLesson(prev)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [isTeacher, courseActive, activeCourse, currentLessonIndex, allLessons.length, navigateCourseLesson])
+
   // Host: send snapshot to late-joining participants
   useEffect(() => {
     if (!isTeacher || !blackboardActive) {
@@ -1588,7 +1614,7 @@ function ControlBarCustom({
   }, [showCourseMenu, showQuizMenu])
 
   useEffect(() => {
-    if (!isTeacher || isMobile) return
+    if (!isTeacher) return
 
     const isEditableTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false
@@ -1635,7 +1661,6 @@ function ControlBarCustom({
     return () => document.removeEventListener('keydown', handler)
   }, [
     isTeacher,
-    isMobile,
     isCourseActive,
     activeCourseId,
     isQuizActive,
