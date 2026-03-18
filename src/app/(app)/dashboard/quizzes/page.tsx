@@ -323,7 +323,7 @@ function QuizCard({ quiz, onClick, onDelete, readOnly }: { quiz: QuizLocal; onCl
     <div className="card" style={{ padding: '20px', cursor: 'pointer' }} onClick={onClick}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
         <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 600, background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.2)' }}>
-          Quiz
+          Exam
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {!readOnly && (
@@ -365,6 +365,9 @@ export default function QuizzesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [passThreshold, setPassThreshold] = useState(70)
+  const [revealDelayDays, setRevealDelayDays] = useState<number | string>('')
+  const [examStartDate, setExamStartDate] = useState('')
   const [questions, setQuestions] = useState<QuestionLocal[]>([])
 
   const isCreator = user?.role === 'teacher' || user?.role === 'member' || user?.role === 'admin'
@@ -529,6 +532,9 @@ export default function QuizzesPage() {
     setEditingId(quiz.id)
     setTitle(quiz.title)
     setDescription(quiz.description || '')
+    setPassThreshold(quiz.pass_threshold ?? 70)
+    setRevealDelayDays(quiz.reveal_delay_days ?? '')
+    setExamStartDate(quiz.exam_start_date ? quiz.exam_start_date.slice(0, 16) : '')
 
     const { data: qs } = await supabase
       .from('quiz_questions')
@@ -556,15 +562,18 @@ export default function QuizzesPage() {
     try {
       const { data, error } = await supabase.from('quizzes').insert({
         teacher_id: user.id,
-        title: 'Untitled Quiz',
+        title: 'Untitled Exam',
         description: null,
         pass_threshold: 70,
       }).select('id, title, description, created_at').single()
-      if (error) { console.error('Quiz create error:', error); showToast(`❌ ${error.message}`); return }
+      if (error) { console.error('Exam create error:', error); showToast(`❌ ${error.message}`); return }
       if (!data) return
       setEditingId(data.id)
       setTitle(data.title)
       setDescription(data.description || '')
+      setPassThreshold(70)
+      setRevealDelayDays('')
+      setExamStartDate('')
       setQuestions([{
         id: uid(),
         questionText: '',
@@ -592,6 +601,9 @@ export default function QuizzesPage() {
     await supabase.from('quizzes').update({
       title: title.trim(),
       description: description.trim() || null,
+      pass_threshold: passThreshold,
+      reveal_delay_days: revealDelayDays !== '' ? Number(revealDelayDays) : null,
+      exam_start_date: examStartDate || null,
       updated_at: new Date().toISOString(),
     }).eq('id', editingId)
 
@@ -620,16 +632,16 @@ export default function QuizzesPage() {
     if (targets.length > 0) await supabase.from('quiz_targets').insert(targets)
 
     setSaving(false)
-    showToast('✅ Quiz saved')
+    showToast('✅ Exam saved')
     loadQuizzes()
   }
 
   // ── Delete quiz ──
   async function deleteQuiz(id: string) {
-    if (!confirm('Delete this quiz? This cannot be undone.')) return
+    if (!confirm('Delete this exam? This cannot be undone.')) return
     await supabase.from('quizzes').delete().eq('id', id)
     if (editingId === id) closeBuilder()
-    showToast('✅ Quiz deleted')
+    showToast('✅ Exam deleted')
     loadQuizzes()
   }
 
@@ -732,7 +744,7 @@ export default function QuizzesPage() {
           })}
           {viewingQuiz.questions.length === 0 && (
             <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>This quiz has no questions yet.</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>This exam has no questions yet.</p>
             </div>
           )}
         </div>
@@ -751,7 +763,7 @@ export default function QuizzesPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={closeBuilder}>Back</Button>
-            <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>Quiz Builder</h1>
+            <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>Exam Builder</h1>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" size="sm" icon={<Trash2 size={14} />} onClick={() => deleteQuiz(editingId)}>Delete</Button>
@@ -762,11 +774,37 @@ export default function QuizzesPage() {
         {/* Meta fields */}
         <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <Input label="Quiz Title" required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Chapter 5 Review" />
+            <Input label="Exam Title" required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Chapter 5 Weekly Exam" />
             <div className="input-group">
               <label className="input-label">Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-              <textarea className="input" rows={2} placeholder="Brief quiz description…" value={description}
+              <textarea className="input" rows={2} placeholder="Brief exam description…" value={description}
                 onChange={e => setDescription(e.target.value)} style={{ resize: 'vertical', minHeight: '60px' }} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Pass Threshold (%)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="number" className="input" min={0} max={100} value={passThreshold}
+                  onChange={e => setPassThreshold(Number(e.target.value))}
+                  placeholder="70" style={{ width: 90 }} />
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>% — students need this score or above to pass</span>
+              </div>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Exam Date &amp; Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <input type="datetime-local" className="input" value={examStartDate}
+                onChange={e => setExamStartDate(e.target.value)} style={{ maxWidth: 240 }} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Results Revealed After <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="number" className="input" min={0} value={revealDelayDays}
+                  onChange={e => setRevealDelayDays(e.target.value)}
+                  placeholder="e.g. 3" style={{ width: 90 }} />
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>days</span>
+              </div>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+                Students will see: &ldquo;Results will be revealed in X days.&rdquo;
+              </span>
             </div>
           </div>
         </div>
@@ -873,25 +911,25 @@ export default function QuizzesPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>Quizzes</h1>
+          <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>Exams</h1>
           <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-            {isCreator ? 'Create and manage quizzes to present during live sessions' : 'Browse available quizzes'}
+            {isCreator ? 'Create and manage exams to present during live sessions' : 'Browse available exams'}
           </p>
         </div>
-        {isCreator && <Button icon={<Plus size={15} />} onClick={createNew} loading={creating}>New Quiz</Button>}
+        {isCreator && <Button icon={<Plus size={15} />} onClick={createNew} loading={creating}>New Exam</Button>}
       </div>
 
       {/* Search */}
       {quizzes.length > 0 && (
         <div style={{ marginBottom: '16px' }}>
-          <Input placeholder="Search quizzes…" value={search} onChange={e => setSearch(e.target.value)} leftIcon={<HelpCircle size={14} />} />
+          <Input placeholder="Search exams…" value={search} onChange={e => setSearch(e.target.value)} leftIcon={<HelpCircle size={14} />} />
         </div>
       )}
 
       {/* Grid */}
       {loading ? (
         <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading quizzes…</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading exams…</p>
         </div>
       ) : filteredQuizzes.length > 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
@@ -904,11 +942,11 @@ export default function QuizzesPage() {
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(139,92,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <HelpCircle size={28} color="#8b5cf6" />
           </div>
-          <h3 style={{ margin: '0 0 8px', color: 'var(--text-primary)', fontWeight: 600 }}>No quizzes yet</h3>
+          <h3 style={{ margin: '0 0 8px', color: 'var(--text-primary)', fontWeight: 600 }}>No exams yet</h3>
           <p style={{ margin: '0 0 24px', fontSize: '0.875rem', color: 'var(--text-muted)', maxWidth: '320px', marginLeft: 'auto', marginRight: 'auto' }}>
-            {isCreator ? 'Create your first quiz and use it in live sessions' : 'No quizzes are available yet. Check back soon.'}
+            {isCreator ? 'Create your first exam and use it in live sessions' : 'No exams are available yet. Check back soon.'}
           </p>
-          {isCreator && <Button icon={<Plus size={15} />} onClick={createNew} loading={creating}>Create Your First Quiz</Button>}
+          {isCreator && <Button icon={<Plus size={15} />} onClick={createNew} loading={creating}>Create Your First Exam</Button>}
         </div>
       )}
 

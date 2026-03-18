@@ -114,6 +114,8 @@ export type Quiz = {
   title: string
   description: string | null
   pass_threshold: number
+  reveal_delay_days: number | null
+  exam_start_date: string | null
   created_at: string
   updated_at: string
 }
@@ -281,7 +283,7 @@ export type Database = {
       }
       quizzes: {
         Row: Quiz
-        Insert: Omit<Quiz, 'id' | 'created_at' | 'updated_at' | 'pass_threshold'> & { pass_threshold?: number }
+        Insert: Omit<Quiz, 'id' | 'created_at' | 'updated_at' | 'pass_threshold' | 'reveal_delay_days' | 'exam_start_date'> & { pass_threshold?: number; reveal_delay_days?: number | null; exam_start_date?: string | null }
         Update: Partial<Omit<Quiz, 'id' | 'created_at'>>
         Relationships: []
       }

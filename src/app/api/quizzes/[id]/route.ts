@@ -40,12 +40,16 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
       return apiError('Forbidden', 403)
     }
 
+    const update: Record<string, unknown> = {}
+    if (body.title !== undefined) update.title = body.title
+    if (body.description !== undefined) update.description = body.description
+    if (body.pass_threshold !== undefined) update.pass_threshold = body.pass_threshold
+    if (body.reveal_delay_days !== undefined) update.reveal_delay_days = body.reveal_delay_days
+    if (body.exam_start_date !== undefined) update.exam_start_date = body.exam_start_date
+
     const { data, error } = await supabase
       .from('quizzes')
-      .update({
-        title: body.title,
-        description: body.description,
-      })
+      .update(update)
       .eq('id', id)
       .select()
       .single()

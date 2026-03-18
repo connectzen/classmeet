@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const supabase = await createClient()
 
-    const { title, description } = body
+    const { title, description, pass_threshold } = body
 
     if (!title) {
       return apiError('title is required', 400)
@@ -19,6 +19,7 @@ export async function POST(request: Request) {
         teacher_id: user.id,
         title,
         description: description || null,
+        pass_threshold: pass_threshold ?? 70,
       })
       .select()
       .single()

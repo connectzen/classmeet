@@ -1099,7 +1099,8 @@ function RoomInner({ roomName }: { roomName: string }) {
             submission={revealingSubmission}
             countdown={revealCountdown}
             onDismiss={dismissReveal}
-            quizTitle={activeQuiz?.title || 'Quiz'}
+            quizTitle={activeQuiz?.title || 'Exam'}
+            teacherName={teacherParticipant?.name || 'Teacher'}
           />
         )}
 
@@ -1838,9 +1839,12 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
               <div className="room-quiz-submitted-icon">
                 <Check size={48} />
               </div>
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Quiz Submitted!</h2>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Exam Submitted!</h2>
               <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center' }}>
-                Waiting for {teacherName} to grade your submission...
+                Your exam has been submitted. Thank you for participating.{' '}
+                {quiz.reveal_delay_days
+                  ? `Results will be revealed in ${quiz.reveal_delay_days} day${quiz.reveal_delay_days !== 1 ? 's' : ''}.`
+                  : 'Results will be revealed by your teacher.'}
               </p>
               <div className="room-quiz-submitted-pulse" />
             </>
@@ -1872,7 +1876,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             When you&apos;re ready, click the button below to start. You can navigate questions at your own pace and submit when done.
           </p>
           <button className="btn btn-primary" style={{ padding: '10px 32px', fontSize: '1rem' }} onClick={() => setQuizJoined(true)}>
-            <Play size={18} /> Start Quiz
+            <Play size={18} /> Start Exam
           </button>
         </div>
       </div>
@@ -2310,7 +2314,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             disabled={answeredCount < totalQuestions || submitting}
             onClick={handleSubmitAll}
           >
-            {submitting ? 'Submitting...' : answeredCount < totalQuestions ? `${answeredCount}/${totalQuestions} answered` : 'Submit Quiz'}
+            {submitting ? 'Submitting...' : answeredCount < totalQuestions ? `${answeredCount}/${totalQuestions} answered` : 'Submit Exam'}
           </button>
         </div>
         <button
@@ -2359,7 +2363,7 @@ function StudentRevealedResult({ sub, quizTitle }: { sub: QuizSubmission; quizTi
       <div className="room-presentation-header">
         <Trophy size={16} />
         <span className="room-presentation-title">{quizTitle}</span>
-        <span className="room-presentation-subtitle">Results Revealed</span>
+        <span className="room-presentation-subtitle">Exam Results</span>
       </div>
       <div className="room-presentation-content room-quiz-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '24px 16px' }}>
         <div style={{ position: 'relative', width: 140, height: 140 }}>
@@ -2418,11 +2422,12 @@ function StudentRevealedResult({ sub, quizTitle }: { sub: QuizSubmission; quizTi
 }
 
 // ── Quiz Result Reveal (Cinematic overlay) ───────────────────────────────────
-function QuizResultReveal({ submission, countdown, onDismiss, quizTitle }: {
+function QuizResultReveal({ submission, countdown, onDismiss, quizTitle, teacherName }: {
   submission: QuizSubmission
   countdown: number
   onDismiss: () => void
   quizTitle: string
+  teacherName: string
 }) {
   const certRef = useRef<HTMLDivElement>(null)
   const showResult = countdown <= 0
@@ -2463,154 +2468,131 @@ function QuizResultReveal({ submission, countdown, onDismiss, quizTitle }: {
     const ctx = canvas.getContext('2d')!
     ctx.scale(2, 2)
 
-    // Background gradient
-    const bg = ctx.createLinearGradient(0, 0, W, H)
-    bg.addColorStop(0, '#0f0c29'); bg.addColorStop(0.5, '#1a1a3e'); bg.addColorStop(1, '#24243e')
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H)
+    // ── Background ──────────────────────────────────────────────
+    ctx.fillStyle = '#FEFCF8'
+    ctx.fillRect(0, 0, W, H)
 
-    // Decorative border
-    ctx.strokeStyle = submission.passed ? '#22c55e' : '#f59e0b'
-    ctx.lineWidth = 3
-    const m = 20
-    ctx.strokeRect(m, m, W - m * 2, H - m * 2)
-    ctx.strokeStyle = 'rgba(99,102,241,0.3)'; ctx.lineWidth = 1
-    ctx.strokeRect(m + 8, m + 8, W - (m + 8) * 2, H - (m + 8) * 2)
+    // ── Outer gold border ────────────────────────────────────────
+    const mOuter = 18
+    ctx.strokeStyle = '#C9A84C'; ctx.lineWidth = 3
+    ctx.strokeRect(mOuter, mOuter, W - mOuter * 2, H - mOuter * 2)
 
-    // Corner accents
-    const cornerSize = 40
-    ctx.strokeStyle = submission.passed ? '#22c55e' : '#f59e0b'
-    ctx.lineWidth = 3
-    const corners = [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]
-    for (const [cx, cy, dx, dy] of corners) {
+    // ── Inner thin border ────────────────────────────────────────
+    const mInner = 28
+    ctx.strokeStyle = '#C9A84C'; ctx.lineWidth = 0.8
+    ctx.strokeRect(mInner, mInner, W - mInner * 2, H - mInner * 2)
+
+    // ── Corner diamond ornaments ─────────────────────────────────
+    const drawDiamond = (cx: number, cy: number) => {
+      const s = 7
+      ctx.fillStyle = '#C9A84C'
       ctx.beginPath()
-      ctx.moveTo(cx, cy + dy * cornerSize)
-      ctx.lineTo(cx, cy)
-      ctx.lineTo(cx + dx * cornerSize, cy)
-      ctx.stroke()
+      ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s, cy)
+      ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s, cy)
+      ctx.closePath(); ctx.fill()
     }
+    const d = mOuter + 10
+    drawDiamond(d, d); drawDiamond(W - d, d)
+    drawDiamond(d, H - d); drawDiamond(W - d, H - d)
 
-    // Trophy icon (simple drawn trophy)
-    const tCx = W / 2, tCy = 72
-    ctx.fillStyle = '#fbbf24'
-    ctx.beginPath()
-    ctx.moveTo(tCx - 18, tCy - 20); ctx.lineTo(tCx + 18, tCy - 20)
-    ctx.lineTo(tCx + 14, tCy + 4); ctx.quadraticCurveTo(tCx, tCy + 16, tCx - 14, tCy + 4)
-    ctx.closePath(); ctx.fill()
-    ctx.fillRect(tCx - 3, tCy + 14, 6, 10)
-    ctx.fillRect(tCx - 10, tCy + 24, 20, 4)
+    // ── Decorative rules flanking the title ──────────────────────
+    const ruleY = 78, ruleLen = 220, ruleGap = 18
+    ctx.strokeStyle = '#C9A84C'; ctx.lineWidth = 1.2
+    // left rule
+    ctx.beginPath(); ctx.moveTo(W / 2 - ruleGap - ruleLen, ruleY - 4); ctx.lineTo(W / 2 - ruleGap, ruleY - 4); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(W / 2 - ruleGap - ruleLen, ruleY + 1); ctx.lineTo(W / 2 - ruleGap, ruleY + 1); ctx.stroke()
+    // right rule
+    ctx.beginPath(); ctx.moveTo(W / 2 + ruleGap, ruleY - 4); ctx.lineTo(W / 2 + ruleGap + ruleLen, ruleY - 4); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(W / 2 + ruleGap, ruleY + 1); ctx.lineTo(W / 2 + ruleGap + ruleLen, ruleY + 1); ctx.stroke()
 
-    // "CERTIFICATE OF COMPLETION" header
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '600 11px Inter, system-ui, sans-serif'
-    ctx.textAlign = 'center'; ctx.letterSpacing = '4px'
-    ctx.fillText('CERTIFICATE OF COMPLETION', W / 2, 120)
+    // ── "CERTIFICATE OF ACHIEVEMENT" ────────────────────────────
+    ctx.fillStyle = '#1B2A4A'; ctx.font = '700 13px Georgia, serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('CERTIFICATE OF ACHIEVEMENT', W / 2, ruleY)
 
-    // Decorative line
-    const lineW = 200
-    ctx.strokeStyle = 'rgba(99,102,241,0.5)'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(W / 2 - lineW / 2, 132); ctx.lineTo(W / 2 + lineW / 2, 132); ctx.stroke()
+    // ── "This is to certify that" ────────────────────────────────
+    ctx.fillStyle = '#6B7280'; ctx.font = 'italic 14px Georgia, serif'
+    ctx.fillText('This is to certify that', W / 2, 120)
 
-    // Title
-    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 28px Inter, system-ui, sans-serif'
-    ctx.fillText(submission.passed ? 'Congratulations!' : 'Quiz Complete', W / 2, 170)
+    // ── Student name ─────────────────────────────────────────────
+    ctx.fillStyle = '#B8860B'; ctx.font = 'bold 34px Georgia, serif'
+    ctx.fillText(submission.student_name, W / 2, 162)
 
-    // "This certifies that"
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '400 13px Inter, system-ui, sans-serif'
-    ctx.fillText('This certifies that', W / 2, 200)
-
-    // Student name
-    ctx.fillStyle = '#818cf8'; ctx.font = 'bold 32px Inter, system-ui, sans-serif'
-    ctx.fillText(submission.student_name, W / 2, 240)
-
-    // Underline under name
+    // Underline
     const nameWidth = ctx.measureText(submission.student_name).width
-    ctx.strokeStyle = 'rgba(129,140,248,0.3)'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(W / 2 - nameWidth / 2 - 10, 248); ctx.lineTo(W / 2 + nameWidth / 2 + 10, 248); ctx.stroke()
+    ctx.strokeStyle = '#B8860B'; ctx.lineWidth = 0.8
+    ctx.beginPath(); ctx.moveTo(W / 2 - nameWidth / 2 - 12, 170); ctx.lineTo(W / 2 + nameWidth / 2 + 12, 170); ctx.stroke()
 
-    // "has completed the quiz"
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '400 13px Inter, system-ui, sans-serif'
-    ctx.fillText('has completed the quiz', W / 2, 275)
+    // ── Body text ────────────────────────────────────────────────
+    ctx.fillStyle = '#374151'; ctx.font = '14px Georgia, serif'
+    ctx.fillText('has successfully completed the examination', W / 2, 198)
 
-    // Quiz title
-    ctx.fillStyle = '#e2e8f0'; ctx.font = '600 20px Inter, system-ui, sans-serif'
-    ctx.fillText(quizTitle, W / 2, 305)
+    // ── Exam title ───────────────────────────────────────────────
+    ctx.fillStyle = '#1B2A4A'; ctx.font = 'bold 20px Georgia, serif'
+    ctx.fillText(quizTitle, W / 2, 228)
 
-    // Score section - centered boxes
-    const boxY = 340, boxH = 80, boxW = 140, gap = 20
+    // ── Score boxes ──────────────────────────────────────────────
+    const boxY = 258, boxH = 72, boxW = 138, gap = 18
     const totalBoxW = boxW * 3 + gap * 2
     const startX = (W - totalBoxW) / 2
 
-    // Score box
-    const scoreGrad = ctx.createLinearGradient(startX, boxY, startX, boxY + boxH)
-    scoreGrad.addColorStop(0, 'rgba(99,102,241,0.15)'); scoreGrad.addColorStop(1, 'rgba(99,102,241,0.05)')
-    ctx.fillStyle = scoreGrad
-    ctx.beginPath(); ctx.roundRect(startX, boxY, boxW, boxH, 8); ctx.fill()
-    ctx.strokeStyle = 'rgba(99,102,241,0.3)'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.roundRect(startX, boxY, boxW, boxH, 8); ctx.stroke()
-    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 26px Inter, system-ui, sans-serif'
-    ctx.fillText(`${submission.score}/${submission.max_score}`, startX + boxW / 2, boxY + 38)
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
-    ctx.fillText('SCORE', startX + boxW / 2, boxY + 60)
-
-    // Percentage box
-    const pctX = startX + boxW + gap
-    const pctColor = submission.passed ? '#22c55e' : '#ef4444'
-    const pctGrad = ctx.createLinearGradient(pctX, boxY, pctX, boxY + boxH)
-    pctGrad.addColorStop(0, submission.passed ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)')
-    pctGrad.addColorStop(1, submission.passed ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)')
-    ctx.fillStyle = pctGrad
-    ctx.beginPath(); ctx.roundRect(pctX, boxY, boxW, boxH, 8); ctx.fill()
-    ctx.strokeStyle = submission.passed ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.roundRect(pctX, boxY, boxW, boxH, 8); ctx.stroke()
-    ctx.fillStyle = pctColor; ctx.font = 'bold 30px Inter, system-ui, sans-serif'
-    ctx.fillText(`${submission.percentage}%`, pctX + boxW / 2, boxY + 40)
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
-    ctx.fillText('PERCENTAGE', pctX + boxW / 2, boxY + 60)
-
-    // Result box
-    const resX = pctX + boxW + gap
-    const resGrad = ctx.createLinearGradient(resX, boxY, resX, boxY + boxH)
-    resGrad.addColorStop(0, submission.passed ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)')
-    resGrad.addColorStop(1, submission.passed ? 'rgba(34,197,94,0.05)' : 'rgba(245,158,11,0.05)')
-    ctx.fillStyle = resGrad
-    ctx.beginPath(); ctx.roundRect(resX, boxY, boxW, boxH, 8); ctx.fill()
-    ctx.strokeStyle = submission.passed ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.roundRect(resX, boxY, boxW, boxH, 8); ctx.stroke()
-    ctx.fillStyle = submission.passed ? '#22c55e' : '#f59e0b'; ctx.font = 'bold 18px Inter, system-ui, sans-serif'
-    ctx.fillText(submission.passed ? 'PASSED' : 'NOT PASSED', resX + boxW / 2, boxY + 40)
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
-    ctx.fillText('RESULT', resX + boxW / 2, boxY + 60)
-
-    // Teacher comment
-    let nextY = boxY + boxH + 30
-    if (submission.teacher_comment) {
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = 'italic 13px Inter, system-ui, sans-serif'
-      const commentText = `"${submission.teacher_comment}"`
-      // Truncate long comments
-      const maxW = W - 160
-      const measured = ctx.measureText(commentText).width
-      if (measured > maxW) {
-        ctx.fillText(commentText.slice(0, 80) + '..."', W / 2, nextY)
-      } else {
-        ctx.fillText(commentText, W / 2, nextY)
-      }
-      nextY += 30
+    const drawBox = (x: number, topLabel: string, bottomLabel: string, color: string, bgColor: string) => {
+      ctx.fillStyle = bgColor
+      ctx.beginPath(); ctx.roundRect(x, boxY, boxW, boxH, 6); ctx.fill()
+      ctx.strokeStyle = color; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.roundRect(x, boxY, boxW, boxH, 6); ctx.stroke()
+      ctx.fillStyle = color; ctx.font = 'bold 22px Georgia, serif'
+      ctx.fillText(topLabel, x + boxW / 2, boxY + 34)
+      ctx.fillStyle = '#6B7280'; ctx.font = '10px Georgia, serif'
+      ctx.fillText(bottomLabel, x + boxW / 2, boxY + 56)
     }
 
-    // Date
+    drawBox(startX, `${submission.score}/${submission.max_score}`, 'SCORE', '#1B2A4A', 'rgba(27,42,74,0.05)')
+    const pctX = startX + boxW + gap
+    const pctColor = submission.passed ? '#2E7D32' : '#C62828'
+    const pctBg = submission.passed ? 'rgba(46,125,50,0.08)' : 'rgba(198,40,40,0.08)'
+    drawBox(pctX, `${submission.percentage}%`, 'PERCENTAGE', pctColor, pctBg)
+    const resX = pctX + boxW + gap
+    drawBox(resX, submission.passed ? 'PASSED' : 'FAILED', 'RESULT', pctColor, pctBg)
+
+    // ── Teacher comment ──────────────────────────────────────────
+    let nextY = boxY + boxH + 28
+    if (submission.teacher_comment) {
+      ctx.fillStyle = '#6B7280'; ctx.font = 'italic 12px Georgia, serif'
+      const commentText = `"${submission.teacher_comment}"`
+      const maxW = W - 160
+      const measured = ctx.measureText(commentText).width
+      ctx.fillText(measured > maxW ? commentText.slice(0, 80) + '..."' : commentText, W / 2, nextY)
+      nextY += 26
+    }
+
+    // ── Footer separator ─────────────────────────────────────────
+    const footerLineY = H - 82
+    ctx.strokeStyle = '#C9A84C'; ctx.lineWidth = 0.6
+    ctx.beginPath(); ctx.moveTo(mInner + 16, footerLineY); ctx.lineTo(W - mInner - 16, footerLineY); ctx.stroke()
+
+    // ── Date string (right) ──────────────────────────────────────
     const dateStr = submission.graded_at
       ? new Date(submission.graded_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
       : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
-    ctx.fillText(dateStr, W / 2, Math.max(nextY, boxY + boxH + 30))
+    ctx.fillStyle = '#6B7280'; ctx.font = '11px Georgia, serif'
+    ctx.textAlign = 'right'
+    ctx.fillText(dateStr, W - mInner - 22, H - 60)
 
-    // Footer line
-    ctx.strokeStyle = 'rgba(99,102,241,0.3)'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(W / 2 - 100, H - 50); ctx.lineTo(W / 2 + 100, H - 50); ctx.stroke()
-    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '400 10px Inter, system-ui, sans-serif'
-    ctx.fillText('ClassMeet', W / 2, H - 35)
+    // ── Teacher signature (left) ──────────────────────────────────
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#1B2A4A'; ctx.font = 'italic bold 13px Georgia, serif'
+    ctx.fillText(teacherName, mInner + 22, H - 60)
+    ctx.fillStyle = '#6B7280'; ctx.font = '10px Georgia, serif'
+    ctx.fillText('Instructor', mInner + 22, H - 44)
+
+    // ── ClassMeet branding (center) ───────────────────────────────
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#9CA3AF'; ctx.font = '10px Georgia, serif'
+    ctx.fillText('ClassMeet', W / 2, H - 44)
 
     return canvas
-  }, [submission, quizTitle])
+  }, [submission, quizTitle, teacherName])
 
   const handleDownload = useCallback(() => {
     try {
