@@ -2647,7 +2647,17 @@ select option {
 .room-grading-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
+}
+
+.room-grading-item-card {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.room-grading-item-card:hover {
+  border-color: var(--primary-400);
 }
 
 .room-grading-item {
@@ -2655,7 +2665,6 @@ select option {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-light);
   transition: background 0.15s;
 }
 .room-grading-item:hover {
@@ -2667,8 +2676,9 @@ select option {
 
 .room-grading-item-info {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
 }
 .room-grading-item-name {
   font-weight: 600;
@@ -2692,6 +2702,16 @@ select option {
 .room-grading-item-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.room-grading-expand {
+  border-top: 1px solid var(--border-light);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(0,0,0,0.1);
 }
 
 .room-grading-detail {
