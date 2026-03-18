@@ -1028,7 +1028,7 @@ function RoomInner({ roomName }: { roomName: string }) {
         <div className="room-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {!isMobile && !showParticipants && (
-              <button className="room-icon-btn" onClick={() => setParticipantsVisible(true)} title="Show participants">
+              <button className="room-icon-btn" onClick={() => setParticipantsVisible(true)} title="Show participants (Ctrl+H)">
                 <Users size={18} />
               </button>
             )}
@@ -1041,7 +1041,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {isMobile && (
-              <button className="room-icon-btn" onClick={() => setParticipantsVisible(v => !v)} title="Participants">
+              <button className="room-icon-btn" onClick={() => setParticipantsVisible(v => !v)} title="Participants (Ctrl+H)">
                 <Users size={18} />
               </button>
             )}
@@ -1130,6 +1130,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           onToggleQuiz={toggleQuiz}
           onSelectCourse={activateCourse}
           onSelectQuiz={activateQuiz}
+          onToggleParticipants={() => setParticipantsVisible(v => !v)}
         />
       </div>
 
@@ -1183,7 +1184,7 @@ function ParticipantsPanel({ participants, cameraTracks, spotlightIdentity, teac
           <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Participants</span>
           <span className="room-count-badge">{participants.length}</span>
         </div>
-        <button className="room-icon-btn room-icon-btn-sm" onClick={onClose} title="Hide participants">
+        <button className="room-icon-btn room-icon-btn-sm" onClick={onClose} title="Hide participants (Ctrl+H)">
           <ChevronLeft size={16} />
         </button>
       </div>
@@ -2786,6 +2787,7 @@ interface ControlBarProps {
   onToggleQuiz: () => void
   onSelectCourse: (courseId: string, lessonIndex: number) => void
   onSelectQuiz: (quizId: string) => void
+  onToggleParticipants: () => void
 }
 
 function ControlBarCustom({
@@ -2793,7 +2795,7 @@ function ControlBarCustom({
   isTeacher, localParticipant, onToggleHand, onLowerAllHands, onSettings, onLeave, raisedHandCount, isMobile,
   isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
   onToggleBlackboard, linkedCourses, linkedQuizzes,
-  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz,
+  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, onToggleParticipants,
 }: ControlBarProps) {
   const [showCourseMenu, setShowCourseMenu] = useState(false)
   const [showQuizMenu, setShowQuizMenu] = useState(false)
@@ -2889,7 +2891,7 @@ function ControlBarCustom({
         return
       }
 
-      if (key === 'q') {
+      if (key === 'e') {
         e.preventDefault()
         if (isQuizActive || activeQuizId) {
           onToggleQuiz()
@@ -2897,6 +2899,12 @@ function ControlBarCustom({
           setShowQuizMenu(true)
           setShowCourseMenu(false)
         }
+        return
+      }
+
+      if (key === 'h') {
+        e.preventDefault()
+        onToggleParticipants()
       }
     }
 
@@ -2911,6 +2919,7 @@ function ControlBarCustom({
     onToggleBlackboard,
     onToggleCourse,
     onToggleQuiz,
+    onToggleParticipants,
   ])
 
   return (
@@ -3040,7 +3049,7 @@ function ControlBarCustom({
               <button
                 className={`room-control-btn ${isQuizActive ? 'room-control-btn-active' : ''}`}
                 onClick={handleQuizButton}
-                title={isQuizActive ? 'Hide quiz (Ctrl+Q)' : 'Show quiz (Ctrl+Q)'}
+                title={isQuizActive ? 'Hide exam (Ctrl+E)' : 'Show exam (Ctrl+E)'}
               >
                 <HelpCircle size={20} />
                 <span className="room-control-label">Exam</span>
