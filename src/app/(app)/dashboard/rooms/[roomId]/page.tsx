@@ -1923,23 +1923,6 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                   </div>
                 )}
 
-                {gradingSubmission.status !== 'revealed' && (
-                  <div className="room-grading-pass-toggle">
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Result:</span>
-                    <button
-                      className={`btn btn-sm ${passedMap[gradingSubmission.id] ? 'room-grading-pass-active' : 'btn-outline'}`}
-                      onClick={() => setPassedMap(prev => ({ ...prev, [gradingSubmission.id]: true }))}
-                    >
-                      <Check size={13} /> Pass
-                    </button>
-                    <button
-                      className={`btn btn-sm ${passedMap[gradingSubmission.id] === false ? 'room-grading-fail-active' : 'btn-outline'}`}
-                      onClick={() => setPassedMap(prev => ({ ...prev, [gradingSubmission.id]: false }))}
-                    >
-                      <X size={13} /> Fail
-                    </button>
-                  </div>
-                )}
 
                 <div className="room-grading-questions">
                   {quiz.questions.map((q, qi) => {
@@ -2058,6 +2041,22 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                 </div>
 
                 <div className="room-grading-actions">
+                  {gradingSubmission.status !== 'revealed' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: 'auto' }}>
+                      <button
+                        className={`btn btn-sm ${passedMap[gradingSubmission.id] ? 'room-grading-pass-active' : 'btn-outline'}`}
+                        onClick={() => setPassedMap(prev => ({ ...prev, [gradingSubmission.id]: true }))}
+                      >
+                        <Check size={13} /> Pass
+                      </button>
+                      <button
+                        className={`btn btn-sm ${passedMap[gradingSubmission.id] === false ? 'room-grading-fail-active' : 'btn-outline'}`}
+                        onClick={() => setPassedMap(prev => ({ ...prev, [gradingSubmission.id]: false }))}
+                      >
+                        <X size={13} /> Fail
+                      </button>
+                    </div>
+                  )}
                   {gradingSubmission.status === 'submitted' ? (
                     <button className="btn btn-primary" disabled={grading === gradingSubmission.id} onClick={() => handleGrade(gradingSubmission)}>
                       {grading === gradingSubmission.id ? 'Saving Results...' : `Save Results (${computed.score}/${computed.maxScore})`}

@@ -61,25 +61,18 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
 export async function PATCH(request: Request, props: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await props.params
-    const user = await requireAuth(request)
-    const body = await request.json()
+    const [user, body] = await Promise.all([requireAuth(request), request.json()])
     const supabase = await createClient()
 
-    // Fetch the submission + quiz to verify teacher ownership
+    // Single join query instead of two sequential selects
     const { data: submission } = await supabase
       .from('quiz_submissions')
-      .select('quiz_id')
+      .select('quiz_id, quizzes!quiz_id(teacher_id, pass_threshold)')
       .eq('id', id)
       .single()
 
     if (!submission) return apiError('Submission not found', 404)
-
-    const { data: quiz } = await supabase
-      .from('quizzes')
-      .select('teacher_id, pass_threshold')
-      .eq('id', submission.quiz_id)
-      .single()
-
+    const quiz = (submission as unknown as { quizzes: { teacher_id: string; pass_threshold: number } }).quizzes
     if (!quiz) return apiError('Quiz not found', 404)
     if (quiz.teacher_id !== user.id) {
       return apiError('Forbidden', 403)
