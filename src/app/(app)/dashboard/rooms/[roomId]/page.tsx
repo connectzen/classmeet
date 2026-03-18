@@ -515,8 +515,22 @@ function RoomInner({ roomName }: { roomName: string }) {
   const toggleBlackboard = useCallback(() => {
     const next = !blackboardActive
     setBlackboardActive(next)
-    if (next) bringLayerToFront('blackboard')
-    else removeLayerFromOrder('blackboard')
+    if (next) {
+      bringLayerToFront('blackboard')
+      // Auto-stop competing layers so students never see a stale layer
+      if (quizActive) {
+        setQuizActive(false)
+        removeLayerFromOrder('quiz')
+        sendPresentData(encoder.encode(JSON.stringify({ type: 'stop-quiz' })), { reliable: true })
+      }
+      if (courseActive) {
+        setCourseActive(false)
+        removeLayerFromOrder('course')
+        sendPresentData(encoder.encode(JSON.stringify({ type: 'stop-course' })), { reliable: true })
+      }
+    } else {
+      removeLayerFromOrder('blackboard')
+    }
     updateLayerOrder('blackboard', next)
 
     const event: BlackboardEvent = next ? { type: 'activate' } : { type: 'deactivate' }
@@ -533,7 +547,7 @@ function RoomInner({ roomName }: { roomName: string }) {
         }
       }, 200)
     }
-  }, [blackboardActive, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendBlackboardData])
+  }, [blackboardActive, quizActive, courseActive, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendBlackboardData, sendPresentData])
 
   // Teacher: activate course layer
   const activateCourse = useCallback((courseId: string, lessonIndex = 0) => {
@@ -541,10 +555,16 @@ function RoomInner({ roomName }: { roomName: string }) {
     setCurrentLessonIndex(lessonIndex)
     setCourseActive(true)
     bringLayerToFront('course')
+    // Auto-stop quiz so students don't see a stale exam layer
+    if (quizActive) {
+      setQuizActive(false)
+      removeLayerFromOrder('quiz')
+      sendPresentData(encoder.encode(JSON.stringify({ type: 'stop-quiz' })), { reliable: true })
+    }
     updateLayerOrder('course', true)
     const payload = encoder.encode(JSON.stringify({ type: 'start-course', courseId, lessonIndex }))
     sendPresentData(payload, { reliable: true })
-  }, [bringLayerToFront, updateLayerOrder, sendPresentData])
+  }, [quizActive, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
 
   const toggleCourse = useCallback(() => {
     if (!activeCourseId) return
@@ -558,6 +578,12 @@ function RoomInner({ roomName }: { roomName: string }) {
     }
     setCourseActive(true)
     bringLayerToFront('course')
+    // Auto-stop quiz so students don't see a stale exam layer
+    if (quizActive) {
+      setQuizActive(false)
+      removeLayerFromOrder('quiz')
+      sendPresentData(encoder.encode(JSON.stringify({ type: 'stop-quiz' })), { reliable: true })
+    }
     updateLayerOrder('course', true)
     const payload = encoder.encode(JSON.stringify({
       type: 'start-course',
@@ -565,7 +591,7 @@ function RoomInner({ roomName }: { roomName: string }) {
       lessonIndex: currentLessonIndex,
     }))
     sendPresentData(payload, { reliable: true })
-  }, [activeCourseId, courseActive, currentLessonIndex, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
+  }, [activeCourseId, courseActive, quizActive, currentLessonIndex, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
 
   // Teacher: activate quiz layer
   const activateQuiz = useCallback((quizId: string) => {
@@ -584,10 +610,22 @@ function RoomInner({ roomName }: { roomName: string }) {
     locallyRevealedSubmissionIdsRef.current = new Set()
     setQuizActive(true)
     bringLayerToFront('quiz')
+    // Auto-stop course so students don't see a stale course layer
+    if (courseActive) {
+      setCourseActive(false)
+      removeLayerFromOrder('course')
+      sendPresentData(encoder.encode(JSON.stringify({ type: 'stop-course' })), { reliable: true })
+    }
+    // Auto-stop blackboard so students don't see a stale board
+    if (blackboardActive) {
+      setBlackboardActive(false)
+      removeLayerFromOrder('blackboard')
+      sendBlackboardData(encoder.encode(JSON.stringify({ type: 'deactivate' })), { reliable: true })
+    }
     updateLayerOrder('quiz', true)
     const payload = encoder.encode(JSON.stringify({ type: 'start-quiz', quizId, questionIndex: 0 }))
     sendPresentData(payload, { reliable: true })
-  }, [bringLayerToFront, updateLayerOrder, sendPresentData])
+  }, [courseActive, blackboardActive, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData, sendBlackboardData])
 
   const toggleQuiz = useCallback(() => {
     if (!activeQuizId) return
@@ -601,6 +639,12 @@ function RoomInner({ roomName }: { roomName: string }) {
     }
     setQuizActive(true)
     bringLayerToFront('quiz')
+    // Auto-stop course so students don't see a stale course layer
+    if (courseActive) {
+      setCourseActive(false)
+      removeLayerFromOrder('course')
+      sendPresentData(encoder.encode(JSON.stringify({ type: 'stop-course' })), { reliable: true })
+    }
     updateLayerOrder('quiz', true)
     const payload = encoder.encode(JSON.stringify({
       type: 'start-quiz',
@@ -608,7 +652,7 @@ function RoomInner({ roomName }: { roomName: string }) {
       questionIndex: currentQuestionIndex,
     }))
     sendPresentData(payload, { reliable: true })
-  }, [activeQuizId, quizActive, currentQuestionIndex, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
+  }, [activeQuizId, quizActive, courseActive, currentQuestionIndex, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
 
   // Teacher: navigate course lesson
   const navigateCourseLesson = useCallback((index: number) => {
