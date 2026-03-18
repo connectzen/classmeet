@@ -2900,6 +2900,33 @@ select option {
   gap: 8px;
 }
 
+/* Pass / Fail toggle */
+.room-grading-pass-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.room-grading-pass-toggle label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+.room-grading-pass-active {
+  background: rgba(34,197,94,0.2) !important;
+  color: var(--success-400, #4ade80) !important;
+  border: 1px solid var(--success-400, #4ade80) !important;
+}
+.room-grading-fail-active {
+  background: rgba(239,68,68,0.2) !important;
+  color: var(--error-400, #f87171) !important;
+  border: 1px solid var(--error-400, #f87171) !important;
+}
+
 /* Text question grading */
 .room-grading-text-answer {
   display: flex;

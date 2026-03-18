@@ -99,7 +99,10 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
         ? Math.round((body.score / body.max_score) * 100 * 100) / 100
         : 0
       update.percentage = pct
-      update.passed = pct >= (quiz.pass_threshold ?? 70)
+      // Allow explicit pass/fail override from teacher; otherwise auto-calculate
+      update.passed = body.passed !== undefined ? body.passed : pct >= (quiz.pass_threshold ?? 70)
+    } else if (body.passed !== undefined) {
+      update.passed = body.passed
     }
 
     if (body.status === 'graded') {
