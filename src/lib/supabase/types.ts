@@ -160,7 +160,7 @@ export type QuizSubmission = {
   student_name: string
   started_at: string
   submitted_at: string | null
-  status: 'in_progress' | 'submitted' | 'graded'
+  status: 'in_progress' | 'submitted' | 'graded' | 'revealed'
   score: number
   max_score: number
   percentage: number

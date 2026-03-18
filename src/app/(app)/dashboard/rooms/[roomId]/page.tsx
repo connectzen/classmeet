@@ -216,6 +216,8 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [quizSubmitted, setQuizSubmitted] = useState(false)
   const [revealingSubmission, setRevealingSubmission] = useState<QuizSubmission | null>(null)
   const [revealCountdown, setRevealCountdown] = useState<number | null>(null)
+  // Student: track whether results have been revealed to them
+  const [quizResultRevealed, setQuizResultRevealed] = useState<QuizSubmission | null>(null)
   // Track student progress: identity -> { answered, total }
   const [quizProgress, setQuizProgress] = useState<Record<string, { answered: number; total: number }>>({})
   // Track submitted students: identity -> student name (teacher awareness)
@@ -458,11 +460,15 @@ function RoomInner({ roomName }: { roomName: string }) {
           .then(r => r.json()).then(d => { if (d.data) setQuizSubmissions(d.data) })
       }
     } else if (event.type === 'quiz-reveal-results' && event.submission) {
-      // Teacher is revealing a student's result
-      setRevealingSubmission(event.submission)
-      setRevealCountdown(3)
+      // Student: teacher is revealing a student's result (only show on student side)
+      if (!isTeacherRef.current) {
+        setRevealingSubmission(event.submission)
+        setRevealCountdown(3)
+      }
     } else if (event.type === 'quiz-result-countdown' && event.countdown !== undefined) {
-      setRevealCountdown(event.countdown)
+      if (!isTeacherRef.current) {
+        setRevealCountdown(event.countdown)
+      }
     }
   })
 
@@ -697,21 +703,19 @@ function RoomInner({ roomName }: { roomName: string }) {
     if (res.ok) refreshSubmissions()
   }, [refreshSubmissions])
 
-  // Teacher: reveal results to everyone with countdown
-  const revealResults = useCallback((submission: QuizSubmission) => {
-    setRevealingSubmission(submission)
-    setRevealCountdown(3)
+  // Teacher: reveal results to student only (no overlay on teacher side)
+  const revealResults = useCallback(async (submission: QuizSubmission) => {
+    // Send reveal to students via data channel
     const payload = encoder.encode(JSON.stringify({
       type: 'quiz-reveal-results',
       submission,
     }))
     sendPresentData(payload, { reliable: true })
 
-    // Run countdown
+    // Run countdown (sent to students only)
     let count = 3
     const interval = setInterval(() => {
       count--
-      setRevealCountdown(count)
       const cdPayload = encoder.encode(JSON.stringify({
         type: 'quiz-result-countdown',
         countdown: count,
@@ -719,13 +723,24 @@ function RoomInner({ roomName }: { roomName: string }) {
       sendPresentData(cdPayload, { reliable: true })
       if (count <= 0) clearInterval(interval)
     }, 1000)
-  }, [sendPresentData])
 
-  // Dismiss result reveal
+    // Mark submission as revealed in the database
+    await fetch(`/api/quiz-submissions/${submission.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'revealed' }),
+    })
+    refreshSubmissions()
+  }, [sendPresentData, refreshSubmissions])
+
+  // Dismiss result reveal — student remembers the revealed result
   const dismissReveal = useCallback(() => {
+    if (revealingSubmission) {
+      setQuizResultRevealed(revealingSubmission)
+    }
     setRevealingSubmission(null)
     setRevealCountdown(null)
-  }, [])
+  }, [revealingSubmission])
 
   // Get active course/quiz data
   const activeCourse = useMemo(() =>
@@ -1028,6 +1043,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           onDeleteSubmission={deleteSubmission}
           onRevealResults={revealResults}
           onRefreshSubmissions={refreshSubmissions}
+          quizResultRevealed={quizResultRevealed}
         />
 
         {/* Quiz result reveal overlay */}
@@ -1211,7 +1227,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
   submittedStudents,
   showGradingPanel, onToggleGradingPanel,
-  onGradeSubmission, onRevealResults, onRefreshSubmissions,
+  onGradeSubmission, onRevealResults, onRefreshSubmissions, quizResultRevealed,
 }: {
   participant: LKParticipant | undefined
   screenShare: TrackReferenceOrPlaceholder | null
@@ -1251,6 +1267,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   onDeleteSubmission: (id: string) => Promise<void>
   onRevealResults: (submission: QuizSubmission) => void
   onRefreshSubmissions: () => Promise<void>
+  quizResultRevealed: QuizSubmission | null
 }) {
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
@@ -1372,6 +1389,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
             onDeleteSubmission={onDeleteSubmission}
             onRevealResults={onRevealResults}
             onRefreshSubmissions={onRefreshSubmissions}
+            quizResultRevealed={quizResultRevealed}
           />
         </div>
       )}
@@ -1506,7 +1524,7 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
 function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdvance, onReveal, onAnswer, onSubmitAll, localIdentity, teacherName,
   quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
   submittedStudents,
-  showGradingPanel, onToggleGradingPanel, onGradeSubmission, onDeleteSubmission, onRevealResults, onRefreshSubmissions,
+  showGradingPanel, onToggleGradingPanel, onGradeSubmission, onDeleteSubmission, onRevealResults, onRefreshSubmissions, quizResultRevealed,
 }: {
   quiz: LinkedQuiz
   currentIndex: number
@@ -1530,6 +1548,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   onDeleteSubmission: (id: string) => Promise<void>
   onRevealResults: (submission: QuizSubmission) => void
   onRefreshSubmissions: () => Promise<void>
+  quizResultRevealed: QuizSubmission | null
 }) {
   const totalQuestions = quiz.questions.length
 
@@ -1644,6 +1663,51 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
 
   // Student: quiz already submitted
   if (!isHost && quizSubmitted) {
+    // If results have been revealed, show the result summary
+    if (quizResultRevealed) {
+      const sub = quizResultRevealed
+      return (
+        <div className="room-presentation">
+          <div className="room-presentation-header">
+            <Trophy size={16} />
+            <span className="room-presentation-title">{quiz.title}</span>
+            <span className="room-presentation-subtitle">Results Revealed</span>
+          </div>
+          <div className="room-presentation-content room-quiz-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '24px 16px' }}>
+            <div className="room-quiz-submitted-icon" style={{ color: sub.passed ? 'var(--success-400)' : 'var(--error-400)' }}>
+              <Trophy size={48} />
+            </div>
+            <h2 style={{ margin: 0, fontSize: '1.3rem' }}>{sub.passed ? 'Congratulations!' : 'Quiz Complete'}</h2>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{sub.score}/{sub.max_score}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Score</div>
+              </div>
+              <div style={{ width: 1, height: 36, background: 'var(--border-light)' }} />
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 700, color: sub.passed ? 'var(--success-400)' : 'var(--error-400)' }}>{sub.percentage}%</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Percentage</div>
+              </div>
+              <div style={{ width: 1, height: 36, background: 'var(--border-light)' }} />
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 700, color: sub.passed ? 'var(--success-400)' : 'var(--warning-500)' }}>{sub.passed ? 'PASSED' : 'NOT PASSED'}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Result</div>
+              </div>
+            </div>
+            {sub.teacher_comment && (
+              <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center', fontStyle: 'italic', fontSize: '0.88rem' }}>
+                &ldquo;{sub.teacher_comment}&rdquo;
+              </p>
+            )}
+            <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center', fontSize: '0.82rem' }}>
+              Waiting for others to finish...
+            </p>
+          </div>
+        </div>
+      )
+    }
+
+    // Default: waiting for teacher
     return (
       <div className="room-presentation">
         <div className="room-presentation-header">
@@ -1756,14 +1820,23 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                     <span className="room-teacher-participant-badge room-teacher-badge-submitted">
                       <Check size={12} /> Submitted
                     </span>
-                    {submission?.status === 'graded' && (
+                    {(submission?.status === 'graded' || submission?.status === 'revealed') && (
                       <span className="room-teacher-participant-badge room-teacher-badge-graded">
                         {submission.score}/{submission.max_score} ({submission.percentage}%)
                       </span>
                     )}
+                    {submission?.status === 'revealed' && (
+                      <span className="room-teacher-participant-badge" style={{ color: 'var(--primary-400)', background: 'rgba(139,92,246,0.15)' }}>
+                        ✓ Revealed
+                      </span>
+                    )}
                   </div>
                   <div className="room-teacher-participant-actions">
-                    {submission && submission.status === 'graded' ? (
+                    {submission && submission.status === 'revealed' ? (
+                      <button className="btn btn-outline btn-sm" onClick={() => { onToggleGradingPanel() }}>
+                        <Eye size={14} /> Review
+                      </button>
+                    ) : submission && submission.status === 'graded' ? (
                       <>
                         <button className="btn btn-outline btn-sm" onClick={() => { onToggleGradingPanel() }}>
                           <Eye size={14} /> Review
@@ -2004,15 +2077,26 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
               <div className="room-presentation-empty">No submissions yet</div>
             ) : (
               submissions.map(sub => (
-                <div key={sub.id} className={`room-grading-item ${sub.status === 'graded' ? 'room-grading-item-graded' : ''}`}>
+                <div key={sub.id} className={`room-grading-item ${sub.status === 'graded' || sub.status === 'revealed' ? 'room-grading-item-graded' : ''}`}>
                   <div className="room-grading-item-info">
                     <span className="room-grading-item-name">{sub.student_name}</span>
                     <span className={`room-grading-item-status room-grading-status-${sub.status}`}>
-                      {sub.status === 'graded' ? `${sub.score}/${sub.max_score} (${sub.percentage}%)` : sub.status}
+                      {sub.status === 'graded' || sub.status === 'revealed'
+                        ? `${sub.score}/${sub.max_score} (${sub.percentage}%)`
+                        : sub.status}
                     </span>
+                    {sub.status === 'revealed' && (
+                      <span className="room-grading-item-status room-grading-status-revealed">✓ Revealed</span>
+                    )}
                   </div>
                   <div className="room-grading-item-actions">
-                    {sub.status === 'graded' ? (
+                    {sub.status === 'revealed' ? (
+                      <>
+                        <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || '') }}>
+                          <Eye size={14} /> Review
+                        </button>
+                      </>
+                    ) : sub.status === 'graded' ? (
                       <>
                         <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || '') }}>
                           <Eye size={14} /> Review

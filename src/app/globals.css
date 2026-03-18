@@ -2684,6 +2684,10 @@ select option {
   color: var(--success-500);
   font-weight: 600;
 }
+.room-grading-status-revealed {
+  color: var(--primary-400);
+  font-weight: 600;
+}
 
 .room-grading-item-actions {
   display: flex;
