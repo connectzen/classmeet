@@ -776,8 +776,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       // 5-second polling will confirm from DB — no eager refresh needed here.
     } catch (e) {
       console.error('Reveal failed:', e)
-      locallyRevealedSubmissionIdsRef.current.delete(submission.id)
-      await refreshSubmissions()
+      // Do NOT remove from ref — the data channel notification already reached the student,
+      // so the teacher's UI should permanently stay "✓ Revealed" for this session.
     }
   }, [sendPresentData, refreshSubmissions])
 
