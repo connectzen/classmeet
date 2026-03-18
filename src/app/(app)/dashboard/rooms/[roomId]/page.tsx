@@ -1616,18 +1616,25 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
     try {
       const responses = responsesMap[sub.id] || []
       const questionScores = scoresMap[sub.id] || {}
-      await Promise.all(
-        responses.map((resp, idx) => {
+      // Only PATCH responses for teacher-scored (text) questions — MCQ scores
+      // are already stored at submit time, so re-patching them is unnecessary
+      // and causes N slow auth+DB round-trips that make grading appear to hang.
+      const textPatches = responses
+        .map((resp, idx) => {
+          const q = quiz.questions[idx]
+          const isTextQuestion = q?.question_type === 'short_answer' || q?.question_type === 'fill_blank'
+          if (!isTextQuestion || !resp?.id) return null
           const pts = questionScores[idx]
-          if (pts == null || !resp?.id) return null
-          const maxPts = quiz.questions[idx]?.points || 1
+          if (pts == null) return null
+          const maxPts = q?.points || 1
           return fetch(`/api/quiz-responses/${resp.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_correct: pts >= maxPts, score: pts }),
           })
-        }).filter(Boolean)
-      )
+        })
+        .filter(Boolean)
+      if (textPatches.length > 0) await Promise.all(textPatches)
       const computed = getComputedScore(sub.id)
       await onGradeSubmission(sub.id, computed.score, computed.maxScore, commentsMap[sub.id] || '', passedMap[sub.id])
       setExpandedId(null)
