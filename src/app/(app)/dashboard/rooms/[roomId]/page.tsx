@@ -23,7 +23,7 @@ import {
   LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
   MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
   Check, Clock, ArrowLeft, ArrowRight, Award, Eye, Download,
-  ClipboardList, Star, Trophy,
+  ClipboardList, Star, Trophy, Play,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
@@ -193,6 +193,10 @@ function RoomInner({ roomName }: { roomName: string }) {
   const blackboardRef = useRef<BlackboardHandle>(null)
   const prevParticipantCount = useRef(0)
   const prevPresentParticipantCount = useRef(0)
+  // Refs for data channel closure (avoid stale values)
+  const isTeacherRef = useRef(false)
+  const activeQuizIdRef = useRef<string | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
   // Presentation state
   const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([])
   const [linkedQuizzes, setLinkedQuizzes] = useState<LinkedQuiz[]>([])
@@ -227,6 +231,9 @@ function RoomInner({ roomName }: { roomName: string }) {
   }, [])
 
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'member'
+
+  // Keep refs in sync for data channel closure
+  isTeacherRef.current = isTeacher
 
   const showParticipants = isMobile ? mobileShowParticipants : desktopShowParticipants
   const showChat = isMobile ? mobileShowChat : desktopShowChat
@@ -267,6 +274,7 @@ function RoomInner({ roomName }: { roomName: string }) {
         .single()
       if (!session) return
       setSessionId(session.id)
+      sessionIdRef.current = session.id
 
       // Load linked courses with topics + lessons
       const { data: sessionCourses } = await supabase
@@ -412,6 +420,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     } else if (event.type === 'start-quiz') {
       setQuizActive(true)
       setActiveQuizId(event.quizId || null)
+      activeQuizIdRef.current = event.quizId || null
       setCurrentQuestionIndex(event.questionIndex ?? 0)
       setQuizRevealed(false)
       setQuizAnswers({})
@@ -443,8 +452,9 @@ function RoomInner({ roomName }: { roomName: string }) {
       setQuizProgress(prev => {
         const next = { ...prev }; delete next[event.identity!]; return next
       })
-      if (isTeacher && activeQuizId && sessionId) {
-        fetch(`/api/quiz-submissions?quiz_id=${activeQuizId}&session_id=${sessionId}`)
+      // Use refs for fresh values (avoid stale closure)
+      if (isTeacherRef.current && activeQuizIdRef.current && sessionIdRef.current) {
+        fetch(`/api/quiz-submissions?quiz_id=${activeQuizIdRef.current}&session_id=${sessionIdRef.current}`)
           .then(r => r.json()).then(d => { if (d.data) setQuizSubmissions(d.data) })
       }
     } else if (event.type === 'quiz-reveal-results' && event.submission) {
@@ -531,6 +541,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Teacher: activate quiz layer
   const activateQuiz = useCallback((quizId: string) => {
     setActiveQuizId(quizId)
+    activeQuizIdRef.current = quizId
     setCurrentQuestionIndex(0)
     setQuizRevealed(false)
     setQuizAnswers({})
@@ -1513,6 +1524,30 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   // Students track their own answers locally per question index
   const [studentAnswers, setStudentAnswers] = useState<Record<number, number>>({})
   const [submitting, setSubmitting] = useState(false)
+  // Student: "Join Quiz" gate — must click to enter
+  const [quizJoined, setQuizJoined] = useState(false)
+
+  // Teacher: poll for submissions every 5 seconds (data channel may be unreliable)
+  useEffect(() => {
+    if (!isHost) return
+    onRefreshSubmissions()
+    const interval = setInterval(() => { onRefreshSubmissions() }, 5000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost])
+
+  // Teacher: derive submitted list by merging data channel + API submissions
+  const allSubmitted = useMemo(() => {
+    const merged: Record<string, string> = { ...submittedStudents }
+    for (const sub of quizSubmissions) {
+      // Use student_id as key, student_name as value — avoid duplicates
+      const alreadyTracked = Object.values(merged).some(name => name === sub.student_name)
+      if (!alreadyTracked) {
+        merged[sub.student_id || sub.student_name] = sub.student_name
+      }
+    }
+    return merged
+  }, [submittedStudents, quizSubmissions])
 
   const activeIndex = isHost ? currentIndex : studentIndex
   const question = quiz.questions[activeIndex]
@@ -1600,10 +1635,39 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
     )
   }
 
+  // ── Student: "Join Quiz" landing screen ──
+  if (!isHost && !quizJoined) {
+    return (
+      <div className="room-presentation">
+        <div className="room-presentation-header">
+          <HelpCircle size={16} />
+          <span className="room-presentation-title">{quiz.title}</span>
+        </div>
+        <div className="room-presentation-content room-quiz-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '32px 16px' }}>
+          <div className="room-quiz-join-icon">
+            <HelpCircle size={48} />
+          </div>
+          <h2 style={{ margin: 0, fontSize: '1.3rem', textAlign: 'center' }}>{quiz.title}</h2>
+          <div className="room-quiz-join-info">
+            <span>{totalQuestions} question{totalQuestions !== 1 ? 's' : ''}</span>
+            <span>•</span>
+            <span>By {teacherName}</span>
+          </div>
+          <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center', fontSize: '0.88rem', maxWidth: 340 }}>
+            When you&apos;re ready, click the button below to start. You can navigate questions at your own pace and submit when done.
+          </p>
+          <button className="btn btn-primary" style={{ padding: '10px 32px', fontSize: '1rem' }} onClick={() => setQuizJoined(true)}>
+            <Play size={18} /> Start Quiz
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ── Teacher: Live monitoring dashboard (no quiz questions) ──
   if (isHost) {
-    const workingStudents = Object.entries(quizProgress).filter(([id]) => !submittedStudents[id])
-    const submittedList = Object.entries(submittedStudents)
+    const workingStudents = Object.entries(quizProgress).filter(([id]) => !allSubmitted[id])
+    const submittedList = Object.entries(allSubmitted)
     const totalParticipants = workingStudents.length + submittedList.length
 
     return (
