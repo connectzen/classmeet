@@ -48,7 +48,7 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 // ── Presentation types ───────────────────────────────────────────────────────
-type LayerKey = 'blackboard' | 'course' | 'quiz'
+type LayerKey = 'blackboard' | 'course' | 'quiz' | 'camera'
 
 interface LinkedCourse extends Course {
   topics: (Topic & { lessons: Lesson[] })[]
@@ -654,6 +654,12 @@ function RoomInner({ roomName }: { roomName: string }) {
     sendPresentData(payload, { reliable: true })
   }, [activeQuizId, quizActive, courseActive, currentQuestionIndex, bringLayerToFront, removeLayerFromOrder, updateLayerOrder, sendPresentData])
 
+  // Teacher: toggle camera layer — bring to front or send to back (no stream start/stop)
+  const toggleCameraLayer = useCallback(() => {
+    const isActive = layerOrder.includes('camera')
+    updateLayerOrder('camera', !isActive)
+  }, [layerOrder, updateLayerOrder])
+
   // Teacher: navigate course lesson
   const navigateCourseLesson = useCallback((index: number) => {
     setCurrentLessonIndex(index)
@@ -1174,7 +1180,8 @@ function RoomInner({ roomName }: { roomName: string }) {
           onToggleQuiz={toggleQuiz}
           onSelectCourse={activateCourse}
           onSelectQuiz={activateQuiz}
-          onSpotlightTeacher={() => handlePromote(teacherParticipant?.identity ?? '')}
+          isCameraLayerActive={layerOrder.includes('camera')}
+          onToggleCameraLayer={toggleCameraLayer}
         />
       </div>
 
@@ -1390,7 +1397,10 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
       )}
 
       {showCamera && (
-        <div className={`room-stage-video ${isSpeaking ? 'room-stage-speaking' : ''}`} style={{ zIndex: 1 }}>
+        <div
+          className={`room-stage-video ${isSpeaking ? 'room-stage-speaking' : ''} ${layerOrder.includes('camera') ? `room-stage-layer ${frontLayer === 'camera' ? 'room-stage-layer-front' : 'room-stage-layer-back'}` : ''}`}
+          style={{ zIndex: layerOrder.includes('camera') ? getLayerZIndex('camera') : 1 }}
+        >
           {camTrack && camTrack.publication?.track ? (
             <VideoTrack trackRef={camTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
@@ -2831,7 +2841,8 @@ interface ControlBarProps {
   onToggleQuiz: () => void
   onSelectCourse: (courseId: string, lessonIndex: number) => void
   onSelectQuiz: (quizId: string) => void
-  onSpotlightTeacher: () => void
+  isCameraLayerActive: boolean
+  onToggleCameraLayer: () => void
 }
 
 function ControlBarCustom({
@@ -2839,7 +2850,7 @@ function ControlBarCustom({
   isTeacher, localParticipant, onToggleHand, onLowerAllHands, onSettings, onLeave, raisedHandCount, isMobile,
   isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
   onToggleBlackboard, linkedCourses, linkedQuizzes,
-  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, onSpotlightTeacher,
+  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, isCameraLayerActive, onToggleCameraLayer,
 }: ControlBarProps) {
   const [showCourseMenu, setShowCourseMenu] = useState(false)
   const [showQuizMenu, setShowQuizMenu] = useState(false)
@@ -2962,7 +2973,7 @@ function ControlBarCustom({
 
       if (code === 'KeyH') {
         e.preventDefault()
-        onSpotlightTeacher()
+        onToggleCameraLayer()
       }
     }
 
@@ -2977,7 +2988,7 @@ function ControlBarCustom({
     onToggleBlackboard,
     onToggleCourse,
     onToggleQuiz,
-    onSpotlightTeacher,
+    onToggleCameraLayer,
   ])
 
   return (
@@ -3147,6 +3158,15 @@ function ControlBarCustom({
             >
               <PenTool size={20} />
               <span className="room-control-label">Board</span>
+            </button>
+
+            <button
+              className={`room-control-btn ${isCameraLayerActive ? 'room-control-btn-active' : ''}`}
+              onClick={onToggleCameraLayer}
+              title={isCameraLayerActive ? 'Send camera to back (Ctrl+H)' : 'Bring camera to front (Ctrl+H)'}
+            >
+              <Video size={20} />
+              <span className="room-control-label">Host</span>
             </button>
           </>
         )}
