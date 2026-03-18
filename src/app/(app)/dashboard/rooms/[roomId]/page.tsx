@@ -197,6 +197,8 @@ function RoomInner({ roomName }: { roomName: string }) {
   const isTeacherRef = useRef(false)
   const activeQuizIdRef = useRef<string | null>(null)
   const sessionIdRef = useRef<string | null>(null)
+  // Keep locally revealed statuses stable while polling catches up.
+  const locallyRevealedSubmissionIdsRef = useRef<Set<string>>(new Set())
   // Presentation state
   const [linkedCourses, setLinkedCourses] = useState<LinkedCourse[]>([])
   const [linkedQuizzes, setLinkedQuizzes] = useState<LinkedQuiz[]>([])
@@ -456,7 +458,15 @@ function RoomInner({ roomName }: { roomName: string }) {
       // Use refs for fresh values (avoid stale closure)
       if (isTeacherRef.current && activeQuizIdRef.current && sessionIdRef.current) {
         fetch(`/api/quiz-submissions?quiz_id=${activeQuizIdRef.current}&session_id=${sessionIdRef.current}`)
-          .then(r => r.json()).then(d => { if (d.data) setQuizSubmissions(d.data) })
+          .then(r => r.json()).then(d => {
+            if (d.data) {
+              setQuizSubmissions(d.data.map((s: QuizSubmission) => (
+                locallyRevealedSubmissionIdsRef.current.has(s.id)
+                  ? { ...s, status: 'revealed' }
+                  : s
+              )))
+            }
+          })
       }
     } else if (event.type === 'quiz-reveal-results' && event.submission) {
       // Student: teacher is revealing a student's result (only show on student side)
@@ -569,6 +579,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     setRevealCountdown(null)
     setQuizProgress({})
     setSubmittedStudents({})
+    locallyRevealedSubmissionIdsRef.current = new Set()
     setQuizActive(true)
     bringLayerToFront('quiz')
     updateLayerOrder('quiz', true)
@@ -656,6 +667,9 @@ function RoomInner({ roomName }: { roomName: string }) {
     const activeQ = linkedQuizzes.find(q => q.id === activeQuizId)
     if (!activeQ) return
 
+    // Immediately move student to the submitted/waiting screen.
+    setQuizSubmitted(true)
+
     const responses = activeQ.questions.map((q, i) => {
       const ans = studentAnswers[i]
       const isText = q.question_type === 'short_answer' || q.question_type === 'fill_blank'
@@ -679,7 +693,6 @@ function RoomInner({ roomName }: { roomName: string }) {
     })
 
     if (res.ok) {
-      setQuizSubmitted(true)
       // Notify everyone (especially teacher) that this student submitted
       const payload = encoder.encode(JSON.stringify({
         type: 'quiz-submit',
@@ -687,6 +700,9 @@ function RoomInner({ roomName }: { roomName: string }) {
         studentName: studentName,
       }))
       sendPresentData(payload, { reliable: true })
+    } else {
+      // If submit fails, restore quiz screen so student can retry.
+      setQuizSubmitted(false)
     }
   }, [activeQuizId, sessionId, linkedQuizzes, user?.fullName, localParticipant.identity, sendPresentData])
 
@@ -695,7 +711,13 @@ function RoomInner({ roomName }: { roomName: string }) {
     if (!activeQuizId || !sessionId) return
     const res = await fetch(`/api/quiz-submissions?quiz_id=${activeQuizId}&session_id=${sessionId}`)
     const data = await res.json()
-    if (data.data) setQuizSubmissions(data.data)
+    if (data.data) {
+      setQuizSubmissions(data.data.map((s: QuizSubmission) => (
+        locallyRevealedSubmissionIdsRef.current.has(s.id)
+          ? { ...s, status: 'revealed' }
+          : s
+      )))
+    }
   }, [activeQuizId, sessionId])
 
   // Teacher: delete a submission
@@ -736,6 +758,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     }, 1000)
 
     // Optimistically update UI so button changes immediately.
+    locallyRevealedSubmissionIdsRef.current.add(submission.id)
     setQuizSubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, status: 'revealed' } : s))
 
     try {
@@ -749,6 +772,7 @@ function RoomInner({ roomName }: { roomName: string }) {
       await refreshSubmissions()
     } catch (e) {
       console.error('Reveal failed:', e)
+      locallyRevealedSubmissionIdsRef.current.delete(submission.id)
       await refreshSubmissions()
     }
   }, [sendPresentData, refreshSubmissions])
@@ -1747,8 +1771,11 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   // Student: submit all answers
   const handleSubmitAll = useCallback(async () => {
     setSubmitting(true)
-    await onSubmitAll(studentAnswers)
-    setSubmitting(false)
+    try {
+      await onSubmitAll(studentAnswers)
+    } finally {
+      setSubmitting(false)
+    }
   }, [studentAnswers, onSubmitAll])
 
   if (!question) {
