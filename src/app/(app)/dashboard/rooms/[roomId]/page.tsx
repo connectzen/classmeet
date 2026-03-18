@@ -1174,7 +1174,6 @@ function RoomInner({ roomName }: { roomName: string }) {
           onToggleQuiz={toggleQuiz}
           onSelectCourse={activateCourse}
           onSelectQuiz={activateQuiz}
-          onToggleParticipants={() => setParticipantsVisible(v => !v)}
           onSpotlightTeacher={() => handlePromote(teacherParticipant?.identity ?? '')}
         />
       </div>
@@ -2832,7 +2831,6 @@ interface ControlBarProps {
   onToggleQuiz: () => void
   onSelectCourse: (courseId: string, lessonIndex: number) => void
   onSelectQuiz: (quizId: string) => void
-  onToggleParticipants: () => void
   onSpotlightTeacher: () => void
 }
 
@@ -2841,7 +2839,7 @@ function ControlBarCustom({
   isTeacher, localParticipant, onToggleHand, onLowerAllHands, onSettings, onLeave, raisedHandCount, isMobile,
   isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
   onToggleBlackboard, linkedCourses, linkedQuizzes,
-  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, onToggleParticipants, onSpotlightTeacher,
+  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, onSpotlightTeacher,
 }: ControlBarProps) {
   const [showCourseMenu, setShowCourseMenu] = useState(false)
   const [showQuizMenu, setShowQuizMenu] = useState(false)
@@ -2964,7 +2962,6 @@ function ControlBarCustom({
 
       if (code === 'KeyH') {
         e.preventDefault()
-        onToggleParticipants()
         onSpotlightTeacher()
       }
     }
@@ -2980,7 +2977,6 @@ function ControlBarCustom({
     onToggleBlackboard,
     onToggleCourse,
     onToggleQuiz,
-    onToggleParticipants,
     onSpotlightTeacher,
   ])
 
