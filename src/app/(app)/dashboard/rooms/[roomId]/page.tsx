@@ -2060,23 +2060,28 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
   const handleGrade = useCallback(async () => {
     if (!selected) return
     setGrading(true)
-    // Save individual response scores to DB
-    await Promise.all(
-      responses.map((resp, idx) => {
-        const pts = questionScores[idx]
-        if (pts == null || !resp?.id) return null
-        const maxPts = quiz.questions[idx]?.points || 1
-        return fetch(`/api/quiz-responses/${resp.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ is_correct: pts >= maxPts, score: pts }),
-        })
-      }).filter(Boolean)
-    )
-    await onGrade(selected.id, computedScore.score, computedScore.maxScore, comment)
-    setGrading(false)
-    setSelectedId(null)
-    setComment('')
+    try {
+      // Save individual response scores to DB
+      await Promise.all(
+        responses.map((resp, idx) => {
+          const pts = questionScores[idx]
+          if (pts == null || !resp?.id) return null
+          const maxPts = quiz.questions[idx]?.points || 1
+          return fetch(`/api/quiz-responses/${resp.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_correct: pts >= maxPts, score: pts }),
+          })
+        }).filter(Boolean)
+      )
+      await onGrade(selected.id, computedScore.score, computedScore.maxScore, comment)
+      setSelectedId(null)
+      setComment('')
+    } catch (e) {
+      console.error('Grading failed:', e)
+    } finally {
+      setGrading(false)
+    }
   }, [selected, computedScore, comment, onGrade, responses, questionScores, quiz.questions])
 
   // Save comment on already-graded submission (review mode)
