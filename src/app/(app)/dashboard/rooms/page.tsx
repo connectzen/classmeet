@@ -260,7 +260,7 @@ function CreateSessionModal({ onClose, onCreated, groups, students, quizzes, cou
               {quizzes.length > 0 && (
                 <>
                   <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <HelpCircle size={13} /> Quizzes
+                    <HelpCircle size={13} /> Exams
                   </div>
                   <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)' }}>
                     {quizzes.map(q => (
@@ -282,7 +282,7 @@ function CreateSessionModal({ onClose, onCreated, groups, students, quizzes, cou
               )}
               <span className="input-helper" style={{ marginTop: '4px', display: 'block' }}>
                 {selectedCourses.size + selectedQuizzes.size > 0
-                  ? `${selectedCourses.size} course(s), ${selectedQuizzes.size} quiz(zes) selected`
+                  ? `${selectedCourses.size} course(s), ${selectedQuizzes.size} exam(s) selected`
                   : 'Select content you want to present during this session'}
               </span>
             </div>
@@ -568,7 +568,7 @@ function EditSessionModal({ session, onClose, onUpdated, groups, students, quizz
               {quizzes.length > 0 && (
                 <>
                   <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <HelpCircle size={13} /> Quizzes
+                    <HelpCircle size={13} /> Exams
                   </div>
                   <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)' }}>
                     {quizzes.map(q => (
@@ -590,7 +590,7 @@ function EditSessionModal({ session, onClose, onUpdated, groups, students, quizz
               )}
               <span className="input-helper" style={{ marginTop: '4px', display: 'block' }}>
                 {selectedCourses.size + selectedQuizzes.size > 0
-                  ? `${selectedCourses.size} course(s), ${selectedQuizzes.size} quiz(zes) selected`
+                  ? `${selectedCourses.size} course(s), ${selectedQuizzes.size} exam(s) selected`
                   : 'Select content you want to present during this session'}
               </span>
             </div>

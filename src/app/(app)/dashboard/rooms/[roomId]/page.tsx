@@ -2799,8 +2799,21 @@ function ControlBarCustom({
 }: ControlBarProps) {
   const [showCourseMenu, setShowCourseMenu] = useState(false)
   const [showQuizMenu, setShowQuizMenu] = useState(false)
+  const [quizMenuReady, setQuizMenuReady] = useState(false)
   const courseMenuRef = useRef<HTMLDivElement>(null)
   const quizMenuRef = useRef<HTMLDivElement>(null)
+  const quizMenuTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (showQuizMenu) {
+      setQuizMenuReady(false)
+      quizMenuTimerRef.current = setTimeout(() => setQuizMenuReady(true), 600)
+    } else {
+      if (quizMenuTimerRef.current) clearTimeout(quizMenuTimerRef.current)
+      setQuizMenuReady(false)
+    }
+    return () => { if (quizMenuTimerRef.current) clearTimeout(quizMenuTimerRef.current) }
+  }, [showQuizMenu])
 
   const toggleMic = useCallback(() => {
     localParticipant.setMicrophoneEnabled(!isMicEnabled)
@@ -3058,14 +3071,25 @@ function ControlBarCustom({
               {showQuizMenu && (
                 <div className="room-present-menu">
                   <div className="room-present-menu-label">Choose Exam</div>
-                  {linkedQuizzes.map(q => (
-                    <div key={q.id} className="room-present-menu-item" onClick={() => handleQuizPick(q.id)}>
-                      <HelpCircle size={16} />
-                      <span>{q.title}</span>
+                  {!quizMenuReady ? (
+                    <div className="room-present-menu-empty" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                      Searching exams...
                     </div>
-                  ))}
-                  {linkedQuizzes.length === 0 && (
-                    <div className="room-present-menu-empty">No quizzes linked to this session</div>
+                  ) : (
+                    <>
+                      {linkedQuizzes.map(q => (
+                        <div key={q.id} className="room-present-menu-item" onClick={() => handleQuizPick(q.id)}>
+                          <HelpCircle size={16} />
+                          <span>{q.title}</span>
+                        </div>
+                      ))}
+                      {linkedQuizzes.length === 0 && (
+                        <div className="room-present-menu-empty">No exams linked to this session</div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
