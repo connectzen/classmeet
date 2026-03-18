@@ -17,6 +17,19 @@ export async function POST(request: Request) {
       return apiError('responses array is required', 400)
     }
 
+    // Prevent duplicate submissions for the same quiz + session + student
+    const { data: existing } = await supabase
+      .from('quiz_submissions')
+      .select('id')
+      .eq('quiz_id', quiz_id)
+      .eq('session_id', session_id)
+      .eq('student_id', user.id)
+      .limit(1)
+
+    if (existing && existing.length > 0) {
+      return apiError('You have already submitted this quiz', 409)
+    }
+
     // Fetch quiz questions for auto-grading (include points)
     const { data: questions, error: qErr } = await supabase
       .from('quiz_questions')

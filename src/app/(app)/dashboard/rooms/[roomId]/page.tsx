@@ -488,6 +488,19 @@ function RoomInner({ roomName }: { roomName: string }) {
     syncLayerOrder(nextOrder)
   }, [syncLayerOrder])
 
+  // Student: check if already submitted when quiz activates (handles reconnect / remount)
+  useEffect(() => {
+    if (isTeacher || !quizActive || !activeQuizId || !sessionId || !user?.id) return
+    fetch(`/api/quiz-submissions?quiz_id=${activeQuizId}&session_id=${sessionId}&student_id=${user.id}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.data && d.data.length > 0) {
+          setQuizSubmitted(true)
+        }
+      })
+      .catch(() => {})
+  }, [isTeacher, quizActive, activeQuizId, sessionId, user?.id])
+
   // Host: toggle blackboard on/off
   const toggleBlackboard = useCallback(() => {
     const next = !blackboardActive
@@ -1582,6 +1595,11 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
     return merged
   }, [submittedStudents, quizSubmissions])
 
+  // Set of all submitted names — used to filter out working students whose identity
+  // key might not match the student_id key used in allSubmitted (e.g. data channel
+  // identity is a display name but API student_id is a UUID).
+  const allSubmittedNames = useMemo(() => new Set(Object.values(allSubmitted)), [allSubmitted])
+
   const activeIndex = isHost ? currentIndex : studentIndex
   const question = quiz.questions[activeIndex]
 
@@ -1721,7 +1739,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
 
   // ── Teacher: Live monitoring dashboard (no quiz questions) ──
   if (isHost) {
-    const workingStudents = Object.entries(quizProgress).filter(([id]) => !allSubmitted[id])
+    const workingStudents = Object.entries(quizProgress).filter(([id]) => !allSubmitted[id] && !allSubmittedNames.has(id))
     const submittedList = Object.entries(allSubmitted)
     const totalParticipants = workingStudents.length + submittedList.length
 
