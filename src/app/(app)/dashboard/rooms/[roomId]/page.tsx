@@ -735,13 +735,22 @@ function RoomInner({ roomName }: { roomName: string }) {
       if (count <= 0) clearInterval(interval)
     }, 1000)
 
-    // Mark submission as revealed in the database
-    await fetch(`/api/quiz-submissions/${submission.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'revealed' }),
-    })
-    refreshSubmissions()
+    // Optimistically update UI so button changes immediately.
+    setQuizSubmissions(prev => prev.map(s => s.id === submission.id ? { ...s, status: 'revealed' } : s))
+
+    try {
+      // Mark submission as revealed in the database
+      const res = await fetch(`/api/quiz-submissions/${submission.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'revealed' }),
+      })
+      if (!res.ok) throw new Error('Failed to reveal submission')
+      await refreshSubmissions()
+    } catch (e) {
+      console.error('Reveal failed:', e)
+      await refreshSubmissions()
+    }
   }, [sendPresentData, refreshSubmissions])
 
   // Dismiss result reveal — student remembers the revealed result
@@ -1271,7 +1280,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   submittedStudents: Record<string, string>
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string, passed?: boolean) => Promise<void>
   onDeleteSubmission: (id: string) => Promise<void>
-  onRevealResults: (submission: QuizSubmission) => void
+  onRevealResults: (submission: QuizSubmission) => Promise<void>
   onRefreshSubmissions: () => Promise<void>
   quizResultRevealed: QuizSubmission | null
 }) {
@@ -1548,7 +1557,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   submittedStudents: Record<string, string>
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string, passed?: boolean) => Promise<void>
   onDeleteSubmission: (id: string) => Promise<void>
-  onRevealResults: (submission: QuizSubmission) => void
+  onRevealResults: (submission: QuizSubmission) => Promise<void>
   onRefreshSubmissions: () => Promise<void>
   quizResultRevealed: QuizSubmission | null
 }) {
@@ -1570,6 +1579,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   const [passedMap, setPassedMap] = useState<Record<string, boolean>>({})
   const [deleting, setDeleting] = useState<string | null>(null)
   const [grading, setGrading] = useState<string | null>(null)
+  const [revealing, setRevealing] = useState<string | null>(null)
   const [loadingResponses, setLoadingResponses] = useState<string | null>(null)
 
   const gradeOptionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
@@ -1653,6 +1663,16 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
       setExpandedId(null)
     } finally { setGrading(null) }
   }, [onGradeSubmission, commentsMap, passedMap])
+
+  const handleReveal = useCallback(async (sub: QuizSubmission) => {
+    if (revealing === sub.id) return
+    setRevealing(sub.id)
+    try {
+      await onRevealResults(sub)
+    } finally {
+      setRevealing(null)
+    }
+  }, [onRevealResults, revealing])
 
   // Teacher: poll for submissions every 5 seconds (data channel may be unreliable)
   useEffect(() => {
@@ -1989,8 +2009,8 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                           {grading === gradingSubmission.id ? 'Saving Results...' : 'Save Results'}
                         </button>
                       )}
-                      <button className="btn btn-primary" onClick={() => onRevealResults(gradingSubmission)}>
-                        <Trophy size={14} /> Reveal to Student
+                      <button className="btn btn-primary" disabled={revealing === gradingSubmission.id} onClick={() => handleReveal(gradingSubmission)}>
+                        <Trophy size={14} /> {revealing === gradingSubmission.id ? 'Revealing...' : 'Reveal to Student'}
                       </button>
                     </>
                   ) : (
@@ -2085,8 +2105,8 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                         </button>
                       )}
                       {submission && submission.status === 'graded' && (
-                        <button className="btn btn-primary btn-sm" onClick={() => onRevealResults(submission)}>
-                          <Trophy size={14} /> Reveal
+                        <button className="btn btn-primary btn-sm" disabled={revealing === submission.id} onClick={() => handleReveal(submission)}>
+                          <Trophy size={14} /> {revealing === submission.id ? 'Revealing...' : 'Reveal'}
                         </button>
                       )}
                       {submission && submission.status === 'revealed' && (
