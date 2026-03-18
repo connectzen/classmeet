@@ -1968,19 +1968,175 @@ function QuizResultReveal({ submission, countdown, onDismiss, quizTitle }: {
   const certRef = useRef<HTMLDivElement>(null)
   const showResult = countdown <= 0
 
-  const handleDownload = useCallback(async () => {
-    if (!certRef.current) return
+  const drawCertificateCanvas = useCallback(() => {
+    const W = 900, H = 640
+    const canvas = document.createElement('canvas')
+    canvas.width = W * 2; canvas.height = H * 2
+    const ctx = canvas.getContext('2d')!
+    ctx.scale(2, 2)
+
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, W, H)
+    bg.addColorStop(0, '#0f0c29'); bg.addColorStop(0.5, '#1a1a3e'); bg.addColorStop(1, '#24243e')
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H)
+
+    // Decorative border
+    ctx.strokeStyle = submission.passed ? '#22c55e' : '#f59e0b'
+    ctx.lineWidth = 3
+    const m = 20
+    ctx.strokeRect(m, m, W - m * 2, H - m * 2)
+    ctx.strokeStyle = 'rgba(99,102,241,0.3)'; ctx.lineWidth = 1
+    ctx.strokeRect(m + 8, m + 8, W - (m + 8) * 2, H - (m + 8) * 2)
+
+    // Corner accents
+    const cornerSize = 40
+    ctx.strokeStyle = submission.passed ? '#22c55e' : '#f59e0b'
+    ctx.lineWidth = 3
+    const corners = [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]
+    for (const [cx, cy, dx, dy] of corners) {
+      ctx.beginPath()
+      ctx.moveTo(cx, cy + dy * cornerSize)
+      ctx.lineTo(cx, cy)
+      ctx.lineTo(cx + dx * cornerSize, cy)
+      ctx.stroke()
+    }
+
+    // Trophy icon (simple drawn trophy)
+    const tCx = W / 2, tCy = 72
+    ctx.fillStyle = '#fbbf24'
+    ctx.beginPath()
+    ctx.moveTo(tCx - 18, tCy - 20); ctx.lineTo(tCx + 18, tCy - 20)
+    ctx.lineTo(tCx + 14, tCy + 4); ctx.quadraticCurveTo(tCx, tCy + 16, tCx - 14, tCy + 4)
+    ctx.closePath(); ctx.fill()
+    ctx.fillRect(tCx - 3, tCy + 14, 6, 10)
+    ctx.fillRect(tCx - 10, tCy + 24, 20, 4)
+
+    // "CERTIFICATE OF COMPLETION" header
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '600 11px Inter, system-ui, sans-serif'
+    ctx.textAlign = 'center'; ctx.letterSpacing = '4px'
+    ctx.fillText('CERTIFICATE OF COMPLETION', W / 2, 120)
+
+    // Decorative line
+    const lineW = 200
+    ctx.strokeStyle = 'rgba(99,102,241,0.5)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(W / 2 - lineW / 2, 132); ctx.lineTo(W / 2 + lineW / 2, 132); ctx.stroke()
+
+    // Title
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 28px Inter, system-ui, sans-serif'
+    ctx.fillText(submission.passed ? 'Congratulations!' : 'Quiz Complete', W / 2, 170)
+
+    // "This certifies that"
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '400 13px Inter, system-ui, sans-serif'
+    ctx.fillText('This certifies that', W / 2, 200)
+
+    // Student name
+    ctx.fillStyle = '#818cf8'; ctx.font = 'bold 32px Inter, system-ui, sans-serif'
+    ctx.fillText(submission.student_name, W / 2, 240)
+
+    // Underline under name
+    const nameWidth = ctx.measureText(submission.student_name).width
+    ctx.strokeStyle = 'rgba(129,140,248,0.3)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(W / 2 - nameWidth / 2 - 10, 248); ctx.lineTo(W / 2 + nameWidth / 2 + 10, 248); ctx.stroke()
+
+    // "has completed the quiz"
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '400 13px Inter, system-ui, sans-serif'
+    ctx.fillText('has completed the quiz', W / 2, 275)
+
+    // Quiz title
+    ctx.fillStyle = '#e2e8f0'; ctx.font = '600 20px Inter, system-ui, sans-serif'
+    ctx.fillText(quizTitle, W / 2, 305)
+
+    // Score section - centered boxes
+    const boxY = 340, boxH = 80, boxW = 140, gap = 20
+    const totalBoxW = boxW * 3 + gap * 2
+    const startX = (W - totalBoxW) / 2
+
+    // Score box
+    const scoreGrad = ctx.createLinearGradient(startX, boxY, startX, boxY + boxH)
+    scoreGrad.addColorStop(0, 'rgba(99,102,241,0.15)'); scoreGrad.addColorStop(1, 'rgba(99,102,241,0.05)')
+    ctx.fillStyle = scoreGrad
+    ctx.beginPath(); ctx.roundRect(startX, boxY, boxW, boxH, 8); ctx.fill()
+    ctx.strokeStyle = 'rgba(99,102,241,0.3)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.roundRect(startX, boxY, boxW, boxH, 8); ctx.stroke()
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 26px Inter, system-ui, sans-serif'
+    ctx.fillText(`${submission.score}/${submission.max_score}`, startX + boxW / 2, boxY + 38)
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
+    ctx.fillText('SCORE', startX + boxW / 2, boxY + 60)
+
+    // Percentage box
+    const pctX = startX + boxW + gap
+    const pctColor = submission.passed ? '#22c55e' : '#ef4444'
+    const pctGrad = ctx.createLinearGradient(pctX, boxY, pctX, boxY + boxH)
+    pctGrad.addColorStop(0, submission.passed ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)')
+    pctGrad.addColorStop(1, submission.passed ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)')
+    ctx.fillStyle = pctGrad
+    ctx.beginPath(); ctx.roundRect(pctX, boxY, boxW, boxH, 8); ctx.fill()
+    ctx.strokeStyle = submission.passed ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.roundRect(pctX, boxY, boxW, boxH, 8); ctx.stroke()
+    ctx.fillStyle = pctColor; ctx.font = 'bold 30px Inter, system-ui, sans-serif'
+    ctx.fillText(`${submission.percentage}%`, pctX + boxW / 2, boxY + 40)
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
+    ctx.fillText('PERCENTAGE', pctX + boxW / 2, boxY + 60)
+
+    // Result box
+    const resX = pctX + boxW + gap
+    const resGrad = ctx.createLinearGradient(resX, boxY, resX, boxY + boxH)
+    resGrad.addColorStop(0, submission.passed ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)')
+    resGrad.addColorStop(1, submission.passed ? 'rgba(34,197,94,0.05)' : 'rgba(245,158,11,0.05)')
+    ctx.fillStyle = resGrad
+    ctx.beginPath(); ctx.roundRect(resX, boxY, boxW, boxH, 8); ctx.fill()
+    ctx.strokeStyle = submission.passed ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.roundRect(resX, boxY, boxW, boxH, 8); ctx.stroke()
+    ctx.fillStyle = submission.passed ? '#22c55e' : '#f59e0b'; ctx.font = 'bold 18px Inter, system-ui, sans-serif'
+    ctx.fillText(submission.passed ? 'PASSED' : 'NOT PASSED', resX + boxW / 2, boxY + 40)
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
+    ctx.fillText('RESULT', resX + boxW / 2, boxY + 60)
+
+    // Teacher comment
+    let nextY = boxY + boxH + 30
+    if (submission.teacher_comment) {
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = 'italic 13px Inter, system-ui, sans-serif'
+      const commentText = `"${submission.teacher_comment}"`
+      // Truncate long comments
+      const maxW = W - 160
+      const measured = ctx.measureText(commentText).width
+      if (measured > maxW) {
+        ctx.fillText(commentText.slice(0, 80) + '..."', W / 2, nextY)
+      } else {
+        ctx.fillText(commentText, W / 2, nextY)
+      }
+      nextY += 30
+    }
+
+    // Date
+    const dateStr = submission.graded_at
+      ? new Date(submission.graded_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '400 11px Inter, system-ui, sans-serif'
+    ctx.fillText(dateStr, W / 2, Math.max(nextY, boxY + boxH + 30))
+
+    // Footer line
+    ctx.strokeStyle = 'rgba(99,102,241,0.3)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(W / 2 - 100, H - 50); ctx.lineTo(W / 2 + 100, H - 50); ctx.stroke()
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '400 10px Inter, system-ui, sans-serif'
+    ctx.fillText('ClassMeet', W / 2, H - 35)
+
+    return canvas
+  }, [submission, quizTitle])
+
+  const handleDownload = useCallback(() => {
     try {
-      const html2canvas = (await import('html2canvas')).default
-      const canvas = await html2canvas(certRef.current, { backgroundColor: null, scale: 2 })
+      const canvas = drawCertificateCanvas()
       const link = document.createElement('a')
       link.download = `certificate-${submission.student_name.replace(/\s+/g, '-')}.png`
       link.href = canvas.toDataURL('image/png')
+      document.body.appendChild(link)
       link.click()
-    } catch {
-      // html2canvas may not be installed yet — silent fail
+      document.body.removeChild(link)
+    } catch (err) {
+      console.error('Certificate download failed:', err)
     }
-  }, [submission.student_name])
+  }, [drawCertificateCanvas, submission.student_name])
 
   return (
     <div className="quiz-reveal-overlay" onClick={onDismiss}>
@@ -1998,37 +2154,57 @@ function QuizResultReveal({ submission, countdown, onDismiss, quizTitle }: {
           <div className="quiz-reveal-result">
             {submission.passed && <div className="quiz-reveal-confetti" />}
             <div className="quiz-reveal-certificate" ref={certRef}>
+              {/* Header */}
               <div className="quiz-cert-header">
-                <Trophy size={40} className="quiz-cert-trophy" />
+                <Trophy size={36} className="quiz-cert-trophy" />
+                <div className="quiz-cert-header-label">CERTIFICATE OF COMPLETION</div>
                 <h2 className="quiz-cert-title">
                   {submission.passed ? 'Congratulations!' : 'Quiz Complete'}
                 </h2>
               </div>
+
+              {/* Student */}
+              <div className="quiz-cert-subtitle">This certifies that</div>
               <div className="quiz-cert-name">{submission.student_name}</div>
+              <div className="quiz-cert-subtitle">has completed the quiz</div>
               <div className="quiz-cert-quiz">{quizTitle}</div>
-              <div className="quiz-cert-score">
-                <div className="quiz-cert-score-circle" data-passed={submission.passed}>
-                  <span className="quiz-cert-score-value">{submission.percentage}%</span>
+
+              {/* Score boxes */}
+              <div className="quiz-cert-scores">
+                <div className="quiz-cert-score-box">
+                  <span className="quiz-cert-score-box-value">{submission.score}/{submission.max_score}</span>
+                  <span className="quiz-cert-score-box-label">Score</span>
                 </div>
-                <div className="quiz-cert-score-detail">
-                  {submission.score}/{submission.max_score} correct
+                <div className={`quiz-cert-score-box quiz-cert-score-box-${submission.passed ? 'pass' : 'fail'}`}>
+                  <span className="quiz-cert-score-box-value quiz-cert-score-box-pct">{submission.percentage}%</span>
+                  <span className="quiz-cert-score-box-label">Percentage</span>
+                </div>
+                <div className={`quiz-cert-score-box quiz-cert-score-box-${submission.passed ? 'pass' : 'fail'}`}>
+                  <span className="quiz-cert-score-box-value">{submission.passed ? 'PASSED' : 'NOT PASSED'}</span>
+                  <span className="quiz-cert-score-box-label">Result</span>
                 </div>
               </div>
-              <div className={`quiz-cert-badge ${submission.passed ? 'quiz-cert-badge-pass' : 'quiz-cert-badge-fail'}`}>
-                {submission.passed ? (
-                  <><Star size={16} /> PASSED</>
-                ) : (
-                  <>Keep Learning!</>
-                )}
-              </div>
+
+              {/* Comment */}
               {submission.teacher_comment && (
                 <div className="quiz-cert-comment">
-                  <em>&ldquo;{submission.teacher_comment}&rdquo;</em>
+                  &ldquo;{submission.teacher_comment}&rdquo;
                 </div>
               )}
+
+              {/* Date */}
+              <div className="quiz-cert-date">
+                {submission.graded_at
+                  ? new Date(submission.graded_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                  : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </div>
+
+              {/* Footer */}
+              <div className="quiz-cert-footer">ClassMeet</div>
             </div>
+
             <div className="quiz-reveal-actions">
-              <button className="btn btn-outline btn-sm" onClick={handleDownload}>
+              <button className="btn btn-primary btn-sm" onClick={handleDownload}>
                 <Download size={14} /> Download Certificate
               </button>
               <button className="btn btn-outline btn-sm" onClick={onDismiss}>
