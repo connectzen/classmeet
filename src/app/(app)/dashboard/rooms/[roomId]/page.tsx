@@ -1600,16 +1600,20 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
     )
   }
 
-  return (
-    <div className="room-presentation">
-      <div className="room-presentation-header">
-        <HelpCircle size={16} />
-        <span className="room-presentation-title">{quiz.title}</span>
-        {!isHost && <span className="room-presentation-subtitle">{teacherName} is presenting</span>}
-        <span className="room-presentation-counter" style={{ marginLeft: 'auto' }}>
-          Q{activeIndex + 1}/{totalQuestions}
-        </span>
-        {isHost && (
+  // ── Teacher: Live monitoring dashboard (no quiz questions) ──
+  if (isHost) {
+    const workingStudents = Object.entries(quizProgress).filter(([id]) => !submittedStudents[id])
+    const submittedList = Object.entries(submittedStudents)
+    const totalParticipants = workingStudents.length + submittedList.length
+
+    return (
+      <div className="room-presentation">
+        <div className="room-presentation-header">
+          <HelpCircle size={16} />
+          <span className="room-presentation-title">{quiz.title}</span>
+          <span className="room-presentation-counter" style={{ marginLeft: 'auto' }}>
+            Q{currentIndex + 1}/{totalQuestions}
+          </span>
           <button
             className={`btn btn-sm ${quizSubmissions.length > 0 ? 'btn-primary room-grade-btn-pulse' : 'btn-outline'}`}
             style={{ marginLeft: 8 }}
@@ -1617,34 +1621,129 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
           >
             <ClipboardList size={14} /> Grade ({quizSubmissions.length})
           </button>
-        )}
-      </div>
-
-      {/* Teacher: show student progress + submitted status */}
-      {isHost && (Object.keys(quizProgress).length > 0 || Object.keys(submittedStudents).length > 0) && (
-        <div className="room-quiz-progress-bar">
-          {Object.entries(quizProgress).map(([identity, p]) => (
-            <div key={identity} className="room-quiz-progress-item">
-              <span className="room-quiz-progress-name">{identity}</span>
-              <div className="room-quiz-progress-track">
-                <div className="room-quiz-progress-fill" style={{ width: `${p.total > 0 ? (p.answered / p.total) * 100 : 0}%` }} />
-              </div>
-              <span className="room-quiz-progress-count">{p.answered}/{p.total}</span>
-            </div>
-          ))}
-          {Object.entries(submittedStudents).map(([identity, name]) => (
-            <div key={identity} className="room-quiz-progress-item room-quiz-progress-submitted">
-              <span className="room-quiz-progress-name">{name || identity}</span>
-              <div className="room-quiz-progress-track">
-                <div className="room-quiz-progress-fill" style={{ width: '100%', background: 'var(--success-400)' }} />
-              </div>
-              <span className="room-quiz-progress-count" style={{ color: 'var(--success-400)' }}>
-                <Check size={12} /> Submitted
-              </span>
-            </div>
-          ))}
         </div>
-      )}
+
+        <div className="room-presentation-content room-teacher-dashboard">
+          {/* Stats summary */}
+          <div className="room-teacher-stats">
+            <div className="room-teacher-stat">
+              <span className="room-teacher-stat-value">{totalParticipants}</span>
+              <span className="room-teacher-stat-label">Participants</span>
+            </div>
+            <div className="room-teacher-stat">
+              <span className="room-teacher-stat-value" style={{ color: 'var(--warning-500)' }}>{workingStudents.length}</span>
+              <span className="room-teacher-stat-label">Working</span>
+            </div>
+            <div className="room-teacher-stat">
+              <span className="room-teacher-stat-value" style={{ color: 'var(--success-400)' }}>{submittedList.length}</span>
+              <span className="room-teacher-stat-label">Submitted</span>
+            </div>
+            <div className="room-teacher-stat">
+              <span className="room-teacher-stat-value" style={{ color: 'var(--primary-400)' }}>{quizSubmissions.filter(s => s.status === 'graded').length}</span>
+              <span className="room-teacher-stat-label">Graded</span>
+            </div>
+          </div>
+
+          {/* Participant list */}
+          <div className="room-teacher-participants">
+            {totalParticipants === 0 && (
+              <div className="room-presentation-empty" style={{ padding: '32px 16px' }}>
+                <Users size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
+                <p>Waiting for students to join the quiz...</p>
+              </div>
+            )}
+
+            {/* Submitted students — shown first */}
+            {submittedList.map(([identity, name]) => {
+              const submission = quizSubmissions.find(s => s.student_name === name || s.student_name === identity)
+              return (
+                <div key={identity} className="room-teacher-participant room-teacher-participant-submitted">
+                  <div className="room-teacher-participant-info">
+                    <span className="room-teacher-participant-name">{name || identity}</span>
+                    <span className="room-teacher-participant-badge room-teacher-badge-submitted">
+                      <Check size={12} /> Submitted
+                    </span>
+                    {submission?.status === 'graded' && (
+                      <span className="room-teacher-participant-badge room-teacher-badge-graded">
+                        {submission.score}/{submission.max_score} ({submission.percentage}%)
+                      </span>
+                    )}
+                  </div>
+                  <div className="room-teacher-participant-actions">
+                    {submission && submission.status === 'graded' ? (
+                      <>
+                        <button className="btn btn-outline btn-sm" onClick={() => { onToggleGradingPanel() }}>
+                          <Eye size={14} /> Review
+                        </button>
+                        <button className="btn btn-primary btn-sm" onClick={() => onRevealResults(submission)}>
+                          <Trophy size={14} /> Reveal
+                        </button>
+                      </>
+                    ) : submission ? (
+                      <button className="btn btn-primary btn-sm" onClick={() => { onToggleGradingPanel() }}>
+                        <Award size={14} /> Grade
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Working students */}
+            {workingStudents.map(([identity, p]) => (
+              <div key={identity} className="room-teacher-participant">
+                <div className="room-teacher-participant-info">
+                  <span className="room-teacher-participant-name">{identity}</span>
+                  <span className="room-teacher-participant-badge room-teacher-badge-working">
+                    Working...
+                  </span>
+                </div>
+                <div style={{ flex: 1, maxWidth: 160, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div className="room-quiz-progress-track" style={{ flex: 1 }}>
+                    <div className="room-quiz-progress-fill" style={{ width: `${p.total > 0 ? (p.answered / p.total) * 100 : 0}%` }} />
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{p.answered}/{p.total}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Teacher navigation controls */}
+        <div className="room-presentation-nav">
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={currentIndex === 0}
+            onClick={() => onAdvance(currentIndex - 1)}
+          >
+            <ArrowLeft size={16} /> Prev
+          </button>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Showing Q{currentIndex + 1} to students
+          </span>
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={currentIndex >= totalQuestions - 1}
+            onClick={() => onAdvance(currentIndex + 1)}
+          >
+            Next <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Student quiz view ──
+  return (
+    <div className="room-presentation">
+      <div className="room-presentation-header">
+        <HelpCircle size={16} />
+        <span className="room-presentation-title">{quiz.title}</span>
+        <span className="room-presentation-subtitle">{teacherName} is presenting</span>
+        <span className="room-presentation-counter" style={{ marginLeft: 'auto' }}>
+          Q{activeIndex + 1}/{totalQuestions}
+        </span>
+      </div>
 
       <div className="room-presentation-content room-quiz-content">
         <div className="room-quiz-question">
@@ -1666,105 +1765,54 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
 
         <div className="room-quiz-options">
           {question.options.map((opt, i) => {
-            const isCorrect = i === question.correct_index
             const isMyAnswer = myAnswer === i
-            const count = answerCounts[i] || 0
-            const pct = totalAnswers > 0 ? Math.round((count / totalAnswers) * 100) : 0
 
             let optClass = 'room-quiz-option'
-            if (isHost) {
-              if (revealed && isCorrect) optClass += ' room-quiz-option-correct'
-              if (revealed && isMyAnswer && !isCorrect) optClass += ' room-quiz-option-wrong'
-              if (!revealed && isMyAnswer) optClass += ' room-quiz-option-selected'
-            } else {
-              // Student: only show selection, no correct/wrong feedback until submitted
-              if (isMyAnswer) optClass += ' room-quiz-option-selected'
-            }
+            if (isMyAnswer) optClass += ' room-quiz-option-selected'
 
             return (
               <button
                 key={i}
                 className={optClass}
-                onClick={() => {
-                  if (!isHost) handleStudentAnswer(i)
-                }}
-                disabled={isHost}
+                onClick={() => handleStudentAnswer(i)}
               >
                 <span className="room-quiz-option-label">{optionLabels[i]}</span>
                 <span className="room-quiz-option-text">{opt}</span>
-                {isHost && revealed && (
-                  <span className="room-quiz-option-stats">
-                    {isCorrect && <Check size={14} />}
-                    <span>{count} ({pct}%)</span>
-                  </span>
-                )}
               </button>
             )
           })}
         </div>
       </div>
 
-      {/* Teacher navigation + reveal controls */}
-      {isHost && (
-        <div className="room-presentation-nav">
-          <button
-            className="btn btn-outline btn-sm"
-            disabled={currentIndex === 0}
-            onClick={() => onAdvance(currentIndex - 1)}
-          >
-            <ArrowLeft size={16} /> Prev
-          </button>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {!revealed && (
-              <button className="btn btn-primary btn-sm" onClick={onReveal}>
-                Reveal Answer
-              </button>
-            )}
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {totalAnswers} answer{totalAnswers !== 1 ? 's' : ''}
-            </span>
-          </div>
-          <button
-            className="btn btn-outline btn-sm"
-            disabled={currentIndex >= totalQuestions - 1}
-            onClick={() => onAdvance(currentIndex + 1)}
-          >
-            Next <ArrowRight size={16} />
-          </button>
-        </div>
-      )}
-
       {/* Student self-paced navigation + submit button */}
-      {!isHost && (
-        <div className="room-presentation-nav">
+      <div className="room-presentation-nav">
+        <button
+          className="btn btn-outline btn-sm"
+          disabled={studentIndex === 0}
+          onClick={() => setStudentIndex(prev => prev - 1)}
+        >
+          <ArrowLeft size={16} /> Prev
+        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span className="room-presentation-counter">
+            {answeredCount}/{totalQuestions}
+          </span>
           <button
-            className="btn btn-outline btn-sm"
-            disabled={studentIndex === 0}
-            onClick={() => setStudentIndex(prev => prev - 1)}
+            className="btn btn-primary btn-sm"
+            disabled={answeredCount < totalQuestions || submitting}
+            onClick={handleSubmitAll}
           >
-            <ArrowLeft size={16} /> Prev
-          </button>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span className="room-presentation-counter">
-              {answeredCount}/{totalQuestions}
-            </span>
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={answeredCount < totalQuestions || submitting}
-              onClick={handleSubmitAll}
-            >
-              {submitting ? 'Submitting...' : answeredCount < totalQuestions ? `${answeredCount}/${totalQuestions} answered` : 'Submit Quiz'}
-            </button>
-          </div>
-          <button
-            className="btn btn-outline btn-sm"
-            disabled={studentIndex >= totalQuestions - 1}
-            onClick={() => setStudentIndex(prev => prev + 1)}
-          >
-            Next <ArrowRight size={16} />
+            {submitting ? 'Submitting...' : answeredCount < totalQuestions ? `${answeredCount}/${totalQuestions} answered` : 'Submit Quiz'}
           </button>
         </div>
-      )}
+        <button
+          className="btn btn-outline btn-sm"
+          disabled={studentIndex >= totalQuestions - 1}
+          onClick={() => setStudentIndex(prev => prev + 1)}
+        >
+          Next <ArrowRight size={16} />
+        </button>
+      </div>
     </div>
   )
 }
@@ -1782,7 +1830,7 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
   const [responses, setResponses] = useState<Array<{ question_id: string; answer_index: number | null; is_correct: boolean | null }>>([])
   const [comment, setComment] = useState('')
   const [grading, setGrading] = useState(false)
-  const [reviewMode, setReviewMode] = useState(false)
+  const [savingComment, setSavingComment] = useState(false)
 
   const selected = submissions.find(s => s.id === selectedId) || null
 
@@ -1794,24 +1842,38 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
       .then(d => { if (d.data) setResponses(d.data) })
   }, [selectedId])
 
-  const handleGrade = useCallback(async () => {
-    if (!selected) return
-    setGrading(true)
-    // Calculate final score using weighted points per question
+  // Compute score from responses (client-side re-compute for transparency)
+  const computedScore = useMemo(() => {
     let score = 0
     let maxScore = 0
+    const perQuestion: Array<{ earned: number; possible: number }> = []
     for (const q of quiz.questions) {
       const pts = q.points || 1
       maxScore += pts
       const resp = responses.find(r => r.question_id === q.id)
-      if (resp?.is_correct) score += pts
+      const earned = resp?.is_correct ? pts : 0
+      score += earned
+      perQuestion.push({ earned, possible: pts })
     }
-    await onGrade(selected.id, score, maxScore, comment)
+    return { score, maxScore, perQuestion, percentage: maxScore > 0 ? Math.round((score / maxScore) * 100) : 0 }
+  }, [quiz.questions, responses])
+
+  const handleGrade = useCallback(async () => {
+    if (!selected) return
+    setGrading(true)
+    await onGrade(selected.id, computedScore.score, computedScore.maxScore, comment)
     setGrading(false)
     setSelectedId(null)
-    setReviewMode(false)
     setComment('')
-  }, [selected, responses, comment, quiz.questions, onGrade])
+  }, [selected, computedScore, comment, onGrade])
+
+  // Save comment on already-graded submission (review mode)
+  const handleSaveComment = useCallback(async () => {
+    if (!selected) return
+    setSavingComment(true)
+    await onGrade(selected.id, selected.score, selected.max_score, comment)
+    setSavingComment(false)
+  }, [selected, comment, onGrade])
 
   const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
 
@@ -1844,7 +1906,7 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
                   <div className="room-grading-item-actions">
                     {sub.status === 'graded' ? (
                       <>
-                        <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || ''); setReviewMode(true) }}>
+                        <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || '') }}>
                           <Eye size={14} /> Review
                         </button>
                         <button className="btn btn-primary btn-sm" onClick={() => onRevealResults(sub)}>
@@ -1852,14 +1914,9 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
                         </button>
                       </>
                     ) : (
-                      <>
-                        <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || ''); setReviewMode(true) }}>
-                          <Eye size={14} /> Review
-                        </button>
-                        <button className="btn btn-primary btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || ''); setReviewMode(false) }}>
-                          <Award size={14} /> Grade
-                        </button>
-                      </>
+                      <button className="btn btn-primary btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || '') }}>
+                        <Award size={14} /> Grade
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1867,18 +1924,27 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
             )}
           </div>
         ) : (
-          /* Grading/Review detail view */
+          /* Detail view (unified for review + grade) */
           <div className="room-grading-detail">
             <div className="room-grading-detail-header">
-              <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(null); setReviewMode(false) }}>
+              <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(null) }}>
                 <ArrowLeft size={14} /> Back
               </button>
               <span style={{ fontWeight: 600 }}>{selected.student_name}</span>
-              {reviewMode && (
-                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(99,102,241,0.15)', color: 'var(--primary-400)', fontWeight: 600 }}>
-                  {selected.status === 'graded' ? `${selected.score}/${selected.max_score} (${selected.percentage}%)` : 'Reviewing'}
-                </span>
-              )}
+              <span className={`room-grading-score-badge ${computedScore.percentage >= 70 ? 'room-grading-score-pass' : 'room-grading-score-fail'}`}>
+                {computedScore.score}/{computedScore.maxScore} ({computedScore.percentage}%)
+              </span>
+            </div>
+
+            {/* Score summary bar */}
+            <div className="room-grading-summary">
+              <div className="room-grading-summary-bar">
+                <div className="room-grading-summary-fill" style={{ width: `${computedScore.percentage}%`, background: computedScore.percentage >= 70 ? 'var(--success-500)' : 'var(--error-400)' }} />
+              </div>
+              <div className="room-grading-summary-stats">
+                <span>Correct: {computedScore.perQuestion.filter(p => p.earned > 0).length}/{quiz.questions.length} questions</span>
+                <span>Score: {computedScore.score}/{computedScore.maxScore} points</span>
+              </div>
             </div>
 
             <div className="room-grading-questions">
@@ -1886,15 +1952,17 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
                 const resp = responses.find(r => r.question_id === q.id)
                 const studentAnswer = resp?.answer_index
                 const isCorrect = resp?.is_correct
+                const pts = q.points || 1
+                const earned = isCorrect ? pts : 0
 
                 return (
-                  <div key={q.id} className="room-grading-question">
+                  <div key={q.id} className={`room-grading-question ${isCorrect === true ? 'room-grading-question-correct' : isCorrect === false ? 'room-grading-question-wrong' : ''}`}>
                     <div className="room-grading-q-header">
                       <span className="room-quiz-question-number">Q{qi + 1}</span>
-                      <span className="room-quiz-question-text" style={{ fontSize: '0.9rem' }}>{q.question_text}</span>
-                      {q.points > 1 && (
-                        <span style={{ fontSize: '0.72rem', color: 'var(--primary-400)', fontWeight: 600, whiteSpace: 'nowrap' }}>{q.points} pts</span>
-                      )}
+                      <span className="room-quiz-question-text" style={{ fontSize: '0.9rem', flex: 1 }}>{q.question_text}</span>
+                      <span className={`room-grading-q-points ${isCorrect ? 'room-grading-q-points-earned' : 'room-grading-q-points-lost'}`}>
+                        {earned}/{pts} pts
+                      </span>
                       {isCorrect !== null && (
                         <span className={isCorrect ? 'room-grading-correct' : 'room-grading-wrong'}>
                           {isCorrect ? '✓' : '✗'}
@@ -1903,14 +1971,26 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
                     </div>
                     <div className="room-grading-q-options">
                       {q.options.map((opt, oi) => {
+                        const isCorrectOption = oi === q.correct_index
+                        const isStudentPick = oi === studentAnswer
                         let cls = 'room-grading-q-opt'
-                        if (oi === q.correct_index) cls += ' room-grading-q-opt-correct'
-                        if (oi === studentAnswer) cls += ' room-grading-q-opt-selected'
-                        if (oi === studentAnswer && oi !== q.correct_index) cls += ' room-grading-q-opt-wrong'
+                        if (isCorrectOption) cls += ' room-grading-q-opt-correct'
+                        if (isStudentPick && !isCorrectOption) cls += ' room-grading-q-opt-wrong'
+
                         return (
                           <div key={oi} className={cls}>
                             <span className="room-quiz-option-label">{optionLabels[oi]}</span>
-                            <span>{opt}</span>
+                            <span style={{ flex: 1 }}>{opt}</span>
+                            {isCorrectOption && (
+                              <span className="room-grading-opt-tag room-grading-opt-tag-correct">
+                                <Check size={11} /> Correct
+                              </span>
+                            )}
+                            {isStudentPick && (
+                              <span className={`room-grading-opt-tag ${isCorrectOption ? 'room-grading-opt-tag-correct' : 'room-grading-opt-tag-wrong'}`}>
+                                Student&apos;s Pick
+                              </span>
+                            )}
                           </div>
                         )
                       })}
@@ -1920,37 +2000,36 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
               })}
             </div>
 
-            {reviewMode ? (
-              /* Review mode: show comment read-only if exists */
-              selected.teacher_comment ? (
-                <div className="room-grading-comment">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
-                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
-                    {selected.teacher_comment}
-                  </div>
-                </div>
-              ) : null
-            ) : (
-              /* Grade mode: editable comment + confirm */
-              <>
-                <div className="room-grading-comment">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
-                  <textarea
-                    className="room-grading-textarea"
-                    value={comment}
-                    onChange={e => setComment(e.target.value)}
-                    placeholder="Add a comment for this student..."
-                    rows={3}
-                  />
-                </div>
+            {/* Comment — always editable */}
+            <div className="room-grading-comment">
+              <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
+              <textarea
+                className="room-grading-textarea"
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder="Add a comment for this student..."
+                rows={3}
+              />
+            </div>
 
-                <div className="room-grading-actions">
-                  <button className="btn btn-primary" disabled={grading} onClick={handleGrade}>
-                    {grading ? 'Grading...' : 'Confirm Grade'}
+            <div className="room-grading-actions">
+              {selected.status === 'graded' ? (
+                <>
+                  {comment !== (selected.teacher_comment || '') && (
+                    <button className="btn btn-outline" disabled={savingComment} onClick={handleSaveComment}>
+                      {savingComment ? 'Saving...' : 'Save Comment'}
+                    </button>
+                  )}
+                  <button className="btn btn-primary" onClick={() => onRevealResults(selected)}>
+                    <Trophy size={14} /> Reveal to Student
                   </button>
-                </div>
-              </>
-            )}
+                </>
+              ) : (
+                <button className="btn btn-primary" disabled={grading} onClick={handleGrade}>
+                  {grading ? 'Grading...' : `Confirm Grade (${computedScore.score}/${computedScore.maxScore})`}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

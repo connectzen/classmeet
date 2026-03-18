@@ -2682,6 +2682,47 @@ select option {
   gap: 12px;
 }
 
+/* Score badge in detail header */
+.room-grading-score-badge {
+  font-size: 0.75rem;
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+}
+.room-grading-score-pass {
+  background: rgba(34,197,94,0.15);
+  color: var(--success-400);
+}
+.room-grading-score-fail {
+  background: rgba(239,68,68,0.15);
+  color: var(--error-400);
+}
+
+/* Score summary bar */
+.room-grading-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.room-grading-summary-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+.room-grading-summary-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.room-grading-summary-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .room-grading-questions {
   display: flex;
   flex-direction: column;
@@ -2692,12 +2733,36 @@ select option {
   border-radius: 8px;
   padding: 12px;
 }
+.room-grading-question-correct {
+  border-color: rgba(34,197,94,0.3);
+}
+.room-grading-question-wrong {
+  border-color: rgba(239,68,68,0.3);
+}
 .room-grading-q-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
+
+/* Points per question */
+.room-grading-q-points {
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.room-grading-q-points-earned {
+  color: var(--success-400);
+  background: rgba(34,197,94,0.1);
+}
+.room-grading-q-points-lost {
+  color: var(--error-400);
+  background: rgba(239,68,68,0.1);
+}
+
 .room-grading-correct {
   color: var(--success-500);
   font-weight: 700;
@@ -2727,12 +2792,29 @@ select option {
   background: color-mix(in srgb, var(--success-500), transparent 85%);
   border-left: 3px solid var(--success-500);
 }
-.room-grading-q-opt-selected {
-  border: 1px solid var(--primary-400);
-}
 .room-grading-q-opt-wrong {
   background: color-mix(in srgb, var(--error-400), transparent 85%);
   border-left: 3px solid var(--error-400);
+}
+
+/* Option tags: "Correct" / "Student's Pick" */
+.room-grading-opt-tag {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.room-grading-opt-tag-correct {
+  background: rgba(34,197,94,0.15);
+  color: var(--success-400);
+}
+.room-grading-opt-tag-wrong {
+  background: rgba(239,68,68,0.15);
+  color: var(--error-400);
 }
 
 .room-grading-comment {
@@ -2759,6 +2841,104 @@ select option {
 .room-grading-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── Teacher Dashboard (Live Quiz Monitoring) ──────────────────────────────── */
+.room-teacher-dashboard {
+  padding: 16px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.room-teacher-stats {
+  display: flex;
+  gap: 12px;
+}
+.room-teacher-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+}
+.room-teacher-stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.room-teacher-stat-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.room-teacher-participants {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.room-teacher-participant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  transition: background 0.15s;
+}
+.room-teacher-participant:hover {
+  background: var(--hover-bg);
+}
+.room-teacher-participant-submitted {
+  border-color: rgba(34,197,94,0.2);
+}
+
+.room-teacher-participant-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.room-teacher-participant-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.room-teacher-participant-badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.room-teacher-badge-submitted {
+  background: rgba(34,197,94,0.15);
+  color: var(--success-400);
+}
+.room-teacher-badge-graded {
+  background: rgba(99,102,241,0.15);
+  color: var(--primary-400);
+}
+.room-teacher-badge-working {
+  background: rgba(234,179,8,0.15);
+  color: var(--warning-500);
+}
+
+.room-teacher-participant-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 /* ── Quiz Result Reveal Overlay ────────────────────────────────────────────── */
