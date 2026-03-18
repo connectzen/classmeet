@@ -71,6 +71,7 @@ interface PresentEvent {
     | 'quiz-reveal'
     | 'quiz-answer'
     | 'quiz-submit'
+    | 'quiz-progress'
     | 'quiz-grade'
     | 'quiz-reveal-results'
     | 'quiz-result-countdown'
@@ -85,6 +86,8 @@ interface PresentEvent {
   submission?: QuizSubmission
   studentName?: string
   countdown?: number
+  progress?: number
+  totalQuestions?: number
 }
 
 // ── Main Page ────────────────────────────────────────────────────────────────
@@ -208,7 +211,9 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [showGradingPanel, setShowGradingPanel] = useState(false)
   const [quizSubmitted, setQuizSubmitted] = useState(false)
   const [revealingSubmission, setRevealingSubmission] = useState<QuizSubmission | null>(null)
-  const [revealCountdown, setRevealCountdown] = useState<number | null>(null)  // Mobile detection – null means "not yet determined"
+  const [revealCountdown, setRevealCountdown] = useState<number | null>(null)
+  // Track student progress: identity -> { answered, total }
+  const [quizProgress, setQuizProgress] = useState<Record<string, { answered: number; total: number }>>({})  // Mobile detection – null means "not yet determined"
   const [isMobile, setIsMobile] = useState<boolean>(initialIsMobile)
 
   useEffect(() => {
@@ -426,8 +431,14 @@ function RoomInner({ roomName }: { roomName: string }) {
       setQuizRevealed(true)
     } else if (event.type === 'quiz-answer' && event.identity && event.answerIndex !== undefined) {
       setQuizAnswers(prev => ({ ...prev, [event.identity!]: event.answerIndex! }))
+    } else if (event.type === 'quiz-progress' && event.identity) {
+      // Student is broadcasting their progress
+      setQuizProgress(prev => ({ ...prev, [event.identity!]: { answered: event.progress ?? 0, total: event.totalQuestions ?? 0 } }))
     } else if (event.type === 'quiz-submit' && event.identity) {
       // A student submitted their quiz — teacher should refresh submissions
+      setQuizProgress(prev => {
+        const next = { ...prev }; delete next[event.identity!]; return next
+      })
       if (isTeacher && activeQuizId && sessionId) {
         fetch(`/api/quiz-submissions?quiz_id=${activeQuizId}&session_id=${sessionId}`)
           .then(r => r.json()).then(d => { if (d.data) setQuizSubmissions(d.data) })
@@ -524,6 +535,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     setQuizSubmitted(false)
     setRevealingSubmission(null)
     setRevealCountdown(null)
+    setQuizProgress({})
     setQuizActive(true)
     bringLayerToFront('quiz')
     updateLayerOrder('quiz', true)
@@ -592,6 +604,17 @@ function RoomInner({ roomName }: { roomName: string }) {
       answerIndex,
     }))
     sendPresentData(payload, { reliable: true })
+  }, [localParticipant.identity, sendPresentData])
+
+  // Student: broadcast progress to teacher
+  const broadcastQuizProgress = useCallback((answered: number, total: number) => {
+    const payload = encoder.encode(JSON.stringify({
+      type: 'quiz-progress',
+      identity: localParticipant.identity,
+      progress: answered,
+      totalQuestions: total,
+    }))
+    sendPresentData(payload, { reliable: false })
   }, [localParticipant.identity, sendPresentData])
 
   // Student: submit all quiz answers at once
@@ -969,6 +992,8 @@ function RoomInner({ roomName }: { roomName: string }) {
           localIdentity={localParticipant.identity}
           quizSubmitted={quizSubmitted}
           quizSubmissions={quizSubmissions}
+          quizProgress={quizProgress}
+          onBroadcastProgress={broadcastQuizProgress}
           showGradingPanel={showGradingPanel}
           onToggleGradingPanel={() => { setShowGradingPanel(v => !v); refreshSubmissions() }}
           onGradeSubmission={gradeSubmission}
@@ -1154,7 +1179,8 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
   quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop, courseScrollRef,
   onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, onSubmitQuizAll, localIdentity,
-  quizSubmitted, quizSubmissions, showGradingPanel, onToggleGradingPanel,
+  quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
+  showGradingPanel, onToggleGradingPanel,
   onGradeSubmission, onRevealResults, onRefreshSubmissions,
 }: {
   participant: LKParticipant | undefined
@@ -1186,6 +1212,8 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   localIdentity: string
   quizSubmitted: boolean
   quizSubmissions: QuizSubmission[]
+  quizProgress: Record<string, { answered: number; total: number }>
+  onBroadcastProgress: (answered: number, total: number) => void
   showGradingPanel: boolean
   onToggleGradingPanel: () => void
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string) => Promise<void>
@@ -1303,6 +1331,8 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
             teacherName={participant?.name || 'Teacher'}
             quizSubmitted={quizSubmitted}
             quizSubmissions={quizSubmissions}
+            quizProgress={quizProgress}
+            onBroadcastProgress={onBroadcastProgress}
             showGradingPanel={showGradingPanel}
             onToggleGradingPanel={onToggleGradingPanel}
             onGradeSubmission={onGradeSubmission}
@@ -1440,7 +1470,8 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
 
 // ── Quiz Presentation ────────────────────────────────────────────────────────
 function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdvance, onReveal, onAnswer, onSubmitAll, localIdentity, teacherName,
-  quizSubmitted, quizSubmissions, showGradingPanel, onToggleGradingPanel, onGradeSubmission, onRevealResults, onRefreshSubmissions,
+  quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
+  showGradingPanel, onToggleGradingPanel, onGradeSubmission, onRevealResults, onRefreshSubmissions,
 }: {
   quiz: LinkedQuiz
   currentIndex: number
@@ -1455,6 +1486,8 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   teacherName: string
   quizSubmitted: boolean
   quizSubmissions: QuizSubmission[]
+  quizProgress: Record<string, { answered: number; total: number }>
+  onBroadcastProgress: (answered: number, total: number) => void
   showGradingPanel: boolean
   onToggleGradingPanel: () => void
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string) => Promise<void>
@@ -1490,8 +1523,13 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
 
   // Student: answer the current question (locally only, no broadcast)
   const handleStudentAnswer = useCallback((optionIndex: number) => {
-    setStudentAnswers(prev => ({ ...prev, [activeIndex]: optionIndex }))
-  }, [activeIndex])
+    setStudentAnswers(prev => {
+      const next = { ...prev, [activeIndex]: optionIndex }
+      // Broadcast progress to teacher
+      onBroadcastProgress(Object.keys(next).length, totalQuestions)
+      return next
+    })
+  }, [activeIndex, onBroadcastProgress, totalQuestions])
 
   // Student: submit all answers
   const handleSubmitAll = useCallback(async () => {
@@ -1565,6 +1603,21 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
           </button>
         )}
       </div>
+
+      {/* Teacher: show student progress bar */}
+      {isHost && Object.keys(quizProgress).length > 0 && (
+        <div className="room-quiz-progress-bar">
+          {Object.entries(quizProgress).map(([identity, p]) => (
+            <div key={identity} className="room-quiz-progress-item">
+              <span className="room-quiz-progress-name">{identity}</span>
+              <div className="room-quiz-progress-track">
+                <div className="room-quiz-progress-fill" style={{ width: `${p.total > 0 ? (p.answered / p.total) * 100 : 0}%` }} />
+              </div>
+              <span className="room-quiz-progress-count">{p.answered}/{p.total}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="room-presentation-content room-quiz-content">
         <div className="room-quiz-question">
@@ -1663,10 +1716,10 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             </span>
             <button
               className="btn btn-primary btn-sm"
-              disabled={answeredCount === 0 || submitting}
+              disabled={answeredCount < totalQuestions || submitting}
               onClick={handleSubmitAll}
             >
-              {submitting ? 'Submitting...' : 'Submit Quiz'}
+              {submitting ? 'Submitting...' : answeredCount < totalQuestions ? `${answeredCount}/${totalQuestions} answered` : 'Submit Quiz'}
             </button>
           </div>
           <button

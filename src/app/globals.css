@@ -2457,6 +2457,48 @@ select option {
   font-size: 0.85rem;
 }
 
+/* Teacher: student progress indicators */
+.room-quiz-progress-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 6px 16px;
+  background: color-mix(in srgb, var(--primary-400), transparent 92%);
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.78rem;
+}
+.room-quiz-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+}
+.room-quiz-progress-name {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+.room-quiz-progress-track {
+  flex: 1;
+  height: 4px;
+  background: var(--border-light);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 40px;
+}
+.room-quiz-progress-fill {
+  height: 100%;
+  background: var(--primary-400);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.room-quiz-progress-count {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 @media (max-width: 767px) {
   .room-presentation-header {
     padding: 10px 12px;
