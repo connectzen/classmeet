@@ -1131,6 +1131,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           onSelectCourse={activateCourse}
           onSelectQuiz={activateQuiz}
           onToggleParticipants={() => setParticipantsVisible(v => !v)}
+          onSpotlightTeacher={() => handlePromote(teacherParticipant?.identity ?? '')}
         />
       </div>
 
@@ -2788,6 +2789,7 @@ interface ControlBarProps {
   onSelectCourse: (courseId: string, lessonIndex: number) => void
   onSelectQuiz: (quizId: string) => void
   onToggleParticipants: () => void
+  onSpotlightTeacher: () => void
 }
 
 function ControlBarCustom({
@@ -2795,7 +2797,7 @@ function ControlBarCustom({
   isTeacher, localParticipant, onToggleHand, onLowerAllHands, onSettings, onLeave, raisedHandCount, isMobile,
   isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
   onToggleBlackboard, linkedCourses, linkedQuizzes,
-  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, onToggleParticipants,
+  onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, onToggleParticipants, onSpotlightTeacher,
 }: ControlBarProps) {
   const [showCourseMenu, setShowCourseMenu] = useState(false)
   const [showQuizMenu, setShowQuizMenu] = useState(false)
@@ -2886,14 +2888,15 @@ function ControlBarCustom({
       if (e.isComposing) return
       if (isEditableTarget(e.target)) return
 
-      const key = e.key.toLowerCase()
-      if (key === 'b') {
+      // Use e.code (physical key) — reliable across all keyboard layouts
+      const code = e.code
+      if (code === 'KeyB') {
         e.preventDefault()
         onToggleBlackboard()
         return
       }
 
-      if (key === 'c') {
+      if (code === 'KeyC') {
         e.preventDefault()
         if (isCourseActive || activeCourseId) {
           onToggleCourse()
@@ -2904,7 +2907,7 @@ function ControlBarCustom({
         return
       }
 
-      if (key === 'e') {
+      if (code === 'KeyE') {
         e.preventDefault()
         if (isQuizActive || activeQuizId) {
           onToggleQuiz()
@@ -2915,9 +2918,10 @@ function ControlBarCustom({
         return
       }
 
-      if (key === 'h') {
+      if (code === 'KeyH') {
         e.preventDefault()
         onToggleParticipants()
+        onSpotlightTeacher()
       }
     }
 
@@ -2933,6 +2937,7 @@ function ControlBarCustom({
     onToggleCourse,
     onToggleQuiz,
     onToggleParticipants,
+    onSpotlightTeacher,
   ])
 
   return (
