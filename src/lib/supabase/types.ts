@@ -178,6 +178,7 @@ export type QuizResponse = {
   answer_index: number | null
   answer_text: string | null
   is_correct: boolean | null
+  score: number | null
   teacher_comment: string | null
   sort_order: number
   created_at: string

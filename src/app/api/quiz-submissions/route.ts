@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     let autoScore = 0
     const gradedResponses = responses.map((r: { question_id: string; answer_index?: number; answer_text?: string }) => {
       const q = questionMap.get(r.question_id)
-      if (!q) return { question_id: r.question_id, answer_index: r.answer_index ?? null, answer_text: r.answer_text ?? null, is_correct: null as boolean | null, sort_order: 0, teacher_comment: null as string | null }
+      if (!q) return { question_id: r.question_id, answer_index: r.answer_index ?? null, answer_text: r.answer_text ?? null, is_correct: null as boolean | null, score: null as number | null, sort_order: 0, teacher_comment: null as string | null }
 
       let isCorrect: boolean | null = null
       if (q.question_type === 'multiple_choice' || q.question_type === 'true_false') {
@@ -54,6 +54,7 @@ export async function POST(request: Request) {
         answer_index: r.answer_index ?? null,
         answer_text: r.answer_text ?? null,
         is_correct: isCorrect,
+        score: isCorrect ? (q.points || 1) : isCorrect === false ? 0 : null,
         sort_order: q.sort_order,
         teacher_comment: null as string | null,
       }

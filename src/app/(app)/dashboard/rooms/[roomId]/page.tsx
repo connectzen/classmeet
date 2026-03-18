@@ -2006,7 +2006,8 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
   onRefresh: () => Promise<void>
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [responses, setResponses] = useState<Array<{ question_id: string; answer_index: number | null; answer_text: string | null; is_correct: boolean | null; sort_order?: number }>>([])
+  const [responses, setResponses] = useState<Array<{ id: string; question_id: string; answer_index: number | null; answer_text: string | null; is_correct: boolean | null; score: number | null; sort_order?: number }>>([])
+  const [questionScores, setQuestionScores] = useState<Record<number, number>>({})
   const [deleting, setDeleting] = useState<string | null>(null)
   const [comment, setComment] = useState('')
   const [grading, setGrading] = useState(false)
@@ -2016,13 +2017,31 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
 
   // Load responses when a submission is selected
   useEffect(() => {
-    if (!selectedId) { setResponses([]); return }
+    if (!selectedId) { setResponses([]); setQuestionScores({}); return }
     fetch(`/api/quiz-responses?submission_id=${selectedId}`)
       .then(r => r.json())
-      .then(d => { if (d.data) setResponses(d.data) })
-  }, [selectedId])
-
-  // Compute score from responses (client-side re-compute for transparency)
+      .then(d => {
+        if (d.data) {
+          setResponses(d.data)
+          // Initialize per-question scores from saved response scores or is_correct
+          const scores: Record<number, number> = {}
+          for (let i = 0; i < quiz.questions.length; i++) {
+            const resp = d.data[i] || null
+            const pts = quiz.questions[i].points || 1
+            if (resp?.score != null) {
+              scores[i] = resp.score
+            } else if (resp?.is_correct === true) {
+              scores[i] = pts
+            } else if (resp?.is_correct === false) {
+              scores[i] = 0
+            }
+            // if is_correct is null, leave unset (needs manual grading)
+          }
+          setQuestionScores(scores)
+        }
+      })
+  }, [selectedId, quiz.questions])
+  // Compute score from per-question scores
   const computedScore = useMemo(() => {
     let score = 0
     let maxScore = 0
@@ -2031,22 +2050,34 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
       const q = quiz.questions[idx]
       const pts = q.points || 1
       maxScore += pts
-      const resp = responses[idx] || null
-      const earned = resp?.is_correct ? pts : 0
+      const earned = questionScores[idx] ?? 0
       score += earned
       perQuestion.push({ earned, possible: pts })
     }
     return { score, maxScore, perQuestion, percentage: maxScore > 0 ? Math.round((score / maxScore) * 100) : 0 }
-  }, [quiz.questions, responses])
+  }, [quiz.questions, questionScores])
 
   const handleGrade = useCallback(async () => {
     if (!selected) return
     setGrading(true)
+    // Save individual response scores to DB
+    await Promise.all(
+      responses.map((resp, idx) => {
+        const pts = questionScores[idx]
+        if (pts == null || !resp?.id) return null
+        const maxPts = quiz.questions[idx]?.points || 1
+        return fetch(`/api/quiz-responses/${resp.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_correct: pts >= maxPts, score: pts }),
+        })
+      }).filter(Boolean)
+    )
     await onGrade(selected.id, computedScore.score, computedScore.maxScore, comment)
     setGrading(false)
     setSelectedId(null)
     setComment('')
-  }, [selected, computedScore, comment, onGrade])
+  }, [selected, computedScore, comment, onGrade, responses, questionScores, quiz.questions])
 
   // Save comment on already-graded submission (review mode)
   const handleSaveComment = useCallback(async () => {
@@ -2153,13 +2184,15 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
                 const resp = responses[qi] || null
                 const studentAnswer = resp?.answer_index
                 const studentText = resp?.answer_text
-                const isCorrect = resp?.is_correct
                 const isTextQuestion = q.question_type === 'short_answer' || q.question_type === 'fill_blank'
                 const pts = q.points || 1
-                const earned = isCorrect ? pts : 0
+                const earned = questionScores[qi] ?? 0
+                const hasScore = questionScores[qi] != null
+                const isFullCorrect = earned >= pts
+                const isWrong = hasScore && earned === 0
 
                 return (
-                  <div key={q.id} className={`room-grading-question ${isCorrect === true ? 'room-grading-question-correct' : isCorrect === false ? 'room-grading-question-wrong' : ''}`}>
+                  <div key={q.id} className={`room-grading-question ${isFullCorrect ? 'room-grading-question-correct' : isWrong ? 'room-grading-question-wrong' : hasScore && earned > 0 ? 'room-grading-question-partial' : ''}`}>
                     <div className="room-grading-q-header">
                       <span className="room-quiz-question-number">Q{qi + 1}</span>
                       <span className="room-quiz-question-text" style={{ fontSize: '0.9rem', flex: 1 }}>{q.question_text}</span>
@@ -2168,22 +2201,22 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
                           <Type size={11} /> Text
                         </span>
                       )}
-                      <span className={`room-grading-q-points ${isCorrect ? 'room-grading-q-points-earned' : isCorrect === false ? 'room-grading-q-points-lost' : ''}`}>
+                      <span className={`room-grading-q-points ${isFullCorrect ? 'room-grading-q-points-earned' : isWrong ? 'room-grading-q-points-lost' : hasScore && earned > 0 ? 'room-grading-q-points-partial' : ''}`}>
                         {earned}/{pts} pts
                       </span>
-                      {isCorrect !== null && (
-                        <span className={isCorrect ? 'room-grading-correct' : 'room-grading-wrong'}>
-                          {isCorrect ? '✓' : '✗'}
+                      {hasScore && (
+                        <span className={isFullCorrect ? 'room-grading-correct' : isWrong ? 'room-grading-wrong' : 'room-grading-partial'}>
+                          {isFullCorrect ? '✓' : isWrong ? '✗' : '~'}
                         </span>
                       )}
                     </div>
 
                     {isTextQuestion ? (
-                      /* Text question: show student's typed answer and expected answer */
+                      /* Text question: show student answer + point input */
                       <div className="room-grading-text-answer">
                         <div className="room-grading-text-row">
                           <span className="room-grading-text-label">Student&apos;s Answer:</span>
-                          <div className={`room-grading-text-value ${isCorrect === true ? 'room-grading-text-correct' : isCorrect === false ? 'room-grading-text-wrong' : ''}`}>
+                          <div className={`room-grading-text-value ${isFullCorrect ? 'room-grading-text-correct' : isWrong ? 'room-grading-text-wrong' : ''}`}>
                             {studentText || <em style={{ color: 'var(--text-muted)' }}>No answer provided</em>}
                           </div>
                         </div>
@@ -2195,28 +2228,42 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onDelete, onRev
                             </div>
                           </div>
                         )}
-                        {isCorrect === null && resp && (
-                          <div className="room-grading-text-actions">
-                            <button
-                              className="btn btn-sm"
-                              style={{ background: 'rgba(34,197,94,0.15)', color: 'var(--success-400)', border: '1px solid var(--success-400)' }}
-                              onClick={() => {
-                                setResponses(prev => prev.map((r, ri) => ri === qi ? { ...r, is_correct: true } : r))
+                        <div className="room-grading-text-actions">
+                          <div className="room-grading-score-input">
+                            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Points:</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={pts}
+                              step={1}
+                              value={questionScores[qi] ?? ''}
+                              onChange={e => {
+                                const v = e.target.value === '' ? undefined : Math.min(pts, Math.max(0, Number(e.target.value)))
+                                setQuestionScores(prev => {
+                                  if (v == null) { const next = { ...prev }; delete next[qi]; return next }
+                                  return { ...prev, [qi]: v }
+                                })
                               }}
-                            >
-                              <Check size={13} /> Mark Correct
-                            </button>
-                            <button
-                              className="btn btn-sm"
-                              style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--error-400)', border: '1px solid var(--error-400)' }}
-                              onClick={() => {
-                                setResponses(prev => prev.map((r, ri) => ri === qi ? { ...r, is_correct: false } : r))
-                              }}
-                            >
-                              <X size={13} /> Mark Wrong
-                            </button>
+                              className="room-grading-pts-input"
+                              placeholder="0"
+                            />
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>/ {pts}</span>
                           </div>
-                        )}
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: 'rgba(34,197,94,0.15)', color: 'var(--success-400)', border: '1px solid var(--success-400)' }}
+                            onClick={() => setQuestionScores(prev => ({ ...prev, [qi]: pts }))}
+                          >
+                            <Check size={13} /> Full
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--error-400)', border: '1px solid var(--error-400)' }}
+                            onClick={() => setQuestionScores(prev => ({ ...prev, [qi]: 0 }))}
+                          >
+                            <X size={13} /> Zero
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       /* MCQ / True-False: show options */
