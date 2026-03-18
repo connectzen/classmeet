@@ -3044,12 +3044,12 @@ function ControlBarCustom({
                 title={isQuizActive ? 'Hide quiz (Ctrl+Q)' : 'Show quiz (Ctrl+Q)'}
               >
                 <HelpCircle size={20} />
-                <span className="room-control-label">Quiz</span>
+                <span className="room-control-label">Exam</span>
               </button>
 
               {showQuizMenu && (
                 <div className="room-present-menu">
-                  <div className="room-present-menu-label">Choose Quiz</div>
+                  <div className="room-present-menu-label">Choose Exam</div>
                   {linkedQuizzes.map(q => (
                     <div key={q.id} className="room-present-menu-item" onClick={() => handleQuizPick(q.id)}>
                       <HelpCircle size={16} />
