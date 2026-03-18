@@ -23,7 +23,7 @@ import {
   LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
   MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
   Check, Clock, ArrowLeft, ArrowRight, Award, Eye, Download,
-  Star, Trophy, Play, Trash2, Type,
+  Star, Trophy, Play, Trash2, Type, AlertCircle,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
@@ -215,6 +215,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [quizSubmissions, setQuizSubmissions] = useState<QuizSubmission[]>([])
   const [quizSubmitted, setQuizSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState(false)
   const [revealingSubmission, setRevealingSubmission] = useState<QuizSubmission | null>(null)
   const [revealCountdown, setRevealCountdown] = useState<number | null>(null)
   // Student: track whether results have been revealed to them
@@ -575,6 +576,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     setQuizAnswers({})
     setQuizSubmissions([])
     setQuizSubmitted(false)
+    setSubmitError(false)
     setRevealingSubmission(null)
     setRevealCountdown(null)
     setQuizProgress({})
@@ -693,6 +695,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     })
 
     if (res.ok) {
+      setSubmitError(false)
       // Notify everyone (especially teacher) that this student submitted
       const payload = encoder.encode(JSON.stringify({
         type: 'quiz-submit',
@@ -701,8 +704,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       }))
       sendPresentData(payload, { reliable: true })
     } else {
-      // If submit fails, restore quiz screen so student can retry.
-      setQuizSubmitted(false)
+      // Keep student on submitted screen but surface a retry option
+      setSubmitError(true)
     }
   }, [activeQuizId, sessionId, linkedQuizzes, user?.fullName, localParticipant.identity, sendPresentData])
 
@@ -769,7 +772,8 @@ function RoomInner({ roomName }: { roomName: string }) {
         body: JSON.stringify({ status: 'revealed' }),
       })
       if (!res.ok) throw new Error('Failed to reveal submission')
-      await refreshSubmissions()
+      // Optimistic update (line above) + locallyRevealedSubmissionIdsRef is sufficient.
+      // 5-second polling will confirm from DB — no eager refresh needed here.
     } catch (e) {
       console.error('Reveal failed:', e)
       locallyRevealedSubmissionIdsRef.current.delete(submission.id)
@@ -1077,6 +1081,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           onSubmitQuizAll={submitQuizAll}
           localIdentity={localParticipant.identity}
           quizSubmitted={quizSubmitted}
+          submitError={submitError}
           quizSubmissions={quizSubmissions}
           quizProgress={quizProgress}
           onBroadcastProgress={broadcastQuizProgress}
@@ -1266,7 +1271,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   activeCourse, activeQuiz, allLessons, currentLessonIndex, currentQuestionIndex,
   quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop, courseScrollRef,
   onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, onSubmitQuizAll, localIdentity, onDeleteSubmission,
-  quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
+  quizSubmitted, submitError, quizSubmissions, quizProgress, onBroadcastProgress,
   submittedStudents,
   onGradeSubmission, onRevealResults, onRefreshSubmissions, quizResultRevealed,
 }: {
@@ -1298,6 +1303,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   onSubmitQuizAll: (answers: Record<number, number | string>) => Promise<void>
   localIdentity: string
   quizSubmitted: boolean
+  submitError: boolean
   quizSubmissions: QuizSubmission[]
   quizProgress: Record<string, { answered: number; total: number }>
   onBroadcastProgress: (answered: number, total: number) => void
@@ -1418,6 +1424,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
             localIdentity={localIdentity}
             teacherName={participant?.name || 'Teacher'}
             quizSubmitted={quizSubmitted}
+            submitError={submitError}
             quizSubmissions={quizSubmissions}
             quizProgress={quizProgress}
             onBroadcastProgress={onBroadcastProgress}
@@ -1559,7 +1566,7 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
 
 // ── Quiz Presentation ────────────────────────────────────────────────────────
 function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdvance, onReveal, onAnswer, onSubmitAll, localIdentity, teacherName,
-  quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
+  quizSubmitted, submitError, quizSubmissions, quizProgress, onBroadcastProgress,
   submittedStudents,
   onGradeSubmission, onDeleteSubmission, onRevealResults, onRefreshSubmissions, quizResultRevealed,
 }: {
@@ -1575,6 +1582,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   localIdentity: string
   teacherName: string
   quizSubmitted: boolean
+  submitError: boolean
   quizSubmissions: QuizSubmission[]
   quizProgress: Record<string, { answered: number; total: number }>
   onBroadcastProgress: (answered: number, total: number) => void
@@ -1800,7 +1808,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
       return <StudentRevealedResult sub={sub} quizTitle={quiz.title} />
     }
 
-    // Default: waiting for teacher
+    // Default: waiting for teacher (or retry on error)
     return (
       <div className="room-presentation">
         <div className="room-presentation-header">
@@ -1808,14 +1816,35 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
           <span className="room-presentation-title">{quiz.title}</span>
         </div>
         <div className="room-presentation-content room-quiz-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-          <div className="room-quiz-submitted-icon">
-            <Check size={48} />
-          </div>
-          <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Quiz Submitted!</h2>
-          <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center' }}>
-            Waiting for {teacherName} to grade your submission...
-          </p>
-          <div className="room-quiz-submitted-pulse" />
+          {submitError ? (
+            <>
+              <div className="room-quiz-submitted-icon" style={{ color: 'var(--error-400)' }}>
+                <AlertCircle size={48} />
+              </div>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Submission Failed</h2>
+              <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center' }}>
+                Could not save your answers. Please try again.
+              </p>
+              <button
+                className="btn btn-primary"
+                disabled={submitting}
+                onClick={() => { void onSubmitAll(studentAnswers) }}
+              >
+                {submitting ? 'Retrying...' : 'Retry Submission'}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="room-quiz-submitted-icon">
+                <Check size={48} />
+              </div>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Quiz Submitted!</h2>
+              <p style={{ color: 'var(--text-muted)', margin: 0, textAlign: 'center' }}>
+                Waiting for {teacherName} to grade your submission...
+              </p>
+              <div className="room-quiz-submitted-pulse" />
+            </>
+          )}
         </div>
       </div>
     )
