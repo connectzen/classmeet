@@ -1891,7 +1891,7 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
   onRefresh: () => Promise<void>
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [responses, setResponses] = useState<Array<{ question_id: string; answer_index: number | null; is_correct: boolean | null }>>([])
+  const [responses, setResponses] = useState<Array<{ question_id: string; answer_index: number | null; is_correct: boolean | null; sort_order?: number }>>([])
   const [comment, setComment] = useState('')
   const [grading, setGrading] = useState(false)
   const [savingComment, setSavingComment] = useState(false)
@@ -1911,10 +1911,11 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
     let score = 0
     let maxScore = 0
     const perQuestion: Array<{ earned: number; possible: number }> = []
-    for (const q of quiz.questions) {
+    for (let idx = 0; idx < quiz.questions.length; idx++) {
+      const q = quiz.questions[idx]
       const pts = q.points || 1
       maxScore += pts
-      const resp = responses.find(r => r.question_id === q.id)
+      const resp = responses[idx] || null
       const earned = resp?.is_correct ? pts : 0
       score += earned
       perQuestion.push({ earned, possible: pts })
@@ -2013,7 +2014,7 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
 
             <div className="room-grading-questions">
               {quiz.questions.map((q, qi) => {
-                const resp = responses.find(r => r.question_id === q.id)
+                const resp = responses[qi] || null
                 const studentAnswer = resp?.answer_index
                 const isCorrect = resp?.is_correct
                 const pts = q.points || 1
