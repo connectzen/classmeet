@@ -1514,6 +1514,8 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
   const totalLessons = lessons.length
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [showInfo, setShowInfo] = useState(false)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Find which topic this lesson belongs to
   const currentTopic = course.topics.find(t => t.lessons.some(l => l.id === lesson?.id))
@@ -1551,14 +1553,59 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
     })
   }, [isHost, scrollTop])
 
+  const handleInfoEnter = () => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+    setShowInfo(true)
+  }
+  const handleInfoLeave = () => {
+    hideTimerRef.current = setTimeout(() => setShowInfo(false), 200)
+  }
+
   return (
     <div className="room-presentation">
-      <div className="room-presentation-header">
-        <BookOpen size={16} />
-        <span className="room-presentation-title">{course.title}</span>
-        {!isHost && <span className="room-presentation-subtitle">{teacherName} is presenting</span>}
+      {/* Floating book icon — top-left; hover reveals course/topic/lesson info */}
+      <div
+        className="room-pres-info-trigger"
+        onMouseEnter={handleInfoEnter}
+        onMouseLeave={handleInfoLeave}
+      >
+        <div className="room-pres-info-icon"><BookOpen size={15} /></div>
+        {showInfo && (
+          <div className="room-pres-info-panel">
+            <div className="room-pres-info-course">{course.title}</div>
+            {currentTopic && <div className="room-pres-info-topic">{currentTopic.title}</div>}
+            {lesson && <div className="room-pres-info-lesson">{lesson.title}</div>}
+            <div className="room-pres-info-counter">{currentIndex + 1} / {totalLessons}</div>
+            {!isHost && <div className="room-pres-info-presenter">{teacherName} is presenting</div>}
+            {isHost && (
+              <div className="room-pres-lesson-picker">
+                {(() => {
+                  let idx = 0
+                  return course.topics.map(topic => (
+                    <div key={topic.id}>
+                      <div className="room-pres-picker-topic">{topic.title}</div>
+                      {topic.lessons.map(l => {
+                        const li = idx++
+                        return (
+                          <button
+                            key={l.id}
+                            className={'room-pres-picker-lesson' + (li === currentIndex ? ' active' : '')}
+                            onClick={() => { onNavigate(li); setShowInfo(false) }}
+                          >
+                            {l.title}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))
+                })()}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
+      {/* Full-height scrollable content — fills all space */}
       <div
         ref={(el) => {
           contentRef.current = el
@@ -1571,10 +1618,6 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
       >
         {lesson ? (
           <>
-            {currentTopic && (
-              <div className="room-presentation-topic">{currentTopic.title}</div>
-            )}
-            <h2 className="room-presentation-lesson-title">{lesson.title}</h2>
             {lesson.type === 'video' && lesson.video_url && (
               <div className="room-presentation-video">
                 <video src={lesson.video_url} controls style={{ maxWidth: '100%', maxHeight: '60vh' }} />
@@ -1589,33 +1632,27 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
         )}
       </div>
 
-      <div className="room-presentation-nav">
-        {isHost ? (
-          <>
-            <button
-              className="btn btn-outline btn-sm"
-              disabled={currentIndex === 0}
-              onClick={() => onNavigate(currentIndex - 1)}
-            >
-              <ArrowLeft size={16} /> Previous
-            </button>
-            <span className="room-presentation-counter">
-              {currentIndex + 1} / {totalLessons}
-            </span>
-            <button
-              className="btn btn-outline btn-sm"
-              disabled={currentIndex >= totalLessons - 1}
-              onClick={() => onNavigate(currentIndex + 1)}
-            >
-              Next <ArrowRight size={16} />
-            </button>
-          </>
-        ) : (
-          <span className="room-presentation-counter">
-            Lesson {currentIndex + 1} of {totalLessons}
-          </span>
-        )}
-      </div>
+      {/* Corner nav arrows — host only */}
+      {isHost && (
+        <>
+          <button
+            className="room-pres-nav-btn room-pres-nav-prev"
+            disabled={currentIndex === 0}
+            onClick={() => onNavigate(currentIndex - 1)}
+            aria-label="Previous lesson"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <button
+            className="room-pres-nav-btn room-pres-nav-next"
+            disabled={currentIndex >= totalLessons - 1}
+            onClick={() => onNavigate(currentIndex + 1)}
+            aria-label="Next lesson"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </>
+      )}
     </div>
   )
 }
