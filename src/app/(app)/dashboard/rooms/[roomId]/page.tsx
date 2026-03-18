@@ -20,7 +20,7 @@ import type { TrackReferenceOrPlaceholder } from '@livekit/components-core'
 import type { Participant as LKParticipant } from 'livekit-client'
 import {
   Mic, MicOff, Video, VideoOff, Monitor, Hand, Settings,
-  LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight, ChevronDown,
+  LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
   MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
   Check, Clock, ArrowLeft, ArrowRight, Award, Eye, Download,
   Star, Trophy, Play, Trash2, Type,
@@ -1562,7 +1562,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   // Student: "Join Quiz" gate — must click to enter
   const [quizJoined, setQuizJoined] = useState(false)
 
-  // ── Teacher inline grading state ──
+  // ── Teacher grading page state ──
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [responsesMap, setResponsesMap] = useState<Record<string, Array<{ id: string; question_id: string; answer_index: number | null; answer_text: string | null; is_correct: boolean | null; score: number | null; sort_order?: number }>>>({})
   const [scoresMap, setScoresMap] = useState<Record<string, Record<number, number>>>({})
@@ -1574,9 +1574,8 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
 
   const gradeOptionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
 
-  // Load responses when a submission is expanded
-  const toggleExpand = useCallback(async (sub: QuizSubmission) => {
-    if (expandedId === sub.id) { setExpandedId(null); return }
+  // Open dedicated grading page and load responses
+  const openGradingPage = useCallback(async (sub: QuizSubmission) => {
     setExpandedId(sub.id)
     setCommentsMap(prev => ({ ...prev, [sub.id]: prev[sub.id] ?? sub.teacher_comment ?? '' }))
     setPassedMap(prev => ({ ...prev, [sub.id]: prev[sub.id] ?? sub.passed }))
@@ -1598,7 +1597,11 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
         setScoresMap(prev => ({ ...prev, [sub.id]: scores }))
       }
     } finally { setLoadingResponses(null) }
-  }, [expandedId, responsesMap, quiz.questions])
+  }, [responsesMap, quiz.questions])
+
+  const closeGradingPage = useCallback(() => {
+    setExpandedId(null)
+  }, [])
 
   const getComputedScore = useCallback((subId: string) => {
     const questionScores = scoresMap[subId] || {}
@@ -1647,6 +1650,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
     setGrading(sub.id)
     try {
       await onGradeSubmission(sub.id, sub.score, sub.max_score, commentsMap[sub.id] || '', passedMap[sub.id])
+      setExpandedId(null)
     } finally { setGrading(null) }
   }, [onGradeSubmission, commentsMap, passedMap])
 
@@ -1804,6 +1808,201 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
     const workingStudents = Object.entries(quizProgress).filter(([id]) => !allSubmitted[id] && !allSubmittedNames.has(id))
     const submittedList = Object.entries(allSubmitted)
     const totalParticipants = workingStudents.length + submittedList.length
+    const gradingSubmission = expandedId ? quizSubmissions.find(s => s.id === expandedId) ?? null : null
+
+    if (gradingSubmission) {
+      const responses = responsesMap[gradingSubmission.id] || []
+      const questionScores = scoresMap[gradingSubmission.id] || {}
+      const computed = getComputedScore(gradingSubmission.id)
+      const pageTitle = gradingSubmission.student_name || 'Student'
+
+      return (
+        <div className="room-presentation">
+          <div className="room-presentation-header">
+            <Award size={16} />
+            <span className="room-presentation-title">Grade: {pageTitle}</span>
+            <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={closeGradingPage}>
+              <ArrowLeft size={14} /> Back
+            </button>
+          </div>
+
+          <div className="room-presentation-content room-grading-content">
+            {loadingResponses === gradingSubmission.id ? (
+              <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)' }}>Loading responses...</div>
+            ) : (
+              <>
+                {(gradingSubmission.status === 'graded' || gradingSubmission.status === 'revealed') && (
+                  <div className="room-grading-summary">
+                    <div className="room-grading-summary-bar">
+                      <div className="room-grading-summary-fill" style={{ width: `${gradingSubmission.percentage}%`, background: gradingSubmission.percentage >= 70 ? 'var(--success-500)' : 'var(--error-400)' }} />
+                    </div>
+                    <div className="room-grading-summary-stats">
+                      <span>Score: {gradingSubmission.score}/{gradingSubmission.max_score} points</span>
+                      <span>{gradingSubmission.percentage}% — {gradingSubmission.passed ? 'Passed' : 'Not Passed'}</span>
+                    </div>
+                  </div>
+                )}
+
+                {gradingSubmission.status !== 'revealed' && (
+                  <div className="room-grading-pass-toggle">
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Result:</span>
+                    <button
+                      className={`btn btn-sm ${passedMap[gradingSubmission.id] ? 'room-grading-pass-active' : 'btn-outline'}`}
+                      onClick={() => setPassedMap(prev => ({ ...prev, [gradingSubmission.id]: true }))}
+                    >
+                      <Check size={13} /> Pass
+                    </button>
+                    <button
+                      className={`btn btn-sm ${passedMap[gradingSubmission.id] === false ? 'room-grading-fail-active' : 'btn-outline'}`}
+                      onClick={() => setPassedMap(prev => ({ ...prev, [gradingSubmission.id]: false }))}
+                    >
+                      <X size={13} /> Fail
+                    </button>
+                  </div>
+                )}
+
+                <div className="room-grading-questions">
+                  {quiz.questions.map((q, qi) => {
+                    const resp = responses[qi] || null
+                    const studentAnswer = resp?.answer_index
+                    const studentText = resp?.answer_text
+                    const isTextQuestion = q.question_type === 'short_answer' || q.question_type === 'fill_blank'
+                    const pts = q.points || 1
+                    const earned = questionScores[qi] ?? 0
+                    const hasScore = questionScores[qi] != null
+                    const isFullCorrect = earned >= pts
+                    const isWrong = hasScore && earned === 0
+
+                    return (
+                      <div key={q.id} className={`room-grading-question ${isFullCorrect ? 'room-grading-question-correct' : isWrong ? 'room-grading-question-wrong' : hasScore && earned > 0 ? 'room-grading-question-partial' : ''}`}>
+                        <div className="room-grading-q-header">
+                          <span className="room-quiz-question-number">Q{qi + 1}</span>
+                          <span className="room-quiz-question-text" style={{ fontSize: '0.9rem', flex: 1 }}>{q.question_text}</span>
+                          {isTextQuestion && (
+                            <span className="room-grading-opt-tag" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--primary-400)' }}>
+                              <Type size={11} /> Text
+                            </span>
+                          )}
+                          <span className={`room-grading-q-points ${isFullCorrect ? 'room-grading-q-points-earned' : isWrong ? 'room-grading-q-points-lost' : hasScore && earned > 0 ? 'room-grading-q-points-partial' : ''}`}>
+                            {earned}/{pts} pts
+                          </span>
+                          {hasScore && (
+                            <span className={isFullCorrect ? 'room-grading-correct' : isWrong ? 'room-grading-wrong' : 'room-grading-partial'}>
+                              {isFullCorrect ? '✓' : isWrong ? '✗' : '~'}
+                            </span>
+                          )}
+                        </div>
+
+                        {isTextQuestion ? (
+                          <div className="room-grading-text-answer">
+                            <div className="room-grading-text-row">
+                              <span className="room-grading-text-label">Student&apos;s Answer:</span>
+                              <div className={`room-grading-text-value ${isFullCorrect ? 'room-grading-text-correct' : isWrong ? 'room-grading-text-wrong' : ''}`}>
+                                {studentText || <em style={{ color: 'var(--text-muted)' }}>No answer provided</em>}
+                              </div>
+                            </div>
+                            {q.correct_answer && (
+                              <div className="room-grading-text-row">
+                                <span className="room-grading-text-label">Expected Answer:</span>
+                                <div className="room-grading-text-value room-grading-text-correct">{q.correct_answer}</div>
+                              </div>
+                            )}
+                            {gradingSubmission.status !== 'revealed' && (
+                              <div className="room-grading-text-actions">
+                                <div className="room-grading-score-input">
+                                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Points:</label>
+                                  <input
+                                    type="number" min={0} max={pts} step={1}
+                                    value={questionScores[qi] ?? ''}
+                                    onChange={e => {
+                                      const v = e.target.value === '' ? undefined : Math.min(pts, Math.max(0, Number(e.target.value)))
+                                      setScoresMap(prev => {
+                                        const cur = { ...prev[gradingSubmission.id] }
+                                        if (v == null) delete cur[qi]; else cur[qi] = v
+                                        return { ...prev, [gradingSubmission.id]: cur }
+                                      })
+                                    }}
+                                    className="room-grading-pts-input"
+                                    placeholder="0"
+                                  />
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>/ {pts}</span>
+                                </div>
+                                <button className="btn btn-sm" style={{ background: 'rgba(34,197,94,0.15)', color: 'var(--success-400)', border: '1px solid var(--success-400)' }}
+                                  onClick={() => setScoresMap(prev => ({ ...prev, [gradingSubmission.id]: { ...prev[gradingSubmission.id], [qi]: pts } }))}>
+                                  <Check size={13} /> Full
+                                </button>
+                                <button className="btn btn-sm" style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--error-400)', border: '1px solid var(--error-400)' }}
+                                  onClick={() => setScoresMap(prev => ({ ...prev, [gradingSubmission.id]: { ...prev[gradingSubmission.id], [qi]: 0 } }))}>
+                                  <X size={13} /> Zero
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="room-grading-q-options">
+                            {q.options.map((opt, oi) => {
+                              const isCorrectOption = oi === q.correct_index
+                              const isStudentPick = oi === studentAnswer
+                              let cls = 'room-grading-q-opt'
+                              if (isCorrectOption) cls += ' room-grading-q-opt-correct'
+                              if (isStudentPick && !isCorrectOption) cls += ' room-grading-q-opt-wrong'
+                              return (
+                                <div key={oi} className={cls}>
+                                  <span className="room-quiz-option-label">{gradeOptionLabels[oi]}</span>
+                                  <span style={{ flex: 1 }}>{opt}</span>
+                                  {isCorrectOption && (
+                                    <span className="room-grading-opt-tag room-grading-opt-tag-correct"><Check size={11} /> Correct</span>
+                                  )}
+                                  {isStudentPick && (
+                                    <span className={`room-grading-opt-tag ${isCorrectOption ? 'room-grading-opt-tag-correct' : 'room-grading-opt-tag-wrong'}`}>Student&apos;s Pick</span>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="room-grading-comment">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
+                  <textarea
+                    className="room-grading-textarea"
+                    value={commentsMap[gradingSubmission.id] ?? ''}
+                    onChange={e => setCommentsMap(prev => ({ ...prev, [gradingSubmission.id]: e.target.value }))}
+                    placeholder="Add a comment for this student..."
+                    rows={2}
+                  />
+                </div>
+
+                <div className="room-grading-actions">
+                  {gradingSubmission.status === 'submitted' ? (
+                    <button className="btn btn-primary" disabled={grading === gradingSubmission.id} onClick={() => handleGrade(gradingSubmission)}>
+                      {grading === gradingSubmission.id ? 'Saving Results...' : `Save Results (${computed.score}/${computed.maxScore})`}
+                    </button>
+                  ) : gradingSubmission.status === 'graded' ? (
+                    <>
+                      {(commentsMap[gradingSubmission.id] ?? '') !== (gradingSubmission.teacher_comment || '') && (
+                        <button className="btn btn-outline" disabled={grading === gradingSubmission.id} onClick={() => handleSaveComment(gradingSubmission)}>
+                          {grading === gradingSubmission.id ? 'Saving Results...' : 'Save Results'}
+                        </button>
+                      )}
+                      <button className="btn btn-primary" onClick={() => onRevealResults(gradingSubmission)}>
+                        <Trophy size={14} /> Reveal to Student
+                      </button>
+                    </>
+                  ) : (
+                    <span className="room-grading-status-revealed" style={{ fontSize: '0.85rem' }}>✓ Results already revealed</span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )
+    }
 
     return (
       <div className="room-presentation">
@@ -1848,15 +2047,11 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
             {/* Submitted students — shown first */}
             {submittedList.map(([identity, name]) => {
               const submission = quizSubmissions.find(s => s.student_name === name || s.student_name === identity)
-              const isExpanded = submission ? expandedId === submission.id : false
-              const responses = submission ? responsesMap[submission.id] || [] : []
-              const questionScores = submission ? scoresMap[submission.id] || {} : {}
-              const computed = submission ? getComputedScore(submission.id) : { score: 0, maxScore: 0, percentage: 0 }
 
               return (
                 <div key={identity} className={`room-grading-item-card ${submission && (submission.status === 'graded' || submission.status === 'revealed') ? 'room-grading-item-graded' : ''}`}>
                   {/* Row header */}
-                  <div className="room-grading-item" style={{ cursor: submission ? 'pointer' : 'default' }} onClick={() => submission && toggleExpand(submission)}>
+                  <div className="room-grading-item">
                     <div className="room-grading-item-info">
                       <span className="room-grading-item-name">{name || identity}</span>
                       {submission ? (
@@ -1877,16 +2072,16 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                           <Check size={12} /> Submitted
                         </span>
                       )}
-                      {submission && (
-                        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                          <ChevronDown size={16} />
-                        </span>
-                      )}
                     </div>
                     <div className="room-grading-item-actions" onClick={e => e.stopPropagation()}>
                       {submission && submission.status === 'submitted' && (
-                        <button className="btn btn-primary btn-sm" onClick={() => toggleExpand(submission)}>
+                        <button className="btn btn-primary btn-sm" onClick={() => openGradingPage(submission)}>
                           <Award size={14} /> Grade
+                        </button>
+                      )}
+                      {submission && submission.status === 'graded' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => openGradingPage(submission)}>
+                          <Award size={14} /> Open Grade
                         </button>
                       )}
                       {submission && submission.status === 'graded' && (
@@ -1910,189 +2105,6 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
                       )}
                     </div>
                   </div>
-
-                  {/* Inline expandable grading detail */}
-                  {submission && isExpanded && (
-                    <div className="room-grading-expand">
-                      {loadingResponses === submission.id ? (
-                        <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)' }}>Loading responses...</div>
-                      ) : (
-                        <>
-                          {/* Score summary bar */}
-                          {(submission.status === 'graded' || submission.status === 'revealed') && (
-                            <div className="room-grading-summary">
-                              <div className="room-grading-summary-bar">
-                                <div className="room-grading-summary-fill" style={{ width: `${submission.percentage}%`, background: submission.percentage >= 70 ? 'var(--success-500)' : 'var(--error-400)' }} />
-                              </div>
-                              <div className="room-grading-summary-stats">
-                                <span>Score: {submission.score}/{submission.max_score} points</span>
-                                <span>{submission.percentage}% — {submission.passed ? 'Passed' : 'Not Passed'}</span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Pass / Fail toggle */}
-                          {submission.status !== 'revealed' && (
-                            <div className="room-grading-pass-toggle">
-                              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Result:</span>
-                              <button
-                                className={`btn btn-sm ${passedMap[submission.id] ? 'room-grading-pass-active' : 'btn-outline'}`}
-                                onClick={() => setPassedMap(prev => ({ ...prev, [submission.id]: true }))}
-                              >
-                                <Check size={13} /> Pass
-                              </button>
-                              <button
-                                className={`btn btn-sm ${passedMap[submission.id] === false ? 'room-grading-fail-active' : 'btn-outline'}`}
-                                onClick={() => setPassedMap(prev => ({ ...prev, [submission.id]: false }))}
-                              >
-                                <X size={13} /> Fail
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Questions */}
-                          <div className="room-grading-questions">
-                            {quiz.questions.map((q, qi) => {
-                              const resp = responses[qi] || null
-                              const studentAnswer = resp?.answer_index
-                              const studentText = resp?.answer_text
-                              const isTextQuestion = q.question_type === 'short_answer' || q.question_type === 'fill_blank'
-                              const pts = q.points || 1
-                              const earned = questionScores[qi] ?? 0
-                              const hasScore = questionScores[qi] != null
-                              const isFullCorrect = earned >= pts
-                              const isWrong = hasScore && earned === 0
-
-                              return (
-                                <div key={q.id} className={`room-grading-question ${isFullCorrect ? 'room-grading-question-correct' : isWrong ? 'room-grading-question-wrong' : hasScore && earned > 0 ? 'room-grading-question-partial' : ''}`}>
-                                  <div className="room-grading-q-header">
-                                    <span className="room-quiz-question-number">Q{qi + 1}</span>
-                                    <span className="room-quiz-question-text" style={{ fontSize: '0.9rem', flex: 1 }}>{q.question_text}</span>
-                                    {isTextQuestion && (
-                                      <span className="room-grading-opt-tag" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--primary-400)' }}>
-                                        <Type size={11} /> Text
-                                      </span>
-                                    )}
-                                    <span className={`room-grading-q-points ${isFullCorrect ? 'room-grading-q-points-earned' : isWrong ? 'room-grading-q-points-lost' : hasScore && earned > 0 ? 'room-grading-q-points-partial' : ''}`}>
-                                      {earned}/{pts} pts
-                                    </span>
-                                    {hasScore && (
-                                      <span className={isFullCorrect ? 'room-grading-correct' : isWrong ? 'room-grading-wrong' : 'room-grading-partial'}>
-                                        {isFullCorrect ? '✓' : isWrong ? '✗' : '~'}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {isTextQuestion ? (
-                                    <div className="room-grading-text-answer">
-                                      <div className="room-grading-text-row">
-                                        <span className="room-grading-text-label">Student&apos;s Answer:</span>
-                                        <div className={`room-grading-text-value ${isFullCorrect ? 'room-grading-text-correct' : isWrong ? 'room-grading-text-wrong' : ''}`}>
-                                          {studentText || <em style={{ color: 'var(--text-muted)' }}>No answer provided</em>}
-                                        </div>
-                                      </div>
-                                      {q.correct_answer && (
-                                        <div className="room-grading-text-row">
-                                          <span className="room-grading-text-label">Expected Answer:</span>
-                                          <div className="room-grading-text-value room-grading-text-correct">{q.correct_answer}</div>
-                                        </div>
-                                      )}
-                                      {submission.status !== 'revealed' && (
-                                        <div className="room-grading-text-actions">
-                                          <div className="room-grading-score-input">
-                                            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Points:</label>
-                                            <input
-                                              type="number" min={0} max={pts} step={1}
-                                              value={questionScores[qi] ?? ''}
-                                              onChange={e => {
-                                                const v = e.target.value === '' ? undefined : Math.min(pts, Math.max(0, Number(e.target.value)))
-                                                setScoresMap(prev => {
-                                                  const cur = { ...prev[submission.id] }
-                                                  if (v == null) delete cur[qi]; else cur[qi] = v
-                                                  return { ...prev, [submission.id]: cur }
-                                                })
-                                              }}
-                                              className="room-grading-pts-input"
-                                              placeholder="0"
-                                            />
-                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>/ {pts}</span>
-                                          </div>
-                                          <button className="btn btn-sm" style={{ background: 'rgba(34,197,94,0.15)', color: 'var(--success-400)', border: '1px solid var(--success-400)' }}
-                                            onClick={() => setScoresMap(prev => ({ ...prev, [submission.id]: { ...prev[submission.id], [qi]: pts } }))}>
-                                            <Check size={13} /> Full
-                                          </button>
-                                          <button className="btn btn-sm" style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--error-400)', border: '1px solid var(--error-400)' }}
-                                            onClick={() => setScoresMap(prev => ({ ...prev, [submission.id]: { ...prev[submission.id], [qi]: 0 } }))}>
-                                            <X size={13} /> Zero
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="room-grading-q-options">
-                                      {q.options.map((opt, oi) => {
-                                        const isCorrectOption = oi === q.correct_index
-                                        const isStudentPick = oi === studentAnswer
-                                        let cls = 'room-grading-q-opt'
-                                        if (isCorrectOption) cls += ' room-grading-q-opt-correct'
-                                        if (isStudentPick && !isCorrectOption) cls += ' room-grading-q-opt-wrong'
-                                        return (
-                                          <div key={oi} className={cls}>
-                                            <span className="room-quiz-option-label">{gradeOptionLabels[oi]}</span>
-                                            <span style={{ flex: 1 }}>{opt}</span>
-                                            {isCorrectOption && (
-                                              <span className="room-grading-opt-tag room-grading-opt-tag-correct"><Check size={11} /> Correct</span>
-                                            )}
-                                            {isStudentPick && (
-                                              <span className={`room-grading-opt-tag ${isCorrectOption ? 'room-grading-opt-tag-correct' : 'room-grading-opt-tag-wrong'}`}>Student&apos;s Pick</span>
-                                            )}
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-
-                          {/* Comment */}
-                          <div className="room-grading-comment">
-                            <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
-                            <textarea
-                              className="room-grading-textarea"
-                              value={commentsMap[submission.id] ?? ''}
-                              onChange={e => setCommentsMap(prev => ({ ...prev, [submission.id]: e.target.value }))}
-                              placeholder="Add a comment for this student..."
-                              rows={2}
-                            />
-                          </div>
-
-                          {/* Actions */}
-                          <div className="room-grading-actions">
-                            {submission.status === 'submitted' ? (
-                              <button className="btn btn-primary" disabled={grading === submission.id} onClick={() => handleGrade(submission)}>
-                                {grading === submission.id ? 'Grading...' : `Confirm Grade (${computed.score}/${computed.maxScore})`}
-                              </button>
-                            ) : submission.status === 'graded' ? (
-                              <>
-                                {(commentsMap[submission.id] ?? '') !== (submission.teacher_comment || '') && (
-                                  <button className="btn btn-outline" disabled={grading === submission.id} onClick={() => handleSaveComment(submission)}>
-                                    {grading === submission.id ? 'Saving...' : 'Save Comment'}
-                                  </button>
-                                )}
-                                <button className="btn btn-primary" onClick={() => onRevealResults(submission)}>
-                                  <Trophy size={14} /> Reveal to Student
-                                </button>
-                              </>
-                            ) : (
-                              <span className="room-grading-status-revealed" style={{ fontSize: '0.85rem' }}>✓ Results already revealed</span>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
                 </div>
               )
             })}
