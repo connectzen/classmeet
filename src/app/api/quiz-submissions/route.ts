@@ -40,8 +40,14 @@ export async function POST(request: Request) {
       if (q.question_type === 'multiple_choice' || q.question_type === 'true_false') {
         isCorrect = r.answer_index === q.correct_index
         if (isCorrect) autoScore += (q.points || 1)
+      } else if ((q.question_type === 'short_answer' || q.question_type === 'fill_blank') && q.correct_answer) {
+        // Auto-grade if correct_answer is set — case-insensitive trim match
+        const studentText = (r.answer_text ?? '').trim().toLowerCase()
+        const expectedText = q.correct_answer.trim().toLowerCase()
+        isCorrect = studentText === expectedText
+        if (isCorrect) autoScore += (q.points || 1)
       }
-      // short_answer / fill_blank: leave is_correct as null for teacher grading
+      // If no correct_answer set for text questions, leave is_correct null for manual grading
 
       return {
         question_id: r.question_id,

@@ -2864,6 +2864,70 @@ select option {
   gap: 8px;
 }
 
+/* Text question grading */
+.room-grading-text-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.room-grading-text-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.room-grading-text-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.room-grading-text-value {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--border-light);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.room-grading-text-correct {
+  border-left-color: var(--success-500);
+  background: color-mix(in srgb, var(--success-500), transparent 90%);
+}
+.room-grading-text-wrong {
+  border-left-color: var(--error-400);
+  background: color-mix(in srgb, var(--error-400), transparent 90%);
+}
+.room-grading-text-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Student text input for short_answer / fill_blank */
+.room-quiz-text-input {
+  width: 100%;
+  padding: 0 16px;
+}
+.room-quiz-text-area {
+  width: 100%;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.95rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  resize: vertical;
+  font-family: inherit;
+  min-height: 80px;
+  transition: border-color 0.2s;
+}
+.room-quiz-text-area:focus {
+  outline: none;
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-400), transparent 80%);
+}
+
 /* ── Teacher Dashboard (Live Quiz Monitoring) ──────────────────────────────── */
 .room-teacher-dashboard {
   padding: 16px !important;

@@ -1,6 +1,43 @@
 import { createClient } from '@/lib/supabase/server'
 import { apiResponse, apiError, requireAuth } from '@/lib/api-utils'
 
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await props.params
+    const user = await requireAuth(request)
+    const supabase = await createClient()
+
+    // Fetch the submission to verify teacher ownership
+    const { data: submission } = await supabase
+      .from('quiz_submissions')
+      .select('quiz_id')
+      .eq('id', id)
+      .single()
+
+    if (!submission) return apiError('Submission not found', 404)
+
+    const { data: quiz } = await supabase
+      .from('quizzes')
+      .select('teacher_id')
+      .eq('id', submission.quiz_id)
+      .single()
+
+    if (!quiz) return apiError('Quiz not found', 404)
+    if (quiz.teacher_id !== user.id) {
+      return apiError('Forbidden', 403)
+    }
+
+    // Delete responses first (foreign key), then submission
+    await supabase.from('quiz_responses').delete().eq('submission_id', id)
+    const { error } = await supabase.from('quiz_submissions').delete().eq('id', id)
+
+    if (error) throw error
+    return apiResponse({ deleted: true })
+  } catch (err) {
+    return apiError(err, 500)
+  }
+}
+
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await props.params
