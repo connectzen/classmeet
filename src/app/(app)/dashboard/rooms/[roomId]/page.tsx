@@ -213,7 +213,10 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [revealingSubmission, setRevealingSubmission] = useState<QuizSubmission | null>(null)
   const [revealCountdown, setRevealCountdown] = useState<number | null>(null)
   // Track student progress: identity -> { answered, total }
-  const [quizProgress, setQuizProgress] = useState<Record<string, { answered: number; total: number }>>({})  // Mobile detection – null means "not yet determined"
+  const [quizProgress, setQuizProgress] = useState<Record<string, { answered: number; total: number }>>({})
+  // Track submitted students: identity -> student name (teacher awareness)
+  const [submittedStudents, setSubmittedStudents] = useState<Record<string, string>>({})
+  // Mobile detection – null means "not yet determined"
   const [isMobile, setIsMobile] = useState<boolean>(initialIsMobile)
 
   useEffect(() => {
@@ -435,7 +438,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       // Student is broadcasting their progress
       setQuizProgress(prev => ({ ...prev, [event.identity!]: { answered: event.progress ?? 0, total: event.totalQuestions ?? 0 } }))
     } else if (event.type === 'quiz-submit' && event.identity) {
-      // A student submitted their quiz — teacher should refresh submissions
+      // A student submitted their quiz — track them as submitted and refresh
+      setSubmittedStudents(prev => ({ ...prev, [event.identity!]: event.studentName || event.identity! }))
       setQuizProgress(prev => {
         const next = { ...prev }; delete next[event.identity!]; return next
       })
@@ -536,6 +540,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     setRevealingSubmission(null)
     setRevealCountdown(null)
     setQuizProgress({})
+    setSubmittedStudents({})
     setQuizActive(true)
     bringLayerToFront('quiz')
     updateLayerOrder('quiz', true)
@@ -647,6 +652,7 @@ function RoomInner({ roomName }: { roomName: string }) {
       const payload = encoder.encode(JSON.stringify({
         type: 'quiz-submit',
         identity: localParticipant.identity,
+        studentName: studentName,
       }))
       sendPresentData(payload, { reliable: true })
     }
@@ -994,6 +1000,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           quizSubmissions={quizSubmissions}
           quizProgress={quizProgress}
           onBroadcastProgress={broadcastQuizProgress}
+          submittedStudents={submittedStudents}
           showGradingPanel={showGradingPanel}
           onToggleGradingPanel={() => { setShowGradingPanel(v => !v); refreshSubmissions() }}
           onGradeSubmission={gradeSubmission}
@@ -1180,6 +1187,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   quizRevealed, quizAnswers, onNavigateLesson, onScrollCourse, courseScrollTop, courseScrollRef,
   onAdvanceQuestion, onRevealAnswer, onSubmitAnswer, onSubmitQuizAll, localIdentity,
   quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
+  submittedStudents,
   showGradingPanel, onToggleGradingPanel,
   onGradeSubmission, onRevealResults, onRefreshSubmissions,
 }: {
@@ -1214,6 +1222,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   quizSubmissions: QuizSubmission[]
   quizProgress: Record<string, { answered: number; total: number }>
   onBroadcastProgress: (answered: number, total: number) => void
+  submittedStudents: Record<string, string>
   showGradingPanel: boolean
   onToggleGradingPanel: () => void
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string) => Promise<void>
@@ -1333,6 +1342,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
             quizSubmissions={quizSubmissions}
             quizProgress={quizProgress}
             onBroadcastProgress={onBroadcastProgress}
+            submittedStudents={submittedStudents}
             showGradingPanel={showGradingPanel}
             onToggleGradingPanel={onToggleGradingPanel}
             onGradeSubmission={onGradeSubmission}
@@ -1471,6 +1481,7 @@ function CoursePresentation({ course, lessons, currentIndex, isHost, onNavigate,
 // ── Quiz Presentation ────────────────────────────────────────────────────────
 function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdvance, onReveal, onAnswer, onSubmitAll, localIdentity, teacherName,
   quizSubmitted, quizSubmissions, quizProgress, onBroadcastProgress,
+  submittedStudents,
   showGradingPanel, onToggleGradingPanel, onGradeSubmission, onRevealResults, onRefreshSubmissions,
 }: {
   quiz: LinkedQuiz
@@ -1488,6 +1499,7 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
   quizSubmissions: QuizSubmission[]
   quizProgress: Record<string, { answered: number; total: number }>
   onBroadcastProgress: (answered: number, total: number) => void
+  submittedStudents: Record<string, string>
   showGradingPanel: boolean
   onToggleGradingPanel: () => void
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string) => Promise<void>
@@ -1598,14 +1610,18 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
           Q{activeIndex + 1}/{totalQuestions}
         </span>
         {isHost && (
-          <button className="btn btn-outline btn-sm" style={{ marginLeft: 8 }} onClick={onToggleGradingPanel}>
+          <button
+            className={`btn btn-sm ${quizSubmissions.length > 0 ? 'btn-primary room-grade-btn-pulse' : 'btn-outline'}`}
+            style={{ marginLeft: 8 }}
+            onClick={onToggleGradingPanel}
+          >
             <ClipboardList size={14} /> Grade ({quizSubmissions.length})
           </button>
         )}
       </div>
 
-      {/* Teacher: show student progress bar */}
-      {isHost && Object.keys(quizProgress).length > 0 && (
+      {/* Teacher: show student progress + submitted status */}
+      {isHost && (Object.keys(quizProgress).length > 0 || Object.keys(submittedStudents).length > 0) && (
         <div className="room-quiz-progress-bar">
           {Object.entries(quizProgress).map(([identity, p]) => (
             <div key={identity} className="room-quiz-progress-item">
@@ -1616,6 +1632,17 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
               <span className="room-quiz-progress-count">{p.answered}/{p.total}</span>
             </div>
           ))}
+          {Object.entries(submittedStudents).map(([identity, name]) => (
+            <div key={identity} className="room-quiz-progress-item room-quiz-progress-submitted">
+              <span className="room-quiz-progress-name">{name || identity}</span>
+              <div className="room-quiz-progress-track">
+                <div className="room-quiz-progress-fill" style={{ width: '100%', background: 'var(--success-400)' }} />
+              </div>
+              <span className="room-quiz-progress-count" style={{ color: 'var(--success-400)' }}>
+                <Check size={12} /> Submitted
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -1623,11 +1650,18 @@ function QuizPresentation({ quiz, currentIndex, revealed, answers, isHost, onAdv
         <div className="room-quiz-question">
           <span className="room-quiz-question-number">Question {activeIndex + 1}</span>
           <h2 className="room-quiz-question-text">{question.question_text}</h2>
-          {question.time_limit > 0 && (
-            <div className="room-quiz-timer">
-              <Clock size={14} /> {question.time_limit}s
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center' }}>
+            {question.time_limit > 0 && (
+              <div className="room-quiz-timer">
+                <Clock size={14} /> {question.time_limit}s
+              </div>
+            )}
+            {question.points > 1 && (
+              <div className="room-quiz-timer" style={{ color: 'var(--primary-400)' }}>
+                <Star size={14} /> {question.points} pts
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="room-quiz-options">
@@ -1748,6 +1782,7 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
   const [responses, setResponses] = useState<Array<{ question_id: string; answer_index: number | null; is_correct: boolean | null }>>([])
   const [comment, setComment] = useState('')
   const [grading, setGrading] = useState(false)
+  const [reviewMode, setReviewMode] = useState(false)
 
   const selected = submissions.find(s => s.id === selectedId) || null
 
@@ -1762,16 +1797,21 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
   const handleGrade = useCallback(async () => {
     if (!selected) return
     setGrading(true)
-    // Calculate final score from responses (auto-graded + teacher overrides)
+    // Calculate final score using weighted points per question
     let score = 0
-    for (const r of responses) {
-      if (r.is_correct) score++
+    let maxScore = 0
+    for (const q of quiz.questions) {
+      const pts = q.points || 1
+      maxScore += pts
+      const resp = responses.find(r => r.question_id === q.id)
+      if (resp?.is_correct) score += pts
     }
-    await onGrade(selected.id, score, quiz.questions.length, comment)
+    await onGrade(selected.id, score, maxScore, comment)
     setGrading(false)
     setSelectedId(null)
+    setReviewMode(false)
     setComment('')
-  }, [selected, responses, comment, quiz.questions.length, onGrade])
+  }, [selected, responses, comment, quiz.questions, onGrade])
 
   const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F']
 
@@ -1803,13 +1843,23 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
                   </div>
                   <div className="room-grading-item-actions">
                     {sub.status === 'graded' ? (
-                      <button className="btn btn-primary btn-sm" onClick={() => onRevealResults(sub)}>
-                        <Eye size={14} /> Reveal
-                      </button>
+                      <>
+                        <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || ''); setReviewMode(true) }}>
+                          <Eye size={14} /> Review
+                        </button>
+                        <button className="btn btn-primary btn-sm" onClick={() => onRevealResults(sub)}>
+                          <Trophy size={14} /> Reveal
+                        </button>
+                      </>
                     ) : (
-                      <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || '') }}>
-                        <Award size={14} /> Grade
-                      </button>
+                      <>
+                        <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || ''); setReviewMode(true) }}>
+                          <Eye size={14} /> Review
+                        </button>
+                        <button className="btn btn-primary btn-sm" onClick={() => { setSelectedId(sub.id); setComment(sub.teacher_comment || ''); setReviewMode(false) }}>
+                          <Award size={14} /> Grade
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1817,13 +1867,18 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
             )}
           </div>
         ) : (
-          /* Grading detail view */
+          /* Grading/Review detail view */
           <div className="room-grading-detail">
             <div className="room-grading-detail-header">
-              <button className="btn btn-outline btn-sm" onClick={() => setSelectedId(null)}>
+              <button className="btn btn-outline btn-sm" onClick={() => { setSelectedId(null); setReviewMode(false) }}>
                 <ArrowLeft size={14} /> Back
               </button>
               <span style={{ fontWeight: 600 }}>{selected.student_name}</span>
+              {reviewMode && (
+                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(99,102,241,0.15)', color: 'var(--primary-400)', fontWeight: 600 }}>
+                  {selected.status === 'graded' ? `${selected.score}/${selected.max_score} (${selected.percentage}%)` : 'Reviewing'}
+                </span>
+              )}
             </div>
 
             <div className="room-grading-questions">
@@ -1837,6 +1892,9 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
                     <div className="room-grading-q-header">
                       <span className="room-quiz-question-number">Q{qi + 1}</span>
                       <span className="room-quiz-question-text" style={{ fontSize: '0.9rem' }}>{q.question_text}</span>
+                      {q.points > 1 && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--primary-400)', fontWeight: 600, whiteSpace: 'nowrap' }}>{q.points} pts</span>
+                      )}
                       {isCorrect !== null && (
                         <span className={isCorrect ? 'room-grading-correct' : 'room-grading-wrong'}>
                           {isCorrect ? '✓' : '✗'}
@@ -1862,22 +1920,37 @@ function QuizGradingPanel({ quiz, submissions, onClose, onGrade, onRevealResults
               })}
             </div>
 
-            <div className="room-grading-comment">
-              <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
-              <textarea
-                className="room-grading-textarea"
-                value={comment}
-                onChange={e => setComment(e.target.value)}
-                placeholder="Add a comment for this student..."
-                rows={3}
-              />
-            </div>
+            {reviewMode ? (
+              /* Review mode: show comment read-only if exists */
+              selected.teacher_comment ? (
+                <div className="room-grading-comment">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
+                    {selected.teacher_comment}
+                  </div>
+                </div>
+              ) : null
+            ) : (
+              /* Grade mode: editable comment + confirm */
+              <>
+                <div className="room-grading-comment">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Teacher Comment</label>
+                  <textarea
+                    className="room-grading-textarea"
+                    value={comment}
+                    onChange={e => setComment(e.target.value)}
+                    placeholder="Add a comment for this student..."
+                    rows={3}
+                  />
+                </div>
 
-            <div className="room-grading-actions">
-              <button className="btn btn-primary" disabled={grading} onClick={handleGrade}>
-                {grading ? 'Grading...' : 'Confirm Grade'}
-              </button>
-            </div>
+                <div className="room-grading-actions">
+                  <button className="btn btn-primary" disabled={grading} onClick={handleGrade}>
+                    {grading ? 'Grading...' : 'Confirm Grade'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

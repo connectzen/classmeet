@@ -17,17 +17,18 @@ export async function POST(request: Request) {
       return apiError('responses array is required', 400)
     }
 
-    // Fetch quiz questions for auto-grading
+    // Fetch quiz questions for auto-grading (include points)
     const { data: questions, error: qErr } = await supabase
       .from('quiz_questions')
-      .select('id, question_type, correct_index, correct_answer, sort_order')
+      .select('id, question_type, correct_index, correct_answer, sort_order, points')
       .eq('quiz_id', quiz_id)
       .order('sort_order', { ascending: true })
 
     if (qErr) throw qErr
 
     const questionMap = new Map(questions.map(q => [q.id, q]))
-    const maxScore = questions.length
+    // Max score = sum of points for all questions
+    const maxScore = questions.reduce((sum, q) => sum + (q.points || 1), 0)
 
     // Auto-grade MCQ and true/false; leave short_answer/fill_blank as null
     let autoScore = 0
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
       let isCorrect: boolean | null = null
       if (q.question_type === 'multiple_choice' || q.question_type === 'true_false') {
         isCorrect = r.answer_index === q.correct_index
-        if (isCorrect) autoScore++
+        if (isCorrect) autoScore += (q.points || 1)
       }
       // short_answer / fill_blank: leave is_correct as null for teacher grading
 

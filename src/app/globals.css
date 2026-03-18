@@ -2497,6 +2497,23 @@ select option {
 .room-quiz-progress-count {
   color: var(--text-muted);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.room-quiz-progress-submitted {
+  background: color-mix(in srgb, var(--success-400), transparent 92%);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+/* Grade button pulse when submissions arrive */
+@keyframes gradeBtnPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+}
+.room-grade-btn-pulse {
+  animation: gradeBtnPulse 2s ease-in-out 3;
 }
 
 @media (max-width: 767px) {

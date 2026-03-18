@@ -9,7 +9,7 @@ import Avatar from '@/components/ui/Avatar'
 import {
   HelpCircle, Plus, Trash2, ArrowLeft, Save, Clock,
   ChevronDown, ChevronRight, Check, X, Type, ToggleLeft, PenLine, FileText,
-  Users, Search, FolderOpen,
+  Users, Search, FolderOpen, Star,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor,
@@ -33,6 +33,7 @@ interface QuestionLocal {
   correctIndex: number
   correctAnswer: string
   timeLimit: number
+  points: number
   sortOrder: number
   collapsed: boolean
 }
@@ -143,7 +144,7 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
           </span>
         )}
         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-          <TypeIcon size={11} /> {typeInfo.label} · <Clock size={11} /> {question.timeLimit}s
+          <TypeIcon size={11} /> {typeInfo.label} · <Clock size={11} /> {question.timeLimit}s · <Star size={11} /> {question.points}pt{question.points !== 1 ? 's' : ''}
         </span>
         <button type="button"
           onPointerDown={e => e.stopPropagation()}
@@ -198,6 +199,30 @@ function SortableQuestion({ question, onUpdate, onRemove }: {
                 {t}s
               </button>
             ))}
+          </div>
+
+          {/* Points */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <Star size={14} color="var(--text-muted)" />
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Points:</span>
+            {[1, 2, 3, 5, 10].map(p => (
+              <button key={p} type="button" onClick={() => onUpdate(question.id, { points: p })}
+                style={{ padding: '4px 10px', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', fontWeight: 600,
+                  border: '1px solid var(--border-default)', cursor: 'pointer',
+                  background: question.points === p ? 'var(--primary-500)' : 'transparent',
+                  color: question.points === p ? '#fff' : 'var(--text-muted)' }}>
+                {p}
+              </button>
+            ))}
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={question.points}
+              onChange={e => { const v = parseInt(e.target.value); if (v > 0 && v <= 100) onUpdate(question.id, { points: v }) }}
+              style={{ width: 56, padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', fontWeight: 600,
+                border: '1px solid var(--border-default)', background: 'transparent', color: 'var(--text-primary)', textAlign: 'center' }}
+            />
           </div>
 
           {/* Multiple Choice options */}
@@ -494,7 +519,7 @@ export default function QuizzesPage() {
           id: q.id, questionText: q.question_text, questionType: (q.question_type || 'multiple_choice') as QuestionType,
           options: Array.isArray(q.options) ? q.options as string[] : [],
           correctIndex: q.correct_index, correctAnswer: q.correct_answer || '',
-          timeLimit: q.time_limit, sortOrder: q.sort_order, collapsed: false,
+          timeLimit: q.time_limit, points: q.points ?? 1, sortOrder: q.sort_order, collapsed: false,
         })),
       })
       return
@@ -518,6 +543,7 @@ export default function QuizzesPage() {
       correctIndex: q.correct_index,
       correctAnswer: q.correct_answer || '',
       timeLimit: q.time_limit,
+      points: q.points ?? 1,
       sortOrder: q.sort_order,
       collapsed: true,
     })))
@@ -547,6 +573,7 @@ export default function QuizzesPage() {
         correctIndex: 0,
         correctAnswer: '',
         timeLimit: 30,
+        points: 1,
         sortOrder: 0,
         collapsed: false,
       }])
@@ -580,6 +607,7 @@ export default function QuizzesPage() {
         correct_answer: q.correctAnswer.trim() || null,
         sort_order: i,
         time_limit: q.timeLimit,
+        points: q.points,
       }))
       await supabase.from('quiz_questions').insert(rows)
     }
@@ -623,6 +651,7 @@ export default function QuizzesPage() {
       correctIndex: 0,
       correctAnswer: '',
       timeLimit: 30,
+      points: 1,
       sortOrder: prev.length,
       collapsed: false,
     }])
@@ -674,6 +703,7 @@ export default function QuizzesPage() {
                   <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--primary-400)' }}>Q{qi + 1}</span>
                   {qType && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>{qType.label}</span>}
                   {q.timeLimit > 0 && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: 'auto' }}><Clock size={12} style={{ verticalAlign: -2 }} /> {q.timeLimit}s</span>}
+                  <span style={{ fontSize: '0.72rem', color: 'var(--primary-400)', fontWeight: 600 }}><Star size={12} style={{ verticalAlign: -2 }} /> {q.points ?? 1}pt{(q.points ?? 1) !== 1 ? 's' : ''}</span>
                 </div>
                 <p style={{ margin: '0 0 12px', fontSize: '0.92rem', fontWeight: 500, color: 'var(--text-primary)' }}>{q.questionText || 'No question text'}</p>
                 {q.questionType === 'multiple_choice' && (

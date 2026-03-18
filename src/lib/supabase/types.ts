@@ -128,6 +128,7 @@ export type QuizQuestion = {
   correct_answer: string | null
   sort_order: number
   time_limit: number
+  points: number
   created_at: string
 }
 

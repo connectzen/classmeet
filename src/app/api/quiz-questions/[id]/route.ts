@@ -53,6 +53,7 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
         correct_answer: body.correct_answer,
         sort_order: body.sort_order,
         time_limit: body.time_limit,
+        points: body.points,
       })
       .eq('id', id)
       .select()

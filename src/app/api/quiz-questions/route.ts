@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const supabase = await createClient()
 
-    const { quiz_id, question_text, question_type, options, correct_index, correct_answer, sort_order, time_limit } =
+    const { quiz_id, question_text, question_type, options, correct_index, correct_answer, sort_order, time_limit, points } =
       body
 
     if (!quiz_id || !question_text || !question_type) {
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
         correct_answer: correct_answer || null,
         sort_order: sort_order || 0,
         time_limit: time_limit || 0,
+        points: points || 1,
       })
       .select()
       .single()
