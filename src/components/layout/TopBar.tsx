@@ -95,13 +95,13 @@ export default function TopBar() {
             Courses
           </Link>
 
-          {/* Quizzes */}
+          {/* Exams */}
           <Link
             href="/dashboard/quizzes"
             className={cn('topbar-nav-link', (pathname === '/dashboard/quizzes' || pathname.startsWith('/dashboard/quizzes/')) && 'active')}
           >
             <HelpCircle size={14} />
-            Quizzes
+            Exams
           </Link>
 
           {/* Messages */}
@@ -204,7 +204,7 @@ export default function TopBar() {
                   onClick={() => setMobileMoreOpen(false)}
                 >
                   <HelpCircle size={15} />
-                  Quizzes
+                  Exams
                 </Link>
                 <Link
                   href="/dashboard/messages"

@@ -634,6 +634,7 @@ export default function QuizzesPage() {
     setSaving(false)
     showToast('✅ Exam saved')
     loadQuizzes()
+    closeBuilder()
   }
 
   // ── Delete quiz ──
@@ -760,15 +761,9 @@ export default function QuizzesPage() {
     return (
       <div style={{ maxWidth: '780px' }}>
         {/* Top bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={closeBuilder}>Back</Button>
-            <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>Exam Builder</h1>
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" icon={<Trash2 size={14} />} onClick={() => deleteQuiz(editingId)}>Delete</Button>
-            <Button size="sm" icon={<Save size={14} />} onClick={saveQuiz} loading={saving}>Save</Button>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', gap: '10px' }}>
+          <Button variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={closeBuilder}>Back</Button>
+          <h1 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>Exam Builder</h1>
         </div>
 
         {/* Meta fields */}
@@ -896,6 +891,12 @@ export default function QuizzesPage() {
             <Button variant="ghost" icon={<Plus size={15} />} onClick={addQuestion}>Add Question</Button>
           </div>
         )}
+
+        {/* Bottom action bar */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
+          <Button variant="outline" size="sm" icon={<Trash2 size={14} />} onClick={() => deleteQuiz(editingId)}>Delete</Button>
+          <Button size="sm" icon={<Save size={14} />} onClick={saveQuiz} loading={saving}>Save</Button>
+        </div>
 
         {/* Toast */}
         {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
