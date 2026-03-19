@@ -94,15 +94,27 @@ export default function AdminPage() {
   )
 
   async function changeRole(userId: string, newRole: UserRole) {
-    await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
+    const res = await fetch('/api/admin/update-role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, role: newRole }),
+    })
+    if (res.ok) {
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
+    }
   }
 
   async function deleteUser(userId: string) {
     if (userId === currentUser?.id) return
     if (!confirm('Delete this user and all their data? This cannot be undone.')) return
-    await supabase.from('profiles').delete().eq('id', userId)
-    setUsers(prev => prev.filter(u => u.id !== userId))
+    const res = await fetch('/api/admin/delete-user', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    })
+    if (res.ok) {
+      setUsers(prev => prev.filter(u => u.id !== userId))
+    }
   }
 
   async function deleteCourse(courseId: string) {
@@ -259,6 +271,9 @@ export default function AdminPage() {
                             color: 'var(--text-primary)', cursor: u.id === currentUser.id ? 'not-allowed' : 'pointer',
                           }}
                         >
+                          {/* Show legacy roles as selectable so admin can migrate them */}
+                          {u.role === 'member' && <option value="member">Member (legacy)</option>}
+                          {u.role === 'guest' && <option value="guest">Guest (legacy)</option>}
                           <option value="admin">Admin</option>
                           <option value="teacher">Teacher</option>
                           <option value="student">Student</option>
