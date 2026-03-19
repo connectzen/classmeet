@@ -99,7 +99,7 @@ function SetPasswordContent() {
           value={fullName}
           onChange={e => setFullName(e.target.value)}
           leftIcon={<User size={15} />}
-          autoComplete="name"
+          autoComplete="off"
         />
 
         <Input
