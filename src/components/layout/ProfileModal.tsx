@@ -33,16 +33,17 @@ export default function ProfileModal({ onClose }: ProfileModalProps) {
     form.append('file', file)
 
     const res  = await fetch('/api/profile/avatar', { method: 'POST', body: form })
-    const data = await res.json().catch(() => ({}))
+    const json = await res.json().catch(() => ({}))
 
     if (!res.ok) {
-      setError(data?.error ?? 'Failed to upload image. Please try again.')
+      setError(json?.error ?? 'Failed to upload image. Please try again.')
       setUploading(false)
       return
     }
 
-    setAvatarUrl(data.url)
-    updateUser({ avatarUrl: data.url })
+    const url = json.data?.url
+    setAvatarUrl(url)
+    updateUser({ avatarUrl: url })
     setUploading(false)
   }
 
