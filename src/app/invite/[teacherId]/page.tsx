@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useAppStore } from '@/store/app-store'
 import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
 import { UserPlus, ArrowRight, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react'
@@ -35,7 +34,6 @@ const ROLE_OPTIONS: { value: UserRole; label: string; emoji: string; desc: strin
 export default function InvitePage() {
   const params    = useParams()
   const router    = useRouter()
-  const user      = useAppStore((s) => s.user)
   const teacherId = params.teacherId as string
 
   const [state,        setState]        = useState<InviteState>('loading')
@@ -100,8 +98,18 @@ export default function InvitePage() {
   }
 
   async function handleJoin() {
-    if (!user?.id || !selectedRole) return
+    if (!selectedRole) return
     setState('joining')
+
+    // Get auth user directly — the app store may not have hydrated yet for
+    // newly invited users arriving from the set-password flow.
+    const supabase = createClient()
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+    if (!authUser) {
+      setErrorMsg('Session not found. Please sign in and try again.')
+      setState('error')
+      return
+    }
 
     // Use a server-side API route so the admin client can bypass RLS on profiles
     // and teacher_students (client-side writes are blocked by the INSERT policy).
