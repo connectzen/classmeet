@@ -24,7 +24,8 @@ export async function POST(request: Request) {
     if (!email || !teacherId) return apiError('email and teacherId are required', 400)
 
     const origin = request.headers.get('origin') || 'https://classmeet.live'
-    const redirectTo = `${origin}/invite/${teacherId}`
+    // Route through auth callback so the session is exchanged before landing on the invite page
+    const redirectTo = `${origin}/auth/callback?next=/invite/${teacherId}`
 
     const admin = createAdminClient()
 
