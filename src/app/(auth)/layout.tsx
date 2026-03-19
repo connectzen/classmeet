@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { ReactNode } from 'react'
@@ -8,41 +8,60 @@ import type { ReactNode } from 'react'
 /**
  * Handles Supabase's implicit-flow tokens that land in the URL hash.
  *
- * inviteUserByEmail sends tokens as #access_token=...&type=invite even
- * when PKCE is enabled for normal auth, because there is no client-initiated
- * PKCE challenge for invite links. The server-side /auth/callback route never
- * sees hash fragments, so the user ends up on /sign-in with the session unused.
+ * inviteUserByEmail uses implicit flow (tokens in #access_token) even when
+ * PKCE is enabled for normal auth, because invite links have no client-
+ * initiated PKCE challenge. The server-side /auth/callback route never sees
+ * hash fragments, so without this handler the user would just see the
+ * sign-in form with a valid session sitting unused in the URL.
  *
- * This effect parses the hash, calls setSession(), then routes the user:
- *   - invited user  → /set-password?next=/invite/[teacherId]
- *   - other (magic) → /dashboard
+ * When a hash is detected we suppress the auth page entirely (no flash)
+ * and show a brief "Signing you in…" message while setSession() runs.
+ * On success the middleware's needs_password_setup guard takes over and
+ * forces the user to /set-password before they can go anywhere else.
  */
-function ImplicitFlowHandler() {
+export default function AuthLayout({ children }: { children: ReactNode }) {
   const router = useRouter()
+  // Start ready=true so normal sign-in users never see a spinner.
+  // If we detect a hash token we'll flip to false before the first paint.
+  const [ready, setReady] = useState(true)
 
   useEffect(() => {
     const hash = window.location.hash
     if (!hash.includes('access_token')) return
 
-    const params      = new URLSearchParams(hash.slice(1)) // strip leading '#'
+    // Suppress the auth form immediately — user is being signed in via invite
+    setReady(false)
+
+    // Remove the tokens from the URL bar right away
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+
+    const params      = new URLSearchParams(hash.slice(1))
     const accessToken  = params.get('access_token')
     const refreshToken = params.get('refresh_token')
-    if (!accessToken || !refreshToken) return
 
-    // Clear the hash immediately so it isn't visible or reprocessed
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    if (!accessToken || !refreshToken) {
+      setReady(true) // nothing useful in the hash, show auth page normally
+      return
+    }
 
     const supabase = createClient()
 
     supabase.auth
       .setSession({ access_token: accessToken, refresh_token: refreshToken })
       .then(({ data: { session }, error }) => {
-        if (error || !session) return
+        if (error || !session) {
+          // Token expired or already used — show the sign-in page normally
+          setReady(true)
+          return
+        }
 
+        // Session established. The middleware's needs_password_setup guard
+        // will redirect to /set-password on the next navigation.
+        // We still do an explicit redirect here so the user doesn't linger
+        // on the spinner if the middleware check ever misses for some reason.
         const invitedBy = session.user.user_metadata?.invited_by as string | undefined
 
         if (invitedBy) {
-          // Invite flow: user must set a password, then accept the collaboration
           router.replace(
             `/set-password?next=${encodeURIComponent(`/invite/${invitedBy}`)}`
           )
@@ -52,14 +71,21 @@ function ImplicitFlowHandler() {
       })
   }, [router])
 
-  return null
-}
+  if (!ready) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-primary)',
+      }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+          Signing you in&hellip;
+        </p>
+      </div>
+    )
+  }
 
-export default function AuthLayout({ children }: { children: ReactNode }) {
-  return (
-    <>
-      <ImplicitFlowHandler />
-      {children}
-    </>
-  )
+  return <>{children}</>
 }

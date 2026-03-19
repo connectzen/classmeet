@@ -35,6 +35,9 @@ function SetPasswordContent() {
 
     if (err) { setError(err.message); return }
 
+    // Clear the flag so middleware no longer blocks this user
+    await supabase.auth.updateUser({ data: { needs_password_setup: false } })
+
     setDone(true)
     setTimeout(() => router.push(next), 1200)
   }

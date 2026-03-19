@@ -45,6 +45,23 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
+  // Invited users who haven't set a password yet are blocked from everything
+  // until they complete /set-password, regardless of how they got here
+  // (first link click, second link click, direct navigation, etc.)
+  if (
+    user &&
+    user.user_metadata?.needs_password_setup === true &&
+    !pathname.startsWith('/set-password') &&
+    !pathname.startsWith('/api/')
+  ) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/set-password'
+    url.search = ''
+    const invitedBy = user.user_metadata?.invited_by as string | undefined
+    if (invitedBy) url.searchParams.set('next', `/invite/${invitedBy}`)
+    return NextResponse.redirect(url)
+  }
+
   if (!user && isProtected) {
     const url = request.nextUrl.clone()
     url.pathname = '/sign-in'

@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     // Invite user — creates account if new, sends magic link if existing
     const { error } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
-      data: { invited_by: teacherId, invited_by_name: profile.full_name || 'A teacher' },
+      data: { invited_by: teacherId, invited_by_name: profile.full_name || 'A teacher', needs_password_setup: true },
     })
 
     if (error) {
