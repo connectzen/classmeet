@@ -822,7 +822,7 @@ select option {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-disabled);
+  color: var(--text-secondary);
   padding: 0 var(--space-3) var(--space-2);
 }
 
