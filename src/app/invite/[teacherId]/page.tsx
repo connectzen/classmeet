@@ -141,12 +141,18 @@ export default function InvitePage() {
 
     const supabase = createClient()
 
+    // Teacher-to-teacher: insert both directions so each sees the other in their sidebar.
+    // Student-to-teacher: insert only the one direction.
+    const rows = visitorIsTeacher
+      ? [
+          { teacher_id: teacherId, student_id: user.id },
+          { teacher_id: user.id,   student_id: teacherId },
+        ]
+      : [{ teacher_id: teacherId, student_id: user.id }]
+
     const { error } = await supabase
       .from('teacher_students')
-      .upsert(
-        { teacher_id: teacherId, student_id: user.id },
-        { onConflict: 'teacher_id,student_id' }
-      )
+      .upsert(rows, { onConflict: 'teacher_id,student_id' })
 
     if (error) {
       setErrorMsg(error.message)
@@ -154,10 +160,12 @@ export default function InvitePage() {
       return
     }
 
-    // Also update legacy referral tracking
-    await supabase.from('profiles').update({ referred_by: teacherId }).eq('id', user.id)
-    await supabase.from('referrals')
-      .upsert({ referrer_id: teacherId, referred_id: user.id }, { onConflict: 'referred_id' })
+    if (!visitorIsTeacher) {
+      // Legacy referral tracking (students only)
+      await supabase.from('profiles').update({ referred_by: teacherId }).eq('id', user.id)
+      await supabase.from('referrals')
+        .upsert({ referrer_id: teacherId, referred_id: user.id }, { onConflict: 'referred_id' })
+    }
 
     setState('success')
   }

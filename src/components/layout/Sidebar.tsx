@@ -73,17 +73,23 @@ function StudentList({ teacherId }: { teacherId: string }) {
     const supabase = createClient()
 
     const load = async () => {
-      const { data: enrollments } = await supabase
-        .from('teacher_students')
-        .select('student_id')
-        .eq('teacher_id', teacherId)
+      // Query both sides: people I teach, AND teachers who added me as a co-teacher
+      const [{ data: asTeacher }, { data: asStudent }] = await Promise.all([
+        supabase.from('teacher_students').select('student_id').eq('teacher_id', teacherId),
+        supabase.from('teacher_students').select('teacher_id').eq('student_id', teacherId),
+      ])
 
-      if (enrollments && enrollments.length > 0) {
-        const ids = enrollments.map(e => e.student_id)
+      const ids = [
+        ...( asTeacher?.map(e => e.student_id) ?? []),
+        ...( asStudent?.map(e => e.teacher_id)  ?? []),
+      ]
+      const uniqueIds = [...new Set(ids)]
+
+      if (uniqueIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
           .select('id, full_name, avatar_url, last_seen, role')
-          .in('id', ids)
+          .in('id', uniqueIds)
 
         if (profiles) setContacts(profiles as (SidebarPerson & { role: string })[])
       } else {
@@ -93,12 +99,17 @@ function StudentList({ teacherId }: { teacherId: string }) {
 
     load()
 
-    const enrollChannel = supabase
-      .channel('sidebar-enrollments')
+    // Subscribe to both sides so any change refreshes immediately
+    const ch1 = supabase
+      .channel('sidebar-enrollments-teacher')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `teacher_id=eq.${teacherId}` }, () => load())
       .subscribe()
+    const ch2 = supabase
+      .channel('sidebar-enrollments-student')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `student_id=eq.${teacherId}` }, () => load())
+      .subscribe()
 
-    return () => { supabase.removeChannel(enrollChannel) }
+    return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2) }
   }, [teacherId])
 
   const students = contacts.filter(c => c.role !== 'teacher')
