@@ -46,15 +46,33 @@ interface SidebarPerson {
   last_seen: string | null
 }
 
-// ── Student List (for teachers) ── Uses Realtime Presence for instant status ──
+// ── Sidebar person row (shared between Students and Collaboration) ──
+function PersonRow({ p, fallbackName, isOnline }: { p: SidebarPerson & { role?: string }; fallbackName: string; isOnline: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px', opacity: isOnline ? 1 : 0.7 }}>
+      <Avatar src={p.avatar_url} name={p.full_name} size="xs" online={isOnline} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '0.8rem', color: isOnline ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: isOnline ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {p.full_name || fallbackName}
+        </div>
+        <div style={{ fontSize: '0.65rem', color: isOnline ? 'var(--success-400)' : 'var(--text-disabled)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Circle size={6} fill={isOnline ? 'var(--success-400)' : 'var(--text-disabled)'} color={isOnline ? 'var(--success-400)' : 'var(--text-disabled)'} />
+          {isOnline ? 'Online' : formatLastSeen(p.last_seen)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Teacher contacts (for teachers) — splits by role into Students + Collaboration ──
 function StudentList({ teacherId }: { teacherId: string }) {
-  const [students, setStudents] = useState<SidebarPerson[]>([])
+  const [contacts, setContacts] = useState<(SidebarPerson & { role: string })[]>([])
   const onlineUsers = usePresenceStore((s) => s.onlineUsers)
 
   useEffect(() => {
     const supabase = createClient()
 
-    const loadStudents = async () => {
+    const load = async () => {
       const { data: enrollments } = await supabase
         .from('teacher_students')
         .select('student_id')
@@ -64,67 +82,48 @@ function StudentList({ teacherId }: { teacherId: string }) {
         const ids = enrollments.map(e => e.student_id)
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, full_name, avatar_url, last_seen')
+          .select('id, full_name, avatar_url, last_seen, role')
           .in('id', ids)
 
-        if (profiles) setStudents(profiles as SidebarPerson[])
+        if (profiles) setContacts(profiles as (SidebarPerson & { role: string })[])
       } else {
-        setStudents([])
+        setContacts([])
       }
     }
 
-    loadStudents()
+    load()
 
-    // Real-time: re-fetch on enrollment changes only
     const enrollChannel = supabase
       .channel('sidebar-enrollments')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `teacher_id=eq.${teacherId}` }, () => loadStudents())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `teacher_id=eq.${teacherId}` }, () => load())
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(enrollChannel)
-    }
+    return () => { supabase.removeChannel(enrollChannel) }
   }, [teacherId])
 
-  // Split by presence store (instant), fall back to DB last_seen for offline display
-  const online = students.filter(s => onlineUsers.has(s.id))
-  const offline = students.filter(s => !onlineUsers.has(s.id))
-
-  if (students.length === 0) {
-    return (
-      <div className="sidebar-section">
-        <div className="sidebar-section-label">Students</div>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', padding: '4px 16px' }}>No students yet</p>
-      </div>
-    )
-  }
+  const students = contacts.filter(c => c.role !== 'teacher')
+  const collabs  = contacts.filter(c => c.role === 'teacher')
 
   return (
-    <div className="sidebar-section">
-      <div className="sidebar-section-label">Students — {students.length}</div>
-      {online.map(s => (
-        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px' }}>
-          <Avatar src={s.avatar_url} name={s.full_name} size="xs" online />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.full_name || 'Student'}</div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--success-400)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Circle size={6} fill="var(--success-400)" color="var(--success-400)" /> Online
-            </div>
-          </div>
-        </div>
-      ))}
-      {offline.map(s => (
-        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px', opacity: 0.7 }}>
-          <Avatar src={s.avatar_url} name={s.full_name} size="xs" />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.full_name || 'Student'}</div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-disabled)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Circle size={6} fill="var(--text-disabled)" color="var(--text-disabled)" /> {formatLastSeen(s.last_seen)}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
+    <>
+      {/* Collaboration teachers */}
+      <div className="sidebar-section">
+        <div className="sidebar-section-label">Collaboration</div>
+        {collabs.length === 0
+          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', padding: '4px 16px' }}>No co-teachers yet</p>
+          : collabs.map(c => <PersonRow key={c.id} p={c} fallbackName="Teacher" isOnline={onlineUsers.has(c.id)} />)
+        }
+      </div>
+
+      {/* Students */}
+      <div className="sidebar-section">
+        <div className="sidebar-section-label">{students.length > 0 ? `Students — ${students.length}` : 'Students'}</div>
+        {students.length === 0
+          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', padding: '4px 16px' }}>No students yet</p>
+          : students.map(s => <PersonRow key={s.id} p={s} fallbackName="Student" isOnline={onlineUsers.has(s.id)} />)
+        }
+      </div>
+    </>
   )
 }
 

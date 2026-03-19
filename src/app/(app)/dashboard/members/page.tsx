@@ -10,7 +10,6 @@ import Avatar from '@/components/ui/Avatar'
 import type { UserRole } from '@/lib/supabase/types'
 import { UserPlus, Users, Search, X, Mail, Copy, Check, Filter, Calendar, UserMinus } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
-import { sleep } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Member {
@@ -32,20 +31,38 @@ type SortBy = 'newest' | 'oldest' | 'name'
 function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (email: string) => void }) {
   const user = useAppStore(s => s.user)
   const [email, setEmail]     = useState('')
-  const [role, setRole]       = useState<UserRole>('student')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied]   = useState(false)
+  const [emailError, setEmailError] = useState('')
 
-  // Each user gets a permanent invite link derived from their stable user ID
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const inviteLink = `${origin}/invite/${user?.id ?? ''}`
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!email.trim()) return
+    if (!email.trim() || !user?.id) return
     setLoading(true)
-    await new Promise(r => setTimeout(r, 700))
+    setEmailError('')
+
+    const res = await fetch('/api/invite/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), teacherId: user.id }),
+    })
+
     setLoading(false)
+
+    if (res.status === 409) {
+      // Already has an account — show friendly message instead of closing
+      setEmailError('This email already has a ClassMeet account. Share the invite link with them directly.')
+      return
+    }
+
+    if (!res.ok) {
+      setEmailError('Failed to send invite. Please try again or share the link.')
+      return
+    }
+
     onInvited(email.trim())
     onClose()
   }
@@ -61,21 +78,17 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Invite Member</h2>
-            <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Send an invite link or email</p>
+            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Invite to ClassMeet</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>They choose their role (teacher or student) when signing up</p>
           </div>
           <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <Input label="Email address" type="email" required placeholder="student@example.com" value={email} onChange={e => setEmail(e.target.value)} leftIcon={<Mail size={15} />} />
-          <div className="input-group">
-            <label className="input-label">Role</label>
-            <select className="input" value={role} onChange={e => setRole(e.target.value as UserRole)}>
-              <option value="student">Student</option>
-              <option value="teacher">Teacher</option>
-            </select>
-          </div>
-          <div className="divider">or share link</div>
+          <Input label="Email address" type="email" required placeholder="someone@example.com" value={email} onChange={e => { setEmail(e.target.value); setEmailError('') }} leftIcon={<Mail size={15} />} />
+          {emailError && (
+            <p style={{ fontSize: '0.8rem', color: 'var(--error-400)', margin: '-8px 0 0' }}>{emailError}</p>
+          )}
+          <div className="divider">or share link directly</div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input readOnly className="input" value={inviteLink} style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }} />
             <Button type="button" variant="outline" size="sm" icon={copied ? <Check size={14} /> : <Copy size={14} />} onClick={copyLink}>

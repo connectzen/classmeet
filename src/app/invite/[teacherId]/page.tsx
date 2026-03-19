@@ -21,6 +21,7 @@ type InviteState =
   | 'self'
   | 'already-connected'
   | 'confirm-join'
+  | 'confirm-collab'
   | 'confirm-switch'
   | 'joining'
   | 'success'
@@ -37,6 +38,7 @@ export default function InvitePage() {
   const [teacher, setTeacher] = useState<TeacherProfile | null>(null)
   const [existingTeachers, setExistingTeachers] = useState<TeacherProfile[]>([])
   const [errorMsg, setErrorMsg] = useState('')
+  const [visitorIsTeacher, setVisitorIsTeacher] = useState(false)
 
   // Resolve teacher profile + determine state
   useEffect(() => {
@@ -69,7 +71,16 @@ export default function InvitePage() {
         return
       }
 
-      // 4. Check existing connection to THIS teacher
+      // 4. Fetch visitor's own profile to know their role
+      const { data: visitorProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authUser.id)
+        .single()
+      const isTeacher = visitorProfile?.role === 'teacher'
+      setVisitorIsTeacher(isTeacher)
+
+      // 5. Check existing connection to THIS teacher
       const { data: existing } = await supabase
         .from('teacher_students')
         .select('id')
@@ -82,7 +93,13 @@ export default function InvitePage() {
         return
       }
 
-      // 5. Check if connected to OTHER teachers
+      // 6. Teacher-to-teacher: skip the "switch" flow, just confirm collab
+      if (isTeacher) {
+        setState('confirm-collab')
+        return
+      }
+
+      // 7. Check if student is connected to OTHER teachers
       const { data: otherEnrollments } = await supabase
         .from('teacher_students')
         .select('teacher_id')
@@ -235,7 +252,10 @@ export default function InvitePage() {
             <CheckCircle size={28} color="var(--success-400)" style={{ marginTop: '12px' }} />
             <h2 style={{ margin: '12px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>Already Connected</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px' }}>
-              You&#39;re already a student of <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.
+              {visitorIsTeacher
+                ? <>You&#39;re already collaborating with <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.</>
+                : <>You&#39;re already a student of <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.</>
+              }
             </p>
             <Button onClick={goToDashboard} style={{ width: '100%' }}>Go to Dashboard</Button>
           </div>
@@ -260,6 +280,25 @@ export default function InvitePage() {
               <Button variant="outline" onClick={goToDashboard} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={handleJoin} style={{ flex: 1 }}>
                 <UserPlus size={16} /> Join Teacher
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Confirm collab (visitor is a teacher) */}
+        {state === 'confirm-collab' && teacher && (
+          <div>
+            <Avatar src={teacher.avatar_url} name={teacher.full_name} size="xl" />
+            <h2 style={{ margin: '16px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>
+              Collaborate with {teacherName}?
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px' }}>
+              Connect with <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong> as a collaboration teacher. You&#39;ll appear in each other&#39;s sidebar.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Button variant="outline" onClick={goToDashboard} style={{ flex: 1 }}>Cancel</Button>
+              <Button onClick={handleJoin} style={{ flex: 1 }}>
+                <UserPlus size={16} /> Collaborate
               </Button>
             </div>
           </div>
@@ -320,10 +359,14 @@ export default function InvitePage() {
         {state === 'success' && teacher && (
           <div>
             <CheckCircle size={48} color="var(--success-400)" />
-            <h2 style={{ margin: '16px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>Connected!</h2>
+            <h2 style={{ margin: '16px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>
+              {visitorIsTeacher ? 'Collaboration Started!' : 'Connected!'}
+            </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px' }}>
-              You&#39;re now a student of <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>. 
-              You can see their sessions on your dashboard.
+              {visitorIsTeacher
+                ? <>You&#39;re now collaborating with <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>. You&#39;ll appear in each other&#39;s sidebar.</>
+                : <>You&#39;re now a student of <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>. You can see their sessions on your dashboard.</>
+              }
             </p>
             <Button onClick={goToDashboard} style={{ width: '100%' }}>
               Go to Dashboard <ArrowRight size={16} />
