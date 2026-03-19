@@ -742,7 +742,7 @@ export default function RoomsPage() {
   const [loading, setLoading]       = useState(true)
 
   const supabase = createClient()
-  const isCreator = user?.role === 'teacher' || user?.role === 'member' || user?.role === 'admin'
+  const isCreator = user?.role === 'teacher' || user?.role === 'admin'
 
   // ── Load sessions ──
   const loadSessions = useCallback(async () => {

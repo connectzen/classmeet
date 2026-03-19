@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 
     if (searchParams.has('role')) {
       const role = searchParams.get('role')
-      if (role && ['admin', 'member', 'teacher', 'student', 'guest'].includes(role)) {
+      if (role && ['admin', 'teacher', 'student'].includes(role)) {
         query = query.eq('role', role as UserRole)
       }
     }

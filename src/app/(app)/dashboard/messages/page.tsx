@@ -360,7 +360,7 @@ export default function MessagesPage() {
   async function loadContacts() {
     if (!user?.id) return
 
-    const isCreator = user.role === 'teacher' || user.role === 'member' || user.role === 'admin'
+    const isCreator = user.role === 'teacher' || user.role === 'admin'
     const items: ContactItem[] = []
 
     if (isCreator) {

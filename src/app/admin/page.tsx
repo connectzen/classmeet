@@ -9,8 +9,8 @@ import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import {
-  Shield, Users, BookOpen, ArrowLeft, Search, Trash2,
-  UserCheck, GraduationCap, ChevronDown, ChevronRight,
+  Shield, Users, BookOpen, Search, Trash2,
+  UserCheck, GraduationCap,
   RefreshCw, Home,
 } from 'lucide-react'
 
@@ -143,15 +143,15 @@ export default function AdminPage() {
   const roleBadge = (role: string) => {
     const colors: Record<string, string> = {
       admin: 'rgba(239,68,68,0.15)', teacher: 'rgba(59,130,246,0.15)',
-      student: 'rgba(34,197,94,0.15)', member: 'rgba(168,85,247,0.15)', guest: 'rgba(156,163,175,0.15)',
+      student: 'rgba(34,197,94,0.15)',
     }
     const textColors: Record<string, string> = {
-      admin: '#ef4444', teacher: '#3b82f6', student: '#22c55e', member: '#a855f7', guest: '#9ca3af',
+      admin: '#ef4444', teacher: '#3b82f6', student: '#22c55e',
     }
     return (
       <span style={{
         padding: '3px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
-        background: colors[role] || colors.guest, color: textColors[role] || textColors.guest,
+        background: colors[role] || 'rgba(156,163,175,0.15)', color: textColors[role] || '#9ca3af',
       }}>
         {role}
       </span>
@@ -262,8 +262,6 @@ export default function AdminPage() {
                           <option value="admin">Admin</option>
                           <option value="teacher">Teacher</option>
                           <option value="student">Student</option>
-                          <option value="member">Member</option>
-                          <option value="guest">Guest</option>
                         </select>
                         {u.id !== currentUser.id && (
                           <button

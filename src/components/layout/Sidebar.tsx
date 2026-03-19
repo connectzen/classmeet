@@ -201,7 +201,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen, user } = useAppStore()
   const role = user?.role as UserRole | undefined
-  const isCreator = role === 'teacher' || role === 'member' || role === 'admin'
+  const isCreator = role === 'teacher' || role === 'admin'
 
   return (
     <>

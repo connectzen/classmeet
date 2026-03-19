@@ -314,7 +314,7 @@ export default function CoursesPage() {
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set())
   const [targetSearch, setTargetSearch] = useState('')
 
-  const isCreator = user?.role === 'teacher' || user?.role === 'member' || user?.role === 'admin'
+  const isCreator = user?.role === 'teacher' || user?.role === 'admin'
   const supabase = createClient()
 
   // ─ Load courses ─

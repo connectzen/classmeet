@@ -73,7 +73,6 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
             <select className="input" value={role} onChange={e => setRole(e.target.value as UserRole)}>
               <option value="student">Student</option>
               <option value="teacher">Teacher</option>
-              <option value="member">Member (Org)</option>
             </select>
           </div>
           <div className="divider">or share link</div>
@@ -104,7 +103,7 @@ export default function MembersPage() {
   const [sortBy, setSortBy] = useState<SortBy>('newest')
   const [loadingMembers, setLoadingMembers] = useState(true)
 
-  const isCreator = user?.role === 'teacher' || user?.role === 'member' || user?.role === 'admin'
+  const isCreator = user?.role === 'teacher' || user?.role === 'admin'
   const supabase = createClient()
 
   // ── Load teacher's students from teacher_students join table ──
@@ -225,7 +224,6 @@ export default function MembersPage() {
               <option value="all">All Roles</option>
               <option value="student">Students</option>
               <option value="teacher">Teachers</option>
-              <option value="member">Members</option>
             </select>
             <select className="input" value={sortBy} onChange={e => setSortBy(e.target.value as SortBy)}
               style={{ padding: '8px 12px', fontSize: '0.82rem', minWidth: '110px' }}>

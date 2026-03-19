@@ -17,13 +17,13 @@ const COMMUNITY_LINKS = [
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart2  },
 ]
 
-const COMMUNITY_ROLES: UserRole[] = ['teacher', 'member', 'admin']
+const COMMUNITY_ROLES: UserRole[] = ['teacher', 'admin']
 
 export default function TopBar() {
   const { toggleSidebar, user } = useAppStore()
   const pathname = usePathname()
   const role = user?.role as UserRole | undefined
-  const isCreator = role === 'teacher' || role === 'member' || role === 'admin'
+  const isCreator = role === 'teacher' || role === 'admin'
   const liveCount = useLiveSessionCount(user?.id, isCreator)
   const unreadMsgCount = useUnreadMessageCount(user?.id)
 

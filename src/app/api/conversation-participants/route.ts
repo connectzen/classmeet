@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         conversation_id,
         user_id,
         user_name: user_name || '',
-        user_role: user_role || 'member',
+        user_role: user_role || 'student',
       })
       .select()
       .single()

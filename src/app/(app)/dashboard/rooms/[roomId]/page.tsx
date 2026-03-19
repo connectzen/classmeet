@@ -234,7 +234,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'member'
+  const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
 
   // Keep refs in sync for data channel closure
   isTeacherRef.current = isTeacher

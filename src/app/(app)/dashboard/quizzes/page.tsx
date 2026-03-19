@@ -370,7 +370,7 @@ export default function QuizzesPage() {
   const [examStartDate, setExamStartDate] = useState('')
   const [questions, setQuestions] = useState<QuestionLocal[]>([])
 
-  const isCreator = user?.role === 'teacher' || user?.role === 'member' || user?.role === 'admin'
+  const isCreator = user?.role === 'teacher' || user?.role === 'admin'
   const supabase = createClient()
 
   // Targeting state

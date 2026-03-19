@@ -33,10 +33,8 @@ export function getAvatarGradient(name: string | null | undefined): string {
 export function getRoleBadgeClass(role: string): string {
   const map: Record<string, string> = {
     admin: 'badge-admin',
-    member: 'badge-member',
     teacher: 'badge-teacher',
     student: 'badge-student',
-    guest: 'badge-guest',
   }
   return map[role] ?? 'badge-muted'
 }
@@ -50,6 +48,6 @@ export function sleep(ms: number) {
 }
 
 export function isCreatorRole(role: UserRole | null | undefined): boolean {
-  return role === 'teacher' || role === 'member' || role === 'admin'
+  return role === 'teacher' || role === 'admin'
 }
 

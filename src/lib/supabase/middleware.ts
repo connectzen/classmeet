@@ -50,6 +50,21 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Migrate legacy 'member' role to 'teacher'
+  if (user && (pathname.startsWith('/dashboard') || pathname.startsWith('/onboarding'))) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    if (profile?.role === 'member') {
+      await supabase
+        .from('profiles')
+        .update({ role: 'teacher', updated_at: new Date().toISOString() })
+        .eq('id', user.id)
+    }
+  }
+
   // Admin routes require admin role
   if (user && pathname.startsWith('/admin')) {
     const { data: profile } = await supabase
