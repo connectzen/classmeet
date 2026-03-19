@@ -28,24 +28,21 @@ export default function ProfileModal({ onClose }: ProfileModalProps) {
 
     setUploading(true)
     setError(null)
-    const supabase = createClient()
 
-    const ext = file.name.split('.').pop()
-    const path = `${user.id}/avatar.${ext}`
+    const form = new FormData()
+    form.append('file', file)
 
-    const { error: uploadErr } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true })
+    const res  = await fetch('/api/profile/avatar', { method: 'POST', body: form })
+    const data = await res.json().catch(() => ({}))
 
-    if (uploadErr) {
-      setError('Failed to upload image. Please try again.')
+    if (!res.ok) {
+      setError(data?.error ?? 'Failed to upload image. Please try again.')
       setUploading(false)
       return
     }
 
-    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
-    const url = data.publicUrl + '?t=' + Date.now()
-    setAvatarUrl(url)
+    setAvatarUrl(data.url)
+    updateUser({ avatarUrl: data.url })
     setUploading(false)
   }
 

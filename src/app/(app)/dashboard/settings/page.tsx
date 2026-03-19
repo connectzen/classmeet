@@ -1,16 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/app-store'
+import { createClient } from '@/lib/supabase/client'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
-import { Save, User, Bell, Shield, Trash2, Camera } from 'lucide-react'
+import { Save, User, Bell, Shield, Trash2, Camera, Lock, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
-import { sleep } from '@/lib/utils'
 
-// ── Section heading ───────────────────────────────────────────────────────────
 function SectionHeading({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
@@ -25,22 +25,89 @@ function SectionHeading({ icon: Icon, title, desc }: { icon: React.ElementType; 
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
+  const router = useRouter()
   const { user, updateUser } = useAppStore()
   const { toast, show: showToast } = useToast()
 
-  const [fullName, setFullName]   = useState(user?.fullName ?? '')
-  const [loading, setLoading]     = useState(false)
+  // ── Profile ──────────────────────────────────────────────────────────────
+  const [fullName, setFullName]     = useState(user?.fullName ?? '')
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileError, setProfileError]   = useState<string | null>(null)
+  const [profileOk, setProfileOk]         = useState(false)
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault()
-    if (!fullName.trim()) return
-    setLoading(true)
-    await sleep(700)
+    if (!fullName.trim() || !user) return
+    setSavingProfile(true)
+    setProfileError(null)
+    setProfileOk(false)
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('profiles')
+      .update({ full_name: fullName.trim(), updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+
+    if (error) { setProfileError(error.message); setSavingProfile(false); return }
+
+    await supabase.auth.updateUser({ data: { full_name: fullName.trim() } })
     updateUser({ fullName: fullName.trim() })
-    setLoading(false)
-    showToast('✅ Profile updated successfully')
+    setSavingProfile(false)
+    setProfileOk(true)
+    setTimeout(() => setProfileOk(false), 3000)
+  }
+
+  // ── Change password ───────────────────────────────────────────────────────
+  const [showPwForm, setShowPwForm]   = useState(false)
+  const [newPw,      setNewPw]        = useState('')
+  const [confirmPw,  setConfirmPw]    = useState('')
+  const [showPw,     setShowPw]       = useState(false)
+  const [changingPw, setChangingPw]   = useState(false)
+  const [pwError,    setPwError]      = useState<string | null>(null)
+  const [pwOk,       setPwOk]         = useState(false)
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (newPw.length < 8) { setPwError('Password must be at least 8 characters.'); return }
+    if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return }
+
+    setChangingPw(true)
+    setPwError(null)
+
+    const supabase = createClient()
+    const { error } = await supabase.auth.updateUser({ password: newPw })
+
+    setChangingPw(false)
+    if (error) { setPwError(error.message); return }
+
+    setPwOk(true)
+    setNewPw(''); setConfirmPw('')
+    setTimeout(() => { setPwOk(false); setShowPwForm(false) }, 2000)
+  }
+
+  // ── Delete account ────────────────────────────────────────────────────────
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting,      setDeleting]      = useState(false)
+  const [deleteError,   setDeleteError]   = useState<string | null>(null)
+
+  async function handleDeleteAccount() {
+    setDeleting(true)
+    setDeleteError(null)
+
+    const res  = await fetch('/api/profile/account', { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      setDeleteError(data?.error ?? 'Could not delete account. Please try again.')
+      setDeleting(false)
+      return
+    }
+
+    // Sign out locally and redirect
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/sign-in')
   }
 
   return (
@@ -50,11 +117,10 @@ export default function SettingsPage() {
         <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>Manage your profile, notifications, and account</p>
       </div>
 
-      {/* Profile section */}
+      {/* ── Profile ────────────────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: '16px', padding: '28px' }}>
         <SectionHeading icon={User} title="Profile" desc="Your public identity on ClassMeet" />
 
-        {/* Avatar picker */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
           <div style={{ position: 'relative' }}>
             <Avatar src={user?.avatarUrl} name={user?.fullName} size="lg" />
@@ -62,7 +128,7 @@ export default function SettingsPage() {
               className="btn btn-primary btn-icon btn-sm"
               style={{ position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, padding: 0, borderRadius: '50%' }}
               title="Change avatar"
-              onClick={() => showToast('📸 Avatar upload — coming soon!')}
+              onClick={() => showToast('Open your profile menu at the top-right to change your photo.')}
             >
               <Camera size={12} />
             </button>
@@ -75,6 +141,16 @@ export default function SettingsPage() {
         </div>
 
         <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {profileError && (
+            <div className="alert alert-error animate-fade-in">
+              <AlertCircle size={15} style={{ flexShrink: 0 }} /><span>{profileError}</span>
+            </div>
+          )}
+          {profileOk && (
+            <div className="alert alert-success animate-fade-in">
+              <CheckCircle2 size={15} style={{ flexShrink: 0 }} /><span>Profile updated!</span>
+            </div>
+          )}
           <Input
             label="Full Name"
             required
@@ -90,47 +166,105 @@ export default function SettingsPage() {
             helper="Email cannot be changed here. Contact support if needed."
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button type="submit" loading={loading} icon={<Save size={14} />}>Save Changes</Button>
+            <Button type="submit" loading={savingProfile} icon={<Save size={14} />}>Save Changes</Button>
           </div>
         </form>
       </div>
 
-      {/* Notifications section */}
+      {/* ── Notifications ──────────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: '16px', padding: '28px' }}>
         <SectionHeading icon={Bell} title="Notifications" desc="Control what you hear about" />
         {(['Room starts', 'New messages', 'Quiz results', 'Course updates'] as const).map(label => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
             <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{label}</span>
-            <button
-              className="btn btn-outline btn-sm"
-              onClick={() => showToast('🔔 Notification settings — coming soon!')}
-            >
-              Configure
-            </button>
+            <button className="btn btn-outline btn-sm" onClick={() => showToast('🔔 Notification settings — coming soon!')}>Configure</button>
           </div>
         ))}
       </div>
 
-      {/* Security section */}
+      {/* ── Security ───────────────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: '16px', padding: '28px' }}>
         <SectionHeading icon={Shield} title="Security" desc="Password and account protection" />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <Button variant="outline" onClick={() => showToast('🔒 Password change — coming soon!')}>Change Password</Button>
-          <Button variant="outline" onClick={() => showToast('📱 Two-factor auth — coming soon!')}>Enable Two-Factor Authentication</Button>
-        </div>
+
+        {!showPwForm ? (
+          <Button variant="outline" icon={<Lock size={14} />} onClick={() => { setShowPwForm(true); setPwError(null); setPwOk(false) }}>
+            Change Password
+          </Button>
+        ) : (
+          <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {pwError && (
+              <div className="alert alert-error animate-fade-in">
+                <AlertCircle size={15} style={{ flexShrink: 0 }} /><span>{pwError}</span>
+              </div>
+            )}
+            {pwOk && (
+              <div className="alert alert-success animate-fade-in">
+                <CheckCircle2 size={15} style={{ flexShrink: 0 }} /><span>Password changed!</span>
+              </div>
+            )}
+            <Input
+              label="New password"
+              type={showPw ? 'text' : 'password'}
+              required
+              placeholder="At least 8 characters"
+              value={newPw}
+              onChange={e => setNewPw(e.target.value)}
+              leftIcon={<Lock size={15} />}
+              rightIcon={
+                <button type="button" onClick={() => setShowPw(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
+                  {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              }
+            />
+            <Input
+              label="Confirm new password"
+              type={showPw ? 'text' : 'password'}
+              required
+              placeholder="Repeat your new password"
+              value={confirmPw}
+              onChange={e => setConfirmPw(e.target.value)}
+              leftIcon={<Lock size={15} />}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Button variant="ghost" type="button" onClick={() => { setShowPwForm(false); setNewPw(''); setConfirmPw(''); setPwError(null) }}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={changingPw}>Save Password</Button>
+            </div>
+          </form>
+        )}
       </div>
 
-      {/* Danger zone */}
+      {/* ── Danger zone ────────────────────────────────────────────────────── */}
       <div className="card" style={{ padding: '28px', borderColor: 'rgba(239,68,68,0.25)' }}>
         <SectionHeading icon={Trash2} title="Danger Zone" desc="Irreversible account actions" />
-        <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => showToast('⚠️ Account deletion — coming soon!')}>
-          Delete My Account
-        </Button>
+
+        {deleteError && (
+          <div className="alert alert-error animate-fade-in" style={{ marginBottom: '14px' }}>
+            <AlertCircle size={15} style={{ flexShrink: 0 }} /><span>{deleteError}</span>
+          </div>
+        )}
+
+        {!confirmDelete ? (
+          <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => setConfirmDelete(true)}>
+            Delete My Account
+          </Button>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--error-400)', fontWeight: 500 }}>
+              This will permanently delete your account and all your data. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Button variant="ghost" onClick={() => { setConfirmDelete(false); setDeleteError(null) }}>Cancel</Button>
+              <Button variant="danger" loading={deleting} icon={<Trash2 size={14} />} onClick={handleDeleteAccount}>
+                Yes, delete my account
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Toast */}
       {toast && <div className="toast toast-info" role="status" aria-live="polite">{toast}</div>}
     </div>
   )
 }
-
