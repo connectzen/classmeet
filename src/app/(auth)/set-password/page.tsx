@@ -21,12 +21,15 @@ function SetPasswordContent() {
   const [error,     setError]     = useState<string | null>(null)
   const [done,      setDone]      = useState(false)
 
-  // Pre-fill name if the user already has one (e.g. signed up normally before)
+  // Pre-fill name only if the stored value is a real name, not an email address.
+  // Supabase sets full_name to the email for invited users when no name was provided.
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       const existing = user?.user_metadata?.full_name as string | undefined
-      if (existing) setFullName(existing)
+      if (existing && !existing.includes('@') && existing !== user?.email) {
+        setFullName(existing)
+      }
     })
   }, [])
 
