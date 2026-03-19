@@ -103,41 +103,19 @@ export default function InvitePage() {
     if (!user?.id || !selectedRole) return
     setState('joining')
 
-    const supabase = createClient()
+    // Use a server-side API route so the admin client can bypass RLS on profiles
+    // and teacher_students (client-side writes are blocked by the INSERT policy).
+    const res = await fetch('/api/invite/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teacherId, role: selectedRole }),
+    })
 
-    // Step 1 — always set the chosen role explicitly so RLS has a valid profile.
-    // Use update (not upsert) — the profile row already exists from the invite trigger,
-    // and upsert would trigger the INSERT policy (which blocks direct user inserts).
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ role: selectedRole, onboarding_complete: true, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
-    if (profileError) {
-      setErrorMsg(profileError.message)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setErrorMsg(data?.error || 'Could not connect to this teacher. Please try again.')
       setState('error')
       return
-    }
-
-    // Step 2 — single row: teacher_id = page owner, student_id = current user.
-    // The sidebar queries both directions so one row covers both parties.
-    const { error } = await supabase
-      .from('teacher_students')
-      .upsert(
-        { teacher_id: teacherId, student_id: user.id },
-        { onConflict: 'teacher_id,student_id' }
-      )
-
-    if (error) {
-      setErrorMsg(error.message)
-      setState('error')
-      return
-    }
-
-    // Step 3 — referral tracking for students only
-    if (selectedRole === 'student') {
-      await supabase.from('profiles').update({ referred_by: teacherId }).eq('id', user.id)
-      await supabase.from('referrals')
-        .upsert({ referrer_id: teacherId, referred_id: user.id }, { onConflict: 'referred_id' })
     }
 
     setState('success')
