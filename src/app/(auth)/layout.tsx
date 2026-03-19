@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { ReactNode } from 'react'
 
@@ -20,7 +19,6 @@ import type { ReactNode } from 'react'
  * forces the user to /set-password before they can go anywhere else.
  */
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  const router = useRouter()
   // Start ready=true so normal sign-in users never see a spinner.
   // If we detect a hash token we'll flip to false before the first paint.
   const [ready, setReady] = useState(true)
@@ -61,15 +59,18 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         // on the spinner if the middleware check ever misses for some reason.
         const invitedBy = session.user.user_metadata?.invited_by as string | undefined
 
+        // Use window.location (hard navigation) instead of router.replace so
+        // the (auth) layout remounts fresh and doesn't stay stuck on the
+        // "Signing you in…" spinner — /set-password shares this layout.
         if (invitedBy) {
-          router.replace(
+          window.location.replace(
             `/set-password?next=${encodeURIComponent(`/invite/${invitedBy}`)}`
           )
         } else {
-          router.replace('/dashboard')
+          window.location.replace('/dashboard')
         }
       })
-  }, [router])
+  }, [])
 
   if (!ready) {
     return (
