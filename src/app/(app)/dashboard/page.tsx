@@ -146,6 +146,7 @@ export default function DashboardPage() {
   const [sessionCount, setSessionCount] = useState(0)
   const [teachers, setTeachers] = useState<{ id: string; full_name: string | null; avatar_url: string | null; subjects: string[] }[]>([])
   const [studentSessions, setStudentSessions] = useState<StudentSession[]>([])
+  const [enrolledCourseCount, setEnrolledCourseCount] = useState(0)
 
   const creator = isCreatorRole(user?.role)
 
@@ -201,6 +202,36 @@ export default function DashboardPage() {
             if (profiles) setTeachers(profiles)
           }
         })
+
+      // Count courses accessible to this student (direct targets + via groups)
+      const loadEnrolledCourses = async () => {
+        const { data: directCourses } = await supabase
+          .from('course_targets')
+          .select('course_id')
+          .eq('target_type', 'student')
+          .eq('target_id', user.id)
+
+        const { data: myGroups } = await supabase
+          .from('group_members')
+          .select('group_id')
+          .eq('student_id', user.id)
+
+        let groupCourseIds: string[] = []
+        if (myGroups && myGroups.length > 0) {
+          const gids = myGroups.map(g => g.group_id)
+          const { data: groupCourses } = await supabase
+            .from('course_targets')
+            .select('course_id')
+            .eq('target_type', 'group')
+            .in('target_id', gids)
+          if (groupCourses) groupCourseIds = groupCourses.map(c => c.course_id)
+        }
+
+        const directIds = directCourses?.map(c => c.course_id) ?? []
+        const allIds = [...new Set([...directIds, ...groupCourseIds])]
+        setEnrolledCourseCount(allIds.length)
+      }
+      loadEnrolledCourses()
 
       const loadStudentSessions = async () => {
         const { data: directTargets } = await supabase
@@ -321,9 +352,10 @@ export default function DashboardPage() {
   }), [studentCount, courseCount, sessionCount])
 
   const studentStats = useMemo(() => STUDENT_STATS.map(s => {
-    if (s.label === 'Sessions Joined') return { ...s, value: String(studentSessions.length) }
+    if (s.label === 'Sessions Joined')  return { ...s, value: String(studentSessions.length) }
+    if (s.label === 'Enrolled Courses') return { ...s, value: String(enrolledCourseCount) }
     return s
-  }), [studentSessions.length])
+  }), [studentSessions.length, enrolledCourseCount])
 
   const stats   = creator ? teacherStats  : studentStats
   const actions = creator ? TEACHER_ACTIONS : STUDENT_ACTIONS
@@ -379,6 +411,29 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* ── My Teachers (students only) ───────────────────────────────── */}
+      {!creator && teachers.length > 0 && (
+        <div className="card stagger-item" style={{ marginBottom: '24px', padding: '20px' }}>
+          <h3 style={{ margin: '0 0 14px', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <GraduationCap size={15} />
+            {teachers.length === 1 ? 'My Teacher' : 'My Teachers'}
+          </h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+            {teachers.map(t => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: '10px 14px', border: '1px solid var(--border-primary)' }}>
+                <Avatar src={t.avatar_url} name={t.full_name} size="sm" />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>{t.full_name || 'Teacher'}</div>
+                  {t.subjects && t.subjects.length > 0 && (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{t.subjects.slice(0, 3).join(', ')}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Live & Upcoming Sessions (students only) ──────────────────── */}
       {!creator && studentSessions.length > 0 && (

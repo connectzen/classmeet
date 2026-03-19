@@ -121,7 +121,7 @@ function StudentList({ teacherId }: { teacherId: string }) {
       <div className="sidebar-section">
         <div className="sidebar-section-label">Collaboration</div>
         {collabs.length === 0
-          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', padding: '4px 16px' }}>No co-teachers yet</p>
+          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px' }}>No co-teachers yet</p>
           : collabs.map(c => <PersonRow key={c.id} p={c} fallbackName="Teacher" isOnline={onlineUsers.has(c.id)} />)
         }
       </div>
@@ -130,7 +130,7 @@ function StudentList({ teacherId }: { teacherId: string }) {
       <div className="sidebar-section">
         <div className="sidebar-section-label">{students.length > 0 ? `Students — ${students.length}` : 'Students'}</div>
         {students.length === 0
-          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', padding: '4px 16px' }}>No students yet</p>
+          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px' }}>No students yet</p>
           : students.map(s => <PersonRow key={s.id} p={s} fallbackName="Student" isOnline={onlineUsers.has(s.id)} />)
         }
       </div>
@@ -181,7 +181,7 @@ function TeacherInfo({ studentId }: { studentId: string }) {
     return (
       <div className="sidebar-section">
         <div className="sidebar-section-label">My Teachers</div>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', padding: '4px 16px' }}>No teacher assigned</p>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px' }}>No teacher assigned</p>
       </div>
     )
   }
