@@ -37,12 +37,14 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
     if (params.get('error')) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search)
 
-      // The invite token is single-use. If the user already set their password
-      // and has an active session, just send them to their destination instead
-      // of showing a misleading "expired" screen.
+      // The invite token is single-use. If the user has any valid session,
+      // redirect and let the middleware sort out where they should go
+      // (back to /set-password if needs_password_setup is still true, or
+      // straight to the invite page if they're already set up).
+      // Only show the expired UI when there is genuinely no session.
       const supabase = createClient()
       supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session && !session.user.user_metadata?.needs_password_setup) {
+        if (session) {
           const next = new URLSearchParams(window.location.search).get('next') ?? '/dashboard'
           window.location.replace(next)
         } else {
