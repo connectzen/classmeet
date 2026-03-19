@@ -40,14 +40,10 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/onboarding') ||
     pathname.startsWith('/set-password')
 
-  // Allow /invite for everyone (logged in or not)
-  if (isPublicRoute) {
-    return supabaseResponse
-  }
-
-  // Invited users who haven't set a password yet are blocked from everything
-  // until they complete /set-password, regardless of how they got here
-  // (first link click, second link click, direct navigation, etc.)
+  // Invited users who haven't set a password yet are blocked from EVERYTHING
+  // (including public /invite routes) until they complete /set-password.
+  // This must run before the isPublicRoute early-return so users can't
+  // bypass password setup by navigating directly to /invite/...
   if (
     user &&
     user.user_metadata?.needs_password_setup === true &&
@@ -60,6 +56,11 @@ export async function updateSession(request: NextRequest) {
     const invitedBy = user.user_metadata?.invited_by as string | undefined
     if (invitedBy) url.searchParams.set('next', `/invite/${invitedBy}`)
     return NextResponse.redirect(url)
+  }
+
+  // Allow /invite for everyone (logged in or not) — after the needs_password_setup check
+  if (isPublicRoute) {
+    return supabaseResponse
   }
 
   if (!user && isProtected) {

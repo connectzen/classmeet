@@ -61,9 +61,14 @@ function SetPasswordContent() {
         .eq('id', user.id)
     }
 
+    // Sign out so the invite-token session is cleared.
+    // The user must sign in with their new password — this ensures everyone
+    // goes through proper sign-in before accessing roles or the dashboard.
+    await supabase.auth.signOut()
+
     setLoading(false)
     setDone(true)
-    setTimeout(() => router.push(next), 1200)
+    setTimeout(() => router.push(`/sign-in?next=${encodeURIComponent(next)}`), 1200)
   }
 
   return (

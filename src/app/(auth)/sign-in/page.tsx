@@ -17,6 +17,7 @@ function SignInPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const referrerId = searchParams.get('ref') // capture ?ref= for teacher switching
+  const next        = searchParams.get('next') ?? '/dashboard'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -46,7 +47,7 @@ function SignInPageInner() {
       return
     }
 
-    router.push('/dashboard')
+    router.push(next)
     router.refresh()
   }
 
