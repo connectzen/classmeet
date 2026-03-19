@@ -24,9 +24,10 @@ export async function POST(request: Request) {
     if (!email || !teacherId) return apiError('email and teacherId are required', 400)
 
     const origin = request.headers.get('origin') || 'https://classmeet.live'
-    // Route through auth callback → set-password (invited users have no password) → invite page
+    // Route through auth callback → set-password (invited users have no password) → invite page.
+    // Double-encode next so the inner ?next= survives Supabase appending &token_hash=...&type=invite.
     const setPasswordNext = encodeURIComponent(`/invite/${teacherId}`)
-    const redirectTo = `${origin}/auth/callback?next=/set-password?next=${setPasswordNext}`
+    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/set-password?next=${setPasswordNext}`)}`
 
     const admin = createAdminClient()
 
