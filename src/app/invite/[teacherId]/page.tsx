@@ -21,9 +21,7 @@ type InviteState =
   | 'not-logged-in'
   | 'self'
   | 'already-connected'
-  | 'confirm-join'      // new user (no role) OR existing student joining
-  | 'confirm-collab'    // existing teacher collaborating
-  | 'confirm-switch'    // existing student switching / adding teacher
+  | 'choose-role'
   | 'joining'
   | 'success'
   | 'error'
@@ -40,22 +38,17 @@ export default function InvitePage() {
   const user      = useAppStore((s) => s.user)
   const teacherId = params.teacherId as string
 
-  const [state,           setState]           = useState<InviteState>('loading')
-  const [teacher,         setTeacher]         = useState<TeacherProfile | null>(null)
-  const [existingTeachers,setExistingTeachers]= useState<TeacherProfile[]>([])
-  const [errorMsg,        setErrorMsg]        = useState('')
-  const [visitorIsTeacher,setVisitorIsTeacher]= useState(false)
-  // For brand-new users who have not gone through onboarding yet
-  const [needsRole,       setNeedsRole]       = useState(false)
-  const [selectedRole,    setSelectedRole]    = useState<UserRole | null>(null)
+  const [state,        setState]        = useState<InviteState>('loading')
+  const [teacher,      setTeacher]      = useState<TeacherProfile | null>(null)
+  const [errorMsg,     setErrorMsg]     = useState('')
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null)
 
-  // Resolve teacher profile + determine which UI state to show
   useEffect(() => {
     if (!teacherId) return
     const supabase = createClient()
 
     async function resolve() {
-      // 1. Fetch the teacher's public profile via RPC
+      // 1. Fetch the teacher's public profile
       const { data: rpcData } = await supabase
         .rpc('get_invite_profile', { teacher_id: teacherId })
       const teacherProfile = Array.isArray(rpcData) ? rpcData[0] : rpcData
@@ -69,58 +62,32 @@ export default function InvitePage() {
       // 3. Prevent self-join
       if (authUser.id === teacherId) { setState('self'); return }
 
-      // 4. Load visitor's profile to know their role
+      // 4. Load visitor's profile — pre-select their existing role if they have one
       const { data: visitorProfile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', authUser.id)
         .single()
 
-      const hasRole  = !!visitorProfile?.role
-      const isTeacher = visitorProfile?.role === 'teacher'
-      setVisitorIsTeacher(isTeacher)
-
-      // New users (invited via email, haven't done onboarding) need to pick a role
-      if (!hasRole) {
-        setNeedsRole(true)
-        setState('confirm-join')
-        return
+      if (visitorProfile?.role) {
+        setSelectedRole(visitorProfile.role as UserRole)
       }
 
-      // 5. Already connected to this teacher?
-      const { data: existing } = await supabase
-        .from('teacher_students')
-        .select('id')
-        .eq('teacher_id', teacherId)
-        .eq('student_id', authUser.id)
-        .maybeSingle()
-      if (existing) { setState('already-connected'); return }
+      // 5. Already connected? Check both directions (teacher↔student and student↔teacher)
+      const [{ data: asStudent }, { data: asTeacher }] = await Promise.all([
+        supabase.from('teacher_students').select('id')
+          .eq('teacher_id', teacherId).eq('student_id', authUser.id).maybeSingle(),
+        supabase.from('teacher_students').select('id')
+          .eq('teacher_id', authUser.id).eq('student_id', teacherId).maybeSingle(),
+      ])
+      if (asStudent || asTeacher) { setState('already-connected'); return }
 
-      // 6. Existing teacher → collaboration
-      if (isTeacher) { setState('confirm-collab'); return }
-
-      // 7. Existing student — check other connections
-      const { data: others } = await supabase
-        .from('teacher_students')
-        .select('teacher_id')
-        .eq('student_id', authUser.id)
-      if (others && others.length > 0) {
-        const ids = others.map((e) => e.teacher_id)
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, subjects')
-          .in('id', ids)
-        setExistingTeachers(profiles ?? [])
-        setState('confirm-switch')
-      } else {
-        setState('confirm-join')
-      }
+      setState('choose-role')
     }
 
     resolve()
   }, [teacherId])
 
-  // Not-logged-in helpers
   function handleRedirectSignUp() {
     localStorage.setItem('classmeet_teacher_id', teacherId)
     localStorage.setItem('classmeet_referrer', teacherId)
@@ -132,35 +99,27 @@ export default function InvitePage() {
     router.push(`/sign-in?ref=${teacherId}`)
   }
 
-  // Main join action
   async function handleJoin() {
-    if (!user?.id) return
-    if (needsRole && !selectedRole) return
+    if (!user?.id || !selectedRole) return
     setState('joining')
 
     const supabase = createClient()
 
-    // Step 1 — new users must have a profile role before the RLS-protected insert
-    if (needsRole && selectedRole) {
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: user.id,
-        role: selectedRole,
-        goals: [],
-        subjects: [],
-        onboarding_complete: true,
-        updated_at: new Date().toISOString(),
-      })
-      if (profileError) {
-        setErrorMsg(profileError.message)
-        setState('error')
-        return
-      }
-      setVisitorIsTeacher(selectedRole === 'teacher')
+    // Step 1 — always set the chosen role explicitly so RLS has a valid profile
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert(
+        { id: user.id, role: selectedRole, onboarding_complete: true, updated_at: new Date().toISOString() },
+        { onConflict: 'id' }
+      )
+    if (profileError) {
+      setErrorMsg(profileError.message)
+      setState('error')
+      return
     }
 
-    // Step 2 — single row insert.
-    // The sidebar already queries both directions (teacher_id AND student_id),
-    // so one row is enough for both parties to see each other.
+    // Step 2 — single row: teacher_id = page owner, student_id = current user.
+    // The sidebar queries both directions so one row covers both parties.
     const { error } = await supabase
       .from('teacher_students')
       .upsert(
@@ -174,9 +133,8 @@ export default function InvitePage() {
       return
     }
 
-    // Step 3 — legacy referral tracking (students only)
-    const effectiveIsTeacher = needsRole ? selectedRole === 'teacher' : visitorIsTeacher
-    if (!effectiveIsTeacher) {
+    // Step 3 — referral tracking for students only
+    if (selectedRole === 'student') {
       await supabase.from('profiles').update({ referred_by: teacherId }).eq('id', user.id)
       await supabase.from('referrals')
         .upsert({ referrer_id: teacherId, referred_id: user.id }, { onConflict: 'referred_id' })
@@ -188,7 +146,6 @@ export default function InvitePage() {
   function goToDashboard() { router.push('/dashboard') }
 
   const teacherName = teacher?.full_name || 'This teacher'
-  const effectiveIsTeacher = needsRole ? selectedRole === 'teacher' : visitorIsTeacher
 
   return (
     <div style={{
@@ -274,127 +231,63 @@ export default function InvitePage() {
             <CheckCircle size={28} color="var(--success-400)" style={{ marginTop: '12px' }} />
             <h2 style={{ margin: '12px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>Already Connected</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px' }}>
-              {visitorIsTeacher
-                ? <>You&#39;re already collaborating with <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.</>
-                : <>You&#39;re already a student of <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.</>
-              }
+              You&#39;re already connected with <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.
             </p>
             <Button onClick={goToDashboard} style={{ width: '100%' }}>Go to Dashboard</Button>
           </div>
         )}
 
-        {/* Confirm join — also used for new users who need to choose a role */}
-        {state === 'confirm-join' && teacher && (
+        {/* Choose role — always shown, pre-filled with existing role if any */}
+        {state === 'choose-role' && teacher && (
           <div>
             <Avatar src={teacher.avatar_url} name={teacher.full_name} size="xl" />
-            <h2 style={{ margin: '16px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>
-              {needsRole ? `${teacherName} invited you!` : `Join ${teacherName}?`}
+            <h2 style={{ margin: '16px 0 6px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>
+              {teacherName} invited you!
             </h2>
-
-            {needsRole ? (
-              <>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
-                  <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong> has invited you to join ClassMeet.
-                  Choose your role to get started.
-                </p>
-                {/* Role picker (same cards as onboarding) */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
-                  {ROLE_OPTIONS.map((r) => (
-                    <div
-                      key={r.value}
-                      className={`role-card${selectedRole === r.value ? ' selected' : ''}`}
-                      onClick={() => setSelectedRole(r.value)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && setSelectedRole(r.value)}
-                    >
-                      <div className="role-card-icon">{r.emoji}</div>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{r.label}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>{r.desc}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <Button onClick={handleJoin} disabled={!selectedRole} style={{ width: '100%' }}>
-                  <UserPlus size={16} /> Get Started
-                </Button>
-              </>
-            ) : (
-              <>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '8px' }}>
-                  <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong> has invited you to become their student.
-                </p>
-                {teacher.subjects && teacher.subjects.length > 0 && (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '24px' }}>
-                    Teaches: {teacher.subjects.slice(0, 4).join(', ')}
-                  </p>
-                )}
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <Button variant="outline" onClick={goToDashboard} style={{ flex: 1 }}>Cancel</Button>
-                  <Button onClick={handleJoin} style={{ flex: 1 }}>
-                    <UserPlus size={16} /> Join Teacher
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Confirm collab (existing teacher visiting another teacher's link) */}
-        {state === 'confirm-collab' && teacher && (
-          <div>
-            <Avatar src={teacher.avatar_url} name={teacher.full_name} size="xl" />
-            <h2 style={{ margin: '16px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>
-              Collaborate with {teacherName}?
-            </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px' }}>
-              Connect with <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong> as a collaboration teacher.
-              You&#39;ll appear in each other&#39;s sidebar.
-            </p>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <Button variant="outline" onClick={goToDashboard} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={handleJoin} style={{ flex: 1 }}>
-                <UserPlus size={16} /> Collaborate
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Confirm switch (existing student with other teachers) */}
-        {state === 'confirm-switch' && teacher && (
-          <div>
-            <Avatar src={teacher.avatar_url} name={teacher.full_name} size="xl" />
-            <h2 style={{ margin: '16px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>
-              Join {teacherName}?
-            </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '12px' }}>
-              <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong> has invited you to become their student.
-            </p>
-            <div style={{
-              background: 'var(--bg-tertiary)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px',
-              marginBottom: '20px',
-              border: '1px solid var(--border-primary)',
-            }}>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 8px' }}>
-                You&#39;re currently connected to:
+            {teacher.subjects && teacher.subjects.length > 0 && (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '4px' }}>
+                Teaches: {teacher.subjects.slice(0, 4).join(', ')}
               </p>
-              {existingTeachers.map((t) => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Avatar src={t.avatar_url} name={t.full_name} size="xs" />
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t.full_name || 'Teacher'}</span>
+            )}
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '20px' }}>
+              How are you joining ClassMeet?
+            </p>
+
+            {/* Role picker */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+              {ROLE_OPTIONS.map((r) => (
+                <div
+                  key={r.value}
+                  className={`role-card${selectedRole === r.value ? ' selected' : ''}`}
+                  onClick={() => setSelectedRole(r.value)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && setSelectedRole(r.value)}
+                >
+                  <div className="role-card-icon">{r.emoji}</div>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{r.label}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>{r.desc}</div>
+                  </div>
                 </div>
               ))}
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '8px 0 0', fontStyle: 'italic' }}>
-                You&#39;ll keep all existing connections. This will add a new teacher.
-              </p>
             </div>
+
+            {/* Contextual hint based on chosen role */}
+            {selectedRole && (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '16px', fontStyle: 'italic' }}>
+                {selectedRole === 'teacher'
+                  ? `You'll collaborate with ${teacherName} as a co-teacher.`
+                  : `You'll join ${teacherName}'s classroom as a student.`
+                }
+              </p>
+            )}
+
             <div style={{ display: 'flex', gap: '10px' }}>
               <Button variant="outline" onClick={goToDashboard} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={handleJoin} style={{ flex: 1 }}>
-                <UserPlus size={16} /> Join Teacher
+              <Button onClick={handleJoin} disabled={!selectedRole} style={{ flex: 1 }}>
+                <UserPlus size={16} />
+                {selectedRole === 'teacher' ? 'Collaborate' : selectedRole === 'student' ? 'Join Classroom' : 'Continue'}
               </Button>
             </div>
           </div>
@@ -415,10 +308,10 @@ export default function InvitePage() {
           <div>
             <CheckCircle size={48} color="var(--success-400)" />
             <h2 style={{ margin: '16px 0 8px', color: 'var(--text-primary)', fontSize: '1.2rem' }}>
-              {effectiveIsTeacher ? 'Collaboration Started!' : 'Welcome to ClassMeet!'}
+              {selectedRole === 'teacher' ? 'Collaboration Started!' : 'Welcome to ClassMeet!'}
             </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px' }}>
-              {effectiveIsTeacher
+              {selectedRole === 'teacher'
                 ? <>You&#39;re now collaborating with <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.</>
                 : <>You&#39;re now a student of <strong style={{ color: 'var(--text-primary)' }}>{teacherName}</strong>.</>
               }
@@ -439,7 +332,7 @@ export default function InvitePage() {
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <Button variant="outline" onClick={goToDashboard} style={{ flex: 1 }}>Dashboard</Button>
-              <Button onClick={() => setState(needsRole ? 'confirm-join' : 'confirm-join')} style={{ flex: 1 }}>Try Again</Button>
+              <Button onClick={() => setState('choose-role')} style={{ flex: 1 }}>Try Again</Button>
             </div>
           </div>
         )}
