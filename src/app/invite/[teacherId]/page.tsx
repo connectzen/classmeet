@@ -105,13 +105,13 @@ export default function InvitePage() {
 
     const supabase = createClient()
 
-    // Step 1 — always set the chosen role explicitly so RLS has a valid profile
+    // Step 1 — always set the chosen role explicitly so RLS has a valid profile.
+    // Use update (not upsert) — the profile row already exists from the invite trigger,
+    // and upsert would trigger the INSERT policy (which blocks direct user inserts).
     const { error: profileError } = await supabase
       .from('profiles')
-      .upsert(
-        { id: user.id, role: selectedRole, onboarding_complete: true, updated_at: new Date().toISOString() },
-        { onConflict: 'id' }
-      )
+      .update({ role: selectedRole, onboarding_complete: true, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
     if (profileError) {
       setErrorMsg(profileError.message)
       setState('error')
