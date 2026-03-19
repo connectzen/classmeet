@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import AuthCard from '@/components/auth/AuthCard'
+import Button from '@/components/ui/Button'
+import Input from '@/components/ui/Input'
+import { Mail, AlertCircle, CheckCircle2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 /**
@@ -13,32 +17,40 @@ import type { ReactNode } from 'react'
  * hash fragments, so without this handler the user would just see the
  * sign-in form with a valid session sitting unused in the URL.
  *
- * When a hash is detected we suppress the auth page entirely (no flash)
- * and show a brief "Signing you in…" message while setSession() runs.
- * On success the middleware's needs_password_setup guard takes over and
- * forces the user to /set-password before they can go anywhere else.
+ * When the hash contains an error (e.g. otp_expired) we show a recovery
+ * screen so the user can request a new sign-in link.
  */
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  // Start ready=true so normal sign-in users never see a spinner.
-  // If we detect a hash token we'll flip to false before the first paint.
-  const [ready, setReady] = useState(true)
+  const [phase, setPhase]   = useState<'ready' | 'loading' | 'expired'>('ready')
+  const [email, setEmail]   = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent]     = useState(false)
+  const [err, setErr]       = useState<string | null>(null)
 
   useEffect(() => {
     const hash = window.location.hash
-    if (!hash.includes('access_token')) return
+    if (!hash) return
 
-    // Suppress the auth form immediately — user is being signed in via invite
-    setReady(false)
+    const params = new URLSearchParams(hash.slice(1))
 
-    // Remove the tokens from the URL bar right away
+    // Handle error hashes (e.g. #error=access_denied&error_code=otp_expired)
+    if (params.get('error')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      setPhase('expired')
+      return
+    }
+
+    if (!params.get('access_token')) return
+
+    // Suppress the auth form — user is being signed in via invite token
+    setPhase('loading')
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
 
-    const params      = new URLSearchParams(hash.slice(1))
     const accessToken  = params.get('access_token')
     const refreshToken = params.get('refresh_token')
 
     if (!accessToken || !refreshToken) {
-      setReady(true) // nothing useful in the hash, show auth page normally
+      setPhase('ready')
       return
     }
 
@@ -48,20 +60,13 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       .setSession({ access_token: accessToken, refresh_token: refreshToken })
       .then(({ data: { session }, error }) => {
         if (error || !session) {
-          // Token expired or already used — show the sign-in page normally
-          setReady(true)
+          setPhase('ready')
           return
         }
 
-        // Session established. The middleware's needs_password_setup guard
-        // will redirect to /set-password on the next navigation.
-        // We still do an explicit redirect here so the user doesn't linger
-        // on the spinner if the middleware check ever misses for some reason.
         const invitedBy = session.user.user_metadata?.invited_by as string | undefined
 
-        // Use window.location (hard navigation) instead of router.replace so
-        // the (auth) layout remounts fresh and doesn't stay stuck on the
-        // "Signing you in…" spinner — /set-password shares this layout.
+        // Hard navigation so the (auth) layout remounts fresh at /set-password
         if (invitedBy) {
           window.location.replace(
             `/set-password?next=${encodeURIComponent(`/invite/${invitedBy}`)}`
@@ -72,7 +77,28 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       })
   }, [])
 
-  if (!ready) {
+  async function handleRecovery(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = email.trim()
+    if (!trimmed) { setErr('Please enter your email address.'); return }
+
+    setSending(true)
+    setErr(null)
+
+    const supabase = createClient()
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/set-password')}`,
+    })
+
+    setSending(false)
+    if (error) {
+      setErr(error.message)
+    } else {
+      setSent(true)
+    }
+  }
+
+  if (phase === 'loading') {
     return (
       <div style={{
         minHeight: '100vh',
@@ -85,6 +111,50 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           Signing you in&hellip;
         </p>
       </div>
+    )
+  }
+
+  if (phase === 'expired') {
+    return (
+      <AuthCard
+        title="Invite link expired"
+        subtitle="Invite links are only valid for 24 hours. Enter your email and we'll send you a new sign-in link."
+      >
+        {sent ? (
+          <div className="alert alert-success animate-fade-in" style={{ marginTop: '8px' }}>
+            <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+            <span>Check your inbox — a new sign-in link is on its way.</span>
+          </div>
+        ) : (
+          <form
+            onSubmit={handleRecovery}
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}
+          >
+            {err && (
+              <div className="alert alert-error animate-fade-in">
+                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                <span>{err}</span>
+              </div>
+            )}
+
+            <Input
+              label="Your email address"
+              type="email"
+              required
+              placeholder="you@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              leftIcon={<Mail size={15} />}
+              autoComplete="email"
+              autoFocus
+            />
+
+            <Button type="submit" loading={sending} style={{ width: '100%' }}>
+              Send new sign-in link
+            </Button>
+          </form>
+        )}
+      </AuthCard>
     )
   }
 
