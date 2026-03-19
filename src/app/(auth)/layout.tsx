@@ -36,7 +36,19 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
     // Handle error hashes (e.g. #error=access_denied&error_code=otp_expired)
     if (params.get('error')) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search)
-      setPhase('expired')
+
+      // The invite token is single-use. If the user already set their password
+      // and has an active session, just send them to their destination instead
+      // of showing a misleading "expired" screen.
+      const supabase = createClient()
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session && !session.user.user_metadata?.needs_password_setup) {
+          const next = new URLSearchParams(window.location.search).get('next') ?? '/dashboard'
+          window.location.replace(next)
+        } else {
+          setPhase('expired')
+        }
+      })
       return
     }
 
