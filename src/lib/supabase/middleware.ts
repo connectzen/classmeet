@@ -37,7 +37,8 @@ export async function updateSession(request: NextRequest) {
   const isProtected = pathname.startsWith('/dashboard') ||
     pathname.startsWith('/admin') ||
     pathname.startsWith('/room') ||
-    pathname.startsWith('/onboarding')
+    pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/set-password')
 
   // Allow /invite for everyone (logged in or not)
   if (isPublicRoute) {
