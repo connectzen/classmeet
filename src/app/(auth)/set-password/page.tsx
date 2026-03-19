@@ -1,51 +1,72 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Lock, Eye, EyeOff, User, CheckCircle2, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import AuthCard from '@/components/auth/AuthCard'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 
 function SetPasswordContent() {
-  const router = useRouter()
+  const router       = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get('next') ?? '/onboarding'
+  const next         = searchParams.get('next') ?? '/onboarding'
 
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm]   = useState('')
-  const [showPw, setShowPw]     = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState<string | null>(null)
-  const [done, setDone]         = useState(false)
+  const [fullName,  setFullName]  = useState('')
+  const [password,  setPassword]  = useState('')
+  const [confirm,   setConfirm]   = useState('')
+  const [showPw,    setShowPw]    = useState(false)
+  const [loading,   setLoading]   = useState(false)
+  const [error,     setError]     = useState<string | null>(null)
+  const [done,      setDone]      = useState(false)
+
+  // Pre-fill name if the user already has one (e.g. signed up normally before)
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      const existing = user?.user_metadata?.full_name as string | undefined
+      if (existing) setFullName(existing)
+    })
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
-    if (password !== confirm) { setError('Passwords do not match.'); return }
+    if (!fullName.trim())        { setError('Please enter your name.'); return }
+    if (password.length < 8)     { setError('Password must be at least 8 characters.'); return }
+    if (password !== confirm)    { setError('Passwords do not match.'); return }
 
     setError(null)
     setLoading(true)
 
     const supabase = createClient()
-    const { error: err } = await supabase.auth.updateUser({ password })
+
+    // Save password + full_name to auth metadata in one call
+    const { error: authErr } = await supabase.auth.updateUser({
+      password,
+      data: { full_name: fullName.trim(), needs_password_setup: false },
+    })
+
+    if (authErr) { setError(authErr.message); setLoading(false); return }
+
+    // Mirror the name to the profiles table so the dashboard can display it
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      await supabase
+        .from('profiles')
+        .update({ full_name: fullName.trim(), updated_at: new Date().toISOString() })
+        .eq('id', user.id)
+    }
 
     setLoading(false)
-
-    if (err) { setError(err.message); return }
-
-    // Clear the flag so middleware no longer blocks this user
-    await supabase.auth.updateUser({ data: { needs_password_setup: false } })
-
     setDone(true)
     setTimeout(() => router.push(next), 1200)
   }
 
   return (
     <AuthCard
-      title="Set your password"
-      subtitle="Create a password so you can log in next time"
+      title="Welcome to ClassMeet"
+      subtitle="Set your name and create a password to get started"
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {error && (
@@ -58,9 +79,20 @@ function SetPasswordContent() {
         {done && (
           <div className="alert alert-success animate-fade-in">
             <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
-            <span>Password set! Continuing…</span>
+            <span>All set! Continuing…</span>
           </div>
         )}
+
+        <Input
+          label="Your name"
+          type="text"
+          required
+          placeholder="Jane Smith"
+          value={fullName}
+          onChange={e => setFullName(e.target.value)}
+          leftIcon={<User size={15} />}
+          autoComplete="name"
+        />
 
         <Input
           label="Password"
@@ -88,7 +120,7 @@ function SetPasswordContent() {
         />
 
         <Button type="submit" loading={loading} disabled={done} style={{ width: '100%', marginTop: '4px' }}>
-          Set Password & Continue
+          Set Password &amp; Continue
         </Button>
       </form>
     </AuthCard>
