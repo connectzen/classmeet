@@ -27,6 +27,13 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(bytes)
 
     const admin = createAdminClient()
+
+    // Create the bucket if it doesn't exist yet (public so URLs work without signed tokens)
+    const { data: buckets } = await admin.storage.listBuckets()
+    if (!buckets?.find(b => b.name === 'avatars')) {
+      await admin.storage.createBucket('avatars', { public: true })
+    }
+
     const { error: uploadErr } = await admin.storage
       .from('avatars')
       .upload(path, buffer, { contentType: file.type, upsert: true })
