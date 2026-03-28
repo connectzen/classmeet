@@ -128,8 +128,16 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // ── Onboarding: redirect authenticated users away ──
+  if (pathname === '/onboarding') {
+    if (user) {
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+    }
+    return supabaseResponse
+  }
+
   // ── Public routes ──
-  if (pathname.startsWith('/invite') || pathname.startsWith('/set-password') || pathname.startsWith('/onboarding')) {
+  if (pathname.startsWith('/invite') || pathname.startsWith('/set-password')) {
     return supabaseResponse
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAppStore } from '@/store/app-store'
@@ -20,6 +20,55 @@ export default function OnboardingPage() {
 
   const [role, setRole] = useState<UserRole | null>(null)
   const [loading, setLoading] = useState(false)
+  const [checking, setChecking] = useState(true)
+
+  // Check if user is already onboarded, if so redirect them
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setChecking(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('onboarding_complete, is_super_admin, school_id, role')
+        .eq('id', user.id)
+        .single()
+
+      const p = profile as any
+
+      // Super admin → redirect to /superadmin
+      if (p?.is_super_admin) {
+        router.push('/superadmin')
+        return
+      }
+
+      // Already onboarded → redirect to their school/dashboard
+      if (p?.onboarding_complete) {
+        if (p?.school_id) {
+          const { data: school } = await supabase
+            .from('schools')
+            .select('slug')
+            .eq('id', p.school_id)
+            .single()
+          if (school) {
+            const roleRoute = p.role === 'admin' ? 'admin' : p.role === 'teacher' ? 'teacher' : 'student'
+            router.push(`/${school.slug}/${roleRoute}`)
+            return
+          }
+        }
+        router.push('/dashboard')
+        return
+      }
+
+      setChecking(false)
+    }
+
+    checkOnboarding()
+  }, [router])
 
   async function handleFinish() {
     if (!role) return
@@ -91,36 +140,42 @@ export default function OnboardingPage() {
         <span className="auth-logo-name">ClassMeet</span>
       </div>
 
-      <div className="onboard-card animate-slide-up">
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '8px' }}>Who are you?</h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.9rem' }}>Choose your role to get started.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-          {ROLES.map((r) => (
-            <div
-              key={r.value}
-              className={`role-card ${role === r.value ? 'selected' : ''}`}
-              onClick={() => setRole(r.value)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setRole(r.value)}
-            >
-              <div className="role-card-icon">{r.emoji}</div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{r.label}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>{r.desc}</div>
-              </div>
-            </div>
-          ))}
+      {checking ? (
+        <div className="onboard-card animate-slide-up">
+          <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</p>
         </div>
-        <Button
-          onClick={handleFinish}
-          disabled={!role}
-          loading={loading}
-          style={{ width: '100%', marginTop: '24px' }}
-        >
-          Get Started
-        </Button>
-      </div>
+      ) : (
+        <div className="onboard-card animate-slide-up">
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '8px' }}>Who are you?</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.9rem' }}>Choose your role to get started.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+            {ROLES.map((r) => (
+              <div
+                key={r.value}
+                className={`role-card ${role === r.value ? 'selected' : ''}`}
+                onClick={() => setRole(r.value)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && setRole(r.value)}
+              >
+                <div className="role-card-icon">{r.emoji}</div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{r.label}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>{r.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <Button
+            onClick={handleFinish}
+            disabled={!role}
+            loading={loading}
+            style={{ width: '100%', marginTop: '24px' }}
+          >
+            Get Started
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
