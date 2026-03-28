@@ -527,8 +527,8 @@ export default function AdminDashboard() {
 
         // Update stats
         setStats({
-          totalTeachers: teachersData.length,
-          totalStudents: studentsData.length,
+          totalTeachers: teachersData?.length || 0,
+          totalStudents: studentsData?.length || 0,
           unassignedCount: unassigned.length,
           totalCourses: 0, // Will be set below
         })
