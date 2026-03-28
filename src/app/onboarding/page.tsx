@@ -11,6 +11,7 @@ import { Video } from 'lucide-react'
 const ROLES: { value: UserRole; label: string; emoji: string; desc: string }[] = [
   { value: 'teacher', label: 'Teacher', emoji: '🎓', desc: 'I host live classes and create content' },
   { value: 'student', label: 'Student', emoji: '📚', desc: 'I attend classes and learn from teachers' },
+  { value: 'admin', label: 'School Admin', emoji: '🏫', desc: 'I manage a school and its users' },
 ]
 
 export default function OnboardingPage() {
@@ -27,6 +28,13 @@ export default function OnboardingPage() {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/sign-in'); return }
 
+    // For school admins, redirect to school registration
+    if (role === 'admin') {
+      router.push('/register-school')
+      return
+    }
+
+    // For teacher/student, save role and redirect to dashboard
     await supabase.from('profiles').upsert({
       id: authUser.id,
       role,
@@ -64,7 +72,7 @@ export default function OnboardingPage() {
       <div className="onboard-card animate-slide-up">
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '8px' }}>Who are you?</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.9rem' }}>Choose your role to get started.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
           {ROLES.map((r) => (
             <div
               key={r.value}
