@@ -1,12 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
-import { apiResponse, apiError, requireAuth } from '@/lib/api-utils'
+import { apiResponse, apiError, requireAuth, requireSchoolContext } from '@/lib/api-utils'
 
 export async function POST(request: Request) {
   try {
     const user = await requireAuth(request)
-    const body = await request.json()
     const supabase = await createClient()
 
+    // Get user's profile to check for school context
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('school_id')
+      .eq('id', user.id)
+      .single()
+
+    const body = await request.json()
     const { title, description, status, max_participants, room_name, scheduled_at } = body
 
     if (!title || !room_name) {
@@ -23,6 +30,7 @@ export async function POST(request: Request) {
         max_participants: max_participants || 50,
         room_name,
         scheduled_at: scheduled_at || null,
+        school_id: profile?.school_id || null,
       })
       .select()
       .single()
@@ -36,11 +44,23 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    await requireAuth(request)
+    const user = await requireAuth(request)
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
 
+    // Get user's school to filter by
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('school_id')
+      .eq('id', user.id)
+      .single()
+
     let query = supabase.from('sessions').select('*')
+
+    // Filter by school_id if user has one
+    if (profile?.school_id) {
+      query = query.eq('school_id', profile.school_id)
+    }
 
     if (searchParams.has('teacher_id')) {
       query = query.eq('teacher_id', searchParams.get('teacher_id')!)

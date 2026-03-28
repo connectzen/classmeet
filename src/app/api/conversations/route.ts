@@ -13,12 +13,20 @@ export async function POST(request: Request) {
       return apiError('type is required', 400)
     }
 
+    // Get user's school context
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('school_id')
+      .eq('id', user.id)
+      .single()
+
     const { data, error } = await supabase
       .from('conversations')
       .insert({
         type,
         name: name || null,
         created_by: user.id,
+        school_id: profile?.school_id || null,
       })
       .select()
       .single()
@@ -32,11 +40,23 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    await requireAuth(request)
+    const user = await requireAuth(request)
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
 
+    // Get user's school context
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('school_id')
+      .eq('id', user.id)
+      .single()
+
     let query = supabase.from('conversations').select('*')
+
+    // Filter by school_id if user has one
+    if (profile?.school_id) {
+      query = query.eq('school_id', profile.school_id)
+    }
 
     if (searchParams.has('type')) {
       const type = searchParams.get('type')

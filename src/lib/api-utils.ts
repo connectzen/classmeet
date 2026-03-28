@@ -46,3 +46,20 @@ export async function requireAuth(request: Request): Promise<User> {
 
   return user
 }
+
+export async function requireSchoolContext(request: Request): Promise<{ userId: string; schoolId: string }> {
+  const user = await requireAuth(request)
+  const supabase = await createClient()
+
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('school_id')
+    .eq('id', user.id)
+    .single()
+
+  if (error || !profile?.school_id) {
+    throw new ApiError('User not associated with a school', 403)
+  }
+
+  return { userId: user.id, schoolId: profile.school_id }
+}

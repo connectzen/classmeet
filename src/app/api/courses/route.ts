@@ -13,6 +13,13 @@ export async function POST(request: Request) {
       return apiError('title and subject are required', 400)
     }
 
+    // Get user's school context
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('school_id')
+      .eq('id', user.id)
+      .single()
+
     const { data, error } = await supabase
       .from('courses')
       .insert({
@@ -22,6 +29,7 @@ export async function POST(request: Request) {
         subject,
         level: level || 'beginner',
         published: false,
+        school_id: profile?.school_id || null,
       })
       .select()
       .single()
@@ -35,11 +43,23 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    await requireAuth(request)
+    const user = await requireAuth(request)
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
 
+    // Get user's school context
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('school_id')
+      .eq('id', user.id)
+      .single()
+
     let query = supabase.from('courses').select('*')
+
+    // Filter by school_id if user has one
+    if (profile?.school_id) {
+      query = query.eq('school_id', profile.school_id)
+    }
 
     if (searchParams.has('teacher_id')) {
       query = query.eq('teacher_id', searchParams.get('teacher_id')!)
