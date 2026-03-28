@@ -8,7 +8,7 @@ import { usePresenceStore } from '@/store/presence-store'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
 import Avatar from '@/components/ui/Avatar'
-import { Video, Settings, ShieldCheck, X, Circle } from 'lucide-react'
+import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type NavLink = { href: string; label: string; icon: React.ElementType; roles?: UserRole[]; badgeKey?: string }
@@ -221,6 +221,83 @@ function TeacherInfo({ studentId }: { studentId: string }) {
   )
 }
 
+// ── Admin Overview (for admins) — shows system-wide counts ──
+function AdminOverview() {
+  const [counts, setCounts] = useState({ teachers: 0, students: 0, unassigned: 0 })
+  const onlineUsers = usePresenceStore((s) => s.onlineUsers)
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    const load = async () => {
+      const [teachersRes, studentsRes, assignedRes] = await Promise.all([
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'teacher'),
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).in('role', ['student', 'member', 'guest']),
+        supabase.from('teacher_students').select('student_id'),
+      ])
+
+      const totalStudents = studentsRes.count || 0
+
+      // To get unassigned count, we need actual student IDs
+      let unassignedCount = 0
+      if (totalStudents > 0) {
+        const { data: allStudents } = await supabase
+          .from('profiles')
+          .select('id')
+          .in('role', ['student', 'member', 'guest'])
+        const assignedIds = new Set(assignedRes.data?.map(r => r.student_id) || [])
+        unassignedCount = allStudents?.filter(s => !assignedIds.has(s.id)).length || 0
+      }
+
+      setCounts({
+        teachers: teachersRes.count || 0,
+        students: totalStudents,
+        unassigned: unassignedCount,
+      })
+    }
+
+    load()
+
+    // Subscribe to changes in profiles and teacher_students
+    const ch1 = supabase
+      .channel('sidebar-admin-profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
+      .subscribe()
+    const ch2 = supabase
+      .channel('sidebar-admin-enrollments')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students' }, () => load())
+      .subscribe()
+
+    return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2) }
+  }, [])
+
+  const onlineCount = onlineUsers.size
+
+  const statRow = (icon: React.ReactNode, label: string, value: number, color: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px' }}>
+      <div style={{ width: 28, height: 28, borderRadius: '6px', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500 }}>{label}</div>
+      </div>
+      <div style={{ fontSize: '0.85rem', fontWeight: 700, color }}>{value}</div>
+    </div>
+  )
+
+  return (
+    <>
+      <div className="sidebar-section">
+        <div className="sidebar-section-label">Overview</div>
+        {statRow(<GraduationCap size={14} />, 'Teachers', counts.teachers, '#3b82f6')}
+        {statRow(<Users size={14} />, 'Students', counts.students, '#22c55e')}
+        {statRow(<AlertCircle size={14} />, 'Unassigned', counts.unassigned, counts.unassigned > 0 ? '#f59e0b' : '#22c55e')}
+        {statRow(<Circle size={14} fill="#22c55e" />, 'Online Now', onlineCount, '#22c55e')}
+      </div>
+    </>
+  )
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen, user } = useAppStore()
@@ -258,10 +335,12 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* People section — teacher sees students, student sees teacher; admin sees nothing */}
-        {user?.id && user.role !== 'admin' && (
+        {/* People section — admin sees overview, teacher sees students, student sees teacher */}
+        {user?.id && (
           <div style={{ paddingTop: '10px', overflowY: 'auto', flex: '0 1 auto', maxHeight: '40vh' }}>
-            {isCreator ? (
+            {role === 'admin' ? (
+              <AdminOverview />
+            ) : isCreator ? (
               <StudentList teacherId={user.id} />
             ) : (
               <TeacherInfo studentId={user.id} />

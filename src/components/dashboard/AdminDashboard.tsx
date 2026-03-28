@@ -3,6 +3,7 @@
 // Admin Dashboard - System-wide management view for classroom administrators
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useAppStore } from '@/store/app-store'
 import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -454,6 +455,7 @@ function TeachersSection({ teachersWithStudents, onRemoveStudent }: {
 // Main AdminDashboard Component
 export default function AdminDashboard() {
   const toast = useToast()
+  const currentUser = useAppStore(s => s.user)
 
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [allStudents, setAllStudents] = useState<Student[]>([])
@@ -466,16 +468,15 @@ export default function AdminDashboard() {
     const supabase = createClient()
     setLoading(true)
     try {
-      // Get all teachers
+      // Get all teachers (admins are not teachers — they manage the system)
       const { data: teachersData } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, role, subjects')
-        .in('role', ['teacher', 'admin'])
+        .eq('role', 'teacher')
         .order('full_name', { ascending: true })
 
-      if (teachersData) {
-        setTeachers(teachersData as Teacher[])
-      }
+      const allTeachers = teachersData || []
+      setTeachers(allTeachers as Teacher[])
 
       // Get all students (including member, guest, and student roles)
       const { data: studentsData } = await supabase
@@ -510,7 +511,7 @@ export default function AdminDashboard() {
         })
 
         // Build teachers with students
-        const teachersWithStudents = teachersData!.map(teacher => {
+        const teachersWithStudents = allTeachers.map(teacher => {
           const enrollments = enrollmentsByTeacher.get(teacher.id) || []
           const students = enrollments
             .map(e => {
@@ -525,7 +526,7 @@ export default function AdminDashboard() {
 
         // Update stats
         setStats({
-          totalTeachers: teachersData?.length || 0,
+          totalTeachers: allTeachers.length,
           totalStudents: studentsData?.length || 0,
           unassignedCount: unassigned.length,
           totalCourses: 0, // Will be set below
