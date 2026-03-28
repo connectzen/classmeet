@@ -38,6 +38,7 @@ export interface BlackboardHandle {
 
 interface BlackboardProps {
   isHost: boolean
+  canDraw?: boolean  // Permission to draw (for students when allowed by teacher)
   onCanvasEvent?: (event: BlackboardEvent) => void
   incomingEvent?: BlackboardEvent | null
 }
@@ -66,7 +67,7 @@ function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T {
 
 // ── Component ────────────────────────────────────────────────────────────────
 const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackboard(
-  { isHost, onCanvasEvent, incomingEvent },
+  { isHost, canDraw = false, onCanvasEvent, incomingEvent },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -75,6 +76,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const suppressEventsRef = useRef(false)
   const cursorDivRef = useRef<HTMLDivElement>(null)
   const caretDivRef = useRef<HTMLDivElement>(null)
+  
+  // Determine if this user can draw (host or student with permission)
+  const canDrawOverall = isHost || canDraw
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
@@ -315,8 +319,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const canvas = new fabric.Canvas(canvasRef.current, {
       backgroundColor: '#1a1a2e',
-      isDrawingMode: isHost,
-      selection: isHost,
+      isDrawingMode: canDrawOverall,
+      selection: canDrawOverall,
       width: w,
       height: h,
     })
@@ -324,7 +328,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     // Scale content to fit the container while keeping a consistent logical space
     canvas.setZoom(Math.min(w / LOGICAL_W, h / LOGICAL_H))
 
-    if (isHost) {
+    if (canDrawOverall) {
       const brush = new fabric.PencilBrush(canvas)
       brush.color = '#ffffff'
       brush.width = strokeWidthRef.current
@@ -1076,13 +1080,13 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   return (
     <div className="room-blackboard" ref={containerRef}>
       <canvas ref={canvasRef} />
-      {!isHost && (
+      {!canDrawOverall && (
         <>
           <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
           <div ref={caretDivRef} className="room-bb-caret" style={{ display: 'none' }} />
         </>
       )}
-      {isHost && (
+      {canDrawOverall && (
         <BlackboardToolbar
           activeTool={activeTool}
           onToolChange={applyTool}

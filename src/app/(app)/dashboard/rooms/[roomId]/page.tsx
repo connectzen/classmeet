@@ -23,7 +23,7 @@ import {
   LogOut, Send, Users, MessageSquare, X, ChevronLeft, ChevronRight,
   MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
   Check, Clock, ArrowLeft, ArrowRight, Award, Eye, Download,
-  Star, Trophy, Play, Trash2, Type, AlertCircle,
+  Star, Trophy, Play, Trash2, Type, AlertCircle, Copy,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
@@ -189,6 +189,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [showSettings, setShowSettings] = useState(false)
   // Blackboard
   const [blackboardActive, setBlackboardActive] = useState(false)
+  const [allowStudentDrawing, setAllowStudentDrawing] = useState(false)  // Permission for students to draw
   const [blackboardEvent, setBlackboardEvent] = useState<BlackboardEvent | null>(null)
   const blackboardRef = useRef<BlackboardHandle>(null)
   const prevParticipantCount = useRef(0)
@@ -1084,6 +1085,15 @@ function RoomInner({ roomName }: { roomName: string }) {
             )}
             <div className="room-live-dot" />
             <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{roomName}</span>
+            <button 
+              className="room-icon-btn" 
+              onClick={() => {
+                navigator.clipboard.writeText(roomName)
+              }} 
+              title="Copy room name"
+            >
+              <Copy size={16} />
+            </button>
             <span className="room-live-badge">LIVE</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {participants.length} participant{participants.length !== 1 ? 's' : ''}
@@ -1182,6 +1192,8 @@ function RoomInner({ roomName }: { roomName: string }) {
           onSelectQuiz={activateQuiz}
           isCameraLayerActive={layerOrder.includes('camera')}
           onToggleCameraLayer={toggleCameraLayer}
+          allowStudentDrawing={allowStudentDrawing}
+          onToggleAllowStudentDrawing={() => setAllowStudentDrawing(v => !v)}
         />
       </div>
 
@@ -1429,14 +1441,15 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
       >
         <Blackboard
           ref={blackboardRef}
-          isHost={isHost}
+          isHost={isTeacher}
+          canDraw={allowStudentDrawing}
           onCanvasEvent={onCanvasEvent}
           incomingEvent={incomingEvent}
         />
         <div className="room-stage-overlay">
           <div className="room-stage-label">
             <PenTool size={14} />
-            <span>Blackboard{isHost ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
+            <span>Blackboard{isTeacher ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
           </div>
         </div>
       </div>
@@ -2880,6 +2893,8 @@ interface ControlBarProps {
   onSelectQuiz: (quizId: string) => void
   isCameraLayerActive: boolean
   onToggleCameraLayer: () => void
+  allowStudentDrawing?: boolean
+  onToggleAllowStudentDrawing?: () => void
 }
 
 function ControlBarCustom({
@@ -2888,6 +2903,7 @@ function ControlBarCustom({
   isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
   onToggleBlackboard, linkedCourses, linkedQuizzes,
   onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, isCameraLayerActive, onToggleCameraLayer,
+  allowStudentDrawing = false, onToggleAllowStudentDrawing,
 }: ControlBarProps) {
   const [showCourseMenu, setShowCourseMenu] = useState(false)
   const [showQuizMenu, setShowQuizMenu] = useState(false)
@@ -3196,6 +3212,17 @@ function ControlBarCustom({
               <PenTool size={20} />
               <span className="room-control-label">Board</span>
             </button>
+
+            {isTeacher && isBlackboardActive && (
+              <button
+                className={`room-control-btn ${allowStudentDrawing ? 'room-control-btn-active' : ''}`}
+                onClick={onToggleAllowStudentDrawing}
+                title={allowStudentDrawing ? 'Lock drawing' : 'Allow students to draw'}
+              >
+                <PenTool size={20} />
+                <span className="room-control-label">{allowStudentDrawing ? 'Drawing ON' : 'Drawing OFF'}</span>
+              </button>
+            )}
 
             <button
               className={`room-control-btn ${isCameraLayerActive ? 'room-control-btn-active' : ''}`}
