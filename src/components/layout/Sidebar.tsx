@@ -5,11 +5,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAppStore } from '@/store/app-store'
 import { usePresenceStore } from '@/store/presence-store'
+import { useSchool } from '@/lib/school-context'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
 import Avatar from '@/components/ui/Avatar'
 import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import Image from 'next/image'
 
 type NavLink = { href: string; label: string; icon: React.ElementType; roles?: UserRole[]; badgeKey?: string }
 type NavSection = { section: string; links: NavLink[] }
@@ -297,6 +299,7 @@ function AdminOverview() {
 export default function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen, user } = useAppStore()
+  const school = useSchool()
   const role = user?.role as UserRole | undefined
   const schoolSlug = user?.schoolSlug ?? null
   const isCreator = role === 'teacher' || role === 'admin'
@@ -316,10 +319,22 @@ export default function Sidebar() {
       <aside className={cn('sidebar', sidebarOpen && 'open')} style={{ zIndex: 'var(--z-drawer)' }}>
         {/* Logo */}
         <div className="sidebar-logo">
-          <div className="logo-icon">
-            <Video size={20} color="#fff" />
-          </div>
-          <span className="logo-text">ClassMeet</span>
+          {school?.schoolLogo ? (
+            <div className="logo-icon" style={{ overflow: 'hidden', borderRadius: '4px' }}>
+              <Image
+                src={school.schoolLogo}
+                alt={school.schoolName}
+                width={20}
+                height={20}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            </div>
+          ) : (
+            <div className="logo-icon">
+              <Video size={20} color="#fff" />
+            </div>
+          )}
+          <span className="logo-text">{school?.schoolName ?? 'ClassMeet'}</span>
 
           {/* Mobile close */}
           <button

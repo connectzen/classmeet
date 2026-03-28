@@ -5,6 +5,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import TopBar from '@/components/layout/TopBar'
 import AppStoreHydrator from '@/components/layout/AppStoreHydrator'
 import { SchoolHydrator } from '@/components/layout/SchoolHydrator'
+import { SchoolThemeProvider } from '@/lib/school-theme'
 
 interface Props {
   children: ReactNode
@@ -62,15 +63,17 @@ export default async function SchoolAppLayout({ children, params }: Props) {
   return (
     <AppStoreHydrator user={appUser}>
       <SchoolHydrator value={schoolContext}>
-        <div className="app-layout">
-          <Sidebar />
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <TopBar />
-            <main className="main-content">
-              {children}
-            </main>
+        <SchoolThemeProvider>
+          <div className="app-layout">
+            <Sidebar />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <TopBar />
+              <main className="main-content">
+                {children}
+              </main>
+            </div>
           </div>
-        </div>
+        </SchoolThemeProvider>
       </SchoolHydrator>
     </AppStoreHydrator>
   )
