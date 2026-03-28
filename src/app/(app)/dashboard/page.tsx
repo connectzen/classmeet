@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
+import AdminDashboard from '@/components/dashboard/AdminDashboard'
 import {
   Video, BookOpen, Users, Plus, ArrowRight,
   Clock, Sparkles, CalendarDays, Zap, MessageSquare,
@@ -159,6 +160,12 @@ export default function DashboardPage() {
   const [enrolledCourseCount, setEnrolledCourseCount] = useState(0)
 
   const creator = isCreatorRole(user?.role)
+  const isAdmin = user?.role === 'admin'
+
+  // If admin, render admin dashboard instead
+  if (isAdmin) {
+    return <AdminDashboard />
+  }
 
   // Process pending teacher-student enrollment + load counts + real-time subscription
   useEffect(() => {
