@@ -1381,13 +1381,14 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   submitError: boolean
   quizSubmissions: QuizSubmission[]
   quizProgress: Record<string, { answered: number; total: number }>
-  onBroadcastProgress: (answered: number, total: number) => void
+  omBroadcastProgress: (answered: number, total: number) => void
   submittedStudents: Record<string, string>
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string, passed?: boolean) => Promise<void>
   onDeleteSubmission: (id: string) => Promise<void>
   onRevealResults: (submission: QuizSubmission) => Promise<void>
   onRefreshSubmissions: () => Promise<void>
   quizResultRevealed: QuizSubmission | null
+  allowStudentDrawing: boolean
 }) {
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
