@@ -97,7 +97,7 @@ function StudentDetailModal({ student, onClose, onAssign, onRemove, allTeachers,
           </div>
         </div>
 
-        {student.status && [!isUnassigned] && (
+        {student.status && !isUnassigned && (
           <div style={{ marginBottom: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             Status: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{student.status}</span>
           </div>
