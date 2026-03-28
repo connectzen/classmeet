@@ -40,8 +40,15 @@ function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin:
       {/* Status row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {isLive ? <Wifi size={13} color={statusColor} /> : <WifiOff size={13} color={statusColor} />}
-          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: statusColor, letterSpacing: '0.06em' }}>
+          {isLive ? <Wifi size={13} color="#22c55e" /> : <WifiOff size={13} color={statusColor} />}
+          <span style={{ 
+            fontSize: '0.72rem', 
+            fontWeight: 700, 
+            color: isLive ? '#22c55e' : statusColor, 
+            letterSpacing: '0.06em',
+            animation: isLive ? 'pulse-glow 2s ease-in-out infinite' : 'none',
+            textShadow: isLive ? '0 0 8px rgba(34, 197, 94, 0.3)' : 'none'
+          }}>
             {isLive ? 'LIVE' : 'SCHEDULED'}
           </span>
         </div>
@@ -56,8 +63,29 @@ function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin:
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
         {isLive && (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '2.8rem', fontWeight: 800, color: 'var(--success-400)', letterSpacing: '0.06em', lineHeight: 1 }}>ONGOING</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--success-400)', opacity: 0.7, letterSpacing: '0.1em', marginTop: '4px' }}>NOW</div>
+            <div style={{ 
+              fontSize: '2.8rem', 
+              fontWeight: 800, 
+              color: '#22c55e', 
+              letterSpacing: '0.06em', 
+              lineHeight: 1,
+              animation: 'pulse-glow 2s ease-in-out infinite',
+              textShadow: '0 0 16px rgba(34, 197, 94, 0.4)'
+            }}>
+              ONGOING
+            </div>
+            <div style={{ 
+              fontSize: '1.4rem', 
+              fontWeight: 700, 
+              color: '#22c55e', 
+              opacity: 0.8, 
+              letterSpacing: '0.1em', 
+              marginTop: '4px',
+              animation: 'pulse-glow 2s ease-in-out infinite',
+              textShadow: '0 0 12px rgba(34, 197, 94, 0.3)'
+            }}>
+              NOW
+            </div>
           </div>
         )}
         {!isLive && countdown !== null && countdown.secondsLeft > 0 && (
@@ -469,7 +497,23 @@ export default function DashboardPage() {
               {/* Stat badge in top right */}
               {statValue && (
                 <div style={{ position: 'absolute', top: '12px', right: '12px', textAlign: 'right' }}>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: action.color, lineHeight: 1 }}>{statValue}</div>
+                  {(action.statKey === 'sessionCount' || action.statKey === 'sessionsJoined') ? (
+                    // Live/Active sessions - Green with animation
+                    <div style={{ 
+                      fontSize: '1.8rem', 
+                      fontWeight: 700, 
+                      color: '#22c55e',
+                      lineHeight: 1,
+                      textShadow: '0 0 12px rgba(34, 197, 94, 0.4)',
+                      animation: 'pulse-glow 2s ease-in-out infinite',
+                      letterSpacing: '-0.02em'
+                    }}>
+                      {statValue}
+                    </div>
+                  ) : (
+                    // Other stats - default color
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: action.color, lineHeight: 1 }}>{statValue}</div>
+                  )}
                 </div>
               )}
               
