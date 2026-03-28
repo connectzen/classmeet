@@ -1381,7 +1381,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   submitError: boolean
   quizSubmissions: QuizSubmission[]
   quizProgress: Record<string, { answered: number; total: number }>
-  omBroadcastProgress: (answered: number, total: number) => void
+  onBroadcastProgress: (answered: number, total: number) => void
   submittedStudents: Record<string, string>
   onGradeSubmission: (id: string, score: number, maxScore: number, comment: string, passed?: boolean) => Promise<void>
   onDeleteSubmission: (id: string) => Promise<void>
