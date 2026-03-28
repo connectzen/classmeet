@@ -6,13 +6,19 @@ export default async function Home() {
   const { data: { user } } = await supabase.auth.getUser()
 
   if (user) {
-    // Look up the user's school to redirect to the correct school URL
-    const { data: profile } = await supabase
+    // Look up the user's profile
+    const { data: profile } = (await supabase
       .from('profiles')
-      .select('role, school_id')
+      .select('role, school_id, is_super_admin')
       .eq('id', user.id)
-      .single()
+      .single()) as any
 
+    // Super admin goes to super admin dashboard
+    if (profile?.is_super_admin || profile?.role === 'super_admin') {
+      redirect('/superadmin')
+    }
+
+    // If user has a school, redirect to their school dashboard
     if (profile?.school_id) {
       const { data: school } = await supabase
         .from('schools')
@@ -26,9 +32,10 @@ export default async function Home() {
       }
     }
 
-    // Fallback: user has no school
-    redirect('/register-school')
+    // If user is logged in but no school assigned yet, go to onboarding
+    redirect('/onboarding')
   } else {
-    redirect('/register-school')
+    // Not logged in: redirect to sign-in
+    redirect('/sign-in')
   }
 }
