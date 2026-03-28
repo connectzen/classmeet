@@ -1,5 +1,6 @@
 'use client'
 
+// Admin Dashboard - System-wide management view for classroom administrators
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Avatar from '@/components/ui/Avatar'
