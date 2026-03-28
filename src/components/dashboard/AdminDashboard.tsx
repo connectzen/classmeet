@@ -477,11 +477,11 @@ export default function AdminDashboard() {
         setTeachers(teachersData as Teacher[])
       }
 
-      // Get all students
+      // Get all students (including member, guest, and student roles)
       const { data: studentsData } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, role, created_at')
-        .eq('role', 'student')
+        .in('role', ['student', 'member', 'guest'])
         .order('full_name', { ascending: true })
 
       if (studentsData) {
@@ -581,7 +581,7 @@ export default function AdminDashboard() {
         event: 'INSERT',
         schema: 'public',
         table: 'profiles',
-        filter: "role=eq.student",
+        filter: "role=in.(student,member,guest)",
       }, () => {
         loadData()
       })
