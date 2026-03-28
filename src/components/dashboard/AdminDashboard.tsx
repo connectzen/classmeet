@@ -356,7 +356,7 @@ function TeachersSection({ teachersWithStudents, onRemoveStudent }: {
                       )}
                     </div>
                   </div>
-                  <Badge label={`${teacher.studentCount} ${teacher.studentCount === 1 ? 'Student' : 'Students'}`} />
+                  <Badge variant="info">{`${teacher.studentCount} ${teacher.studentCount === 1 ? 'Student' : 'Students'}`}</Badge>
                 </div>
 
                 {/* Students List (when expanded) */}
