@@ -453,7 +453,6 @@ function TeachersSection({ teachersWithStudents, onRemoveStudent }: {
 
 // Main AdminDashboard Component
 export default function AdminDashboard() {
-  const supabase = createClient()
   const toast = useToast()
 
   const [teachers, setTeachers] = useState<Teacher[]>([])
@@ -464,6 +463,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
 
   const loadData = useCallback(async () => {
+    const supabase = createClient()
     setLoading(true)
     try {
       // Get all teachers
@@ -544,7 +544,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, toast])
+  }, [toast])
 
   // Initial load
   useEffect(() => {
@@ -553,6 +553,7 @@ export default function AdminDashboard() {
 
   // Real-time subscription
   useEffect(() => {
+    const supabase = createClient()
     const channel = supabase
       .channel('admin-dashboard')
       .on('postgres_changes', {
@@ -575,7 +576,7 @@ export default function AdminDashboard() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase, loadData])
+  }, [loadData])
 
   const handleAssign = async (studentId: string, teacherId: string) => {
     try {
