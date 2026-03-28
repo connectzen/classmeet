@@ -607,9 +607,9 @@ function EditSessionModal({ session, onClose, onUpdated, groups, students, quizz
 }
 
 // ── Session Card ──────────────────────────────────────────────────────────────
-function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, onEdit }: {
+function SessionCard({ session, isOwner, onEnter, onGoLive, onEnd, onDelete, onEdit }: {
   session: SessionRow
-  isCreator: boolean
+  isOwner: boolean
   onEnter: (s: SessionRow) => void
   onGoLive: (s: SessionRow) => void
   onEnd: (s: SessionRow) => void
@@ -645,10 +645,10 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, o
               Starts in
             </span>
           )}
-          {isCreator && session.status !== 'ended' && (
+          {isOwner && session.status !== 'ended' && (
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onEdit(session)} aria-label="Edit" style={{ color: 'var(--text-muted)' }}><Pencil size={13} /></button>
           )}
-          {isCreator && (
+          {isOwner && (
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => onDelete(session)} aria-label="Delete" style={{ color: 'var(--danger-400)' }}><Trash2 size={13} /></button>
           )}
         </div>
@@ -703,19 +703,19 @@ function SessionCard({ session, isCreator, onEnter, onGoLive, onEnd, onDelete, o
         {session.status === 'live' && (
           <>
             <Button size="sm" icon={<Wifi size={13} />} onClick={() => onEnter(session)} style={{ flex: 1 }}>
-              {isCreator ? 'Enter Room' : 'Join Session'}
+              {isOwner ? 'Enter Room' : 'Join Session'}
             </Button>
-            {isCreator && (
+            {isOwner && (
               <Button size="sm" variant="outline" icon={<StopCircle size={13} />} onClick={() => onEnd(session)}>End</Button>
             )}
           </>
         )}
-        {session.status === 'scheduled' && isCreator && isReady && (
+        {session.status === 'scheduled' && isOwner && isReady && (
           <Button size="sm" icon={<Video size={13} />} onClick={() => onGoLive(session)} style={{ flex: 1 }}>Go Live Now!</Button>
         )}
-        {session.status === 'scheduled' && (!isReady || !isCreator) && (
+        {session.status === 'scheduled' && (!isReady || !isOwner) && (
           <Button size="sm" variant="outline" icon={<Clock size={13} />} disabled style={{ flex: 1 }}>
-            {isCreator ? 'Waiting…' : 'Not live yet'}
+            {isOwner ? 'Waiting…' : 'Not live yet'}
           </Button>
         )}
         {session.status === 'ended' && (
@@ -749,13 +749,38 @@ export default function RoomsPage() {
     if (!user?.id) return
 
     if (isCreator) {
-      // Teachers see all their sessions (not ended, plus ended within last 24h)
-      const { data } = await supabase
+      // Owners: see all sessions they created
+      const { data: ownSessions } = await supabase
         .from('sessions')
         .select('*')
         .eq('teacher_id', user.id)
         .order('created_at', { ascending: false })
-      if (data) setSessions(data as SessionRow[])
+      const own = (ownSessions as SessionRow[] | null) || []
+
+      // Collaborator creators: also see sessions directly targeted to them (from other owners)
+      const { data: directTargets } = await supabase
+        .from('session_targets')
+        .select('session_id')
+        .eq('target_type', 'student')
+        .eq('target_id', user.id)
+
+      const targetIds = [...new Set((directTargets || []).map(t => t.session_id))]
+      let targeted: SessionRow[] = []
+      if (targetIds.length > 0) {
+        const { data: targetedSessions } = await supabase
+          .from('sessions')
+          .select('*')
+          .in('id', targetIds)
+          .in('status', ['live', 'scheduled'])
+          .neq('teacher_id', user.id)
+          .order('created_at', { ascending: false })
+        targeted = (targetedSessions as SessionRow[] | null) || []
+      }
+
+      const merged = [...own, ...targeted]
+      const deduped = Array.from(new Map(merged.map(s => [s.id, s])).values())
+      deduped.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      setSessions(deduped)
     } else {
       // Students: find sessions targeted at them (directly, via group, or with NO targets = open to all)
       // Get teacher IDs for this student
@@ -975,7 +1000,7 @@ export default function RoomsPage() {
           {activeSessions.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px', marginBottom: endedSessions.length > 0 ? '32px' : 0 }}>
               {activeSessions.map(session => (
-                <SessionCard key={session.id} session={session} isCreator={isCreator} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} onEdit={handleEdit} />
+                <SessionCard key={session.id} session={session} isOwner={session.teacher_id === user?.id} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} onEdit={handleEdit} />
               ))}
             </div>
           )}
@@ -984,7 +1009,7 @@ export default function RoomsPage() {
               <h3 style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '12px' }}>Past Sessions</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
                 {endedSessions.map(session => (
-                  <SessionCard key={session.id} session={session} isCreator={isCreator} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} onEdit={handleEdit} />
+                  <SessionCard key={session.id} session={session} isOwner={session.teacher_id === user?.id} onEnter={handleEnter} onGoLive={handleGoLive} onEnd={handleEnd} onDelete={handleDelete} onEdit={handleEdit} />
                 ))}
               </div>
             </>

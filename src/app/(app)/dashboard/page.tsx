@@ -196,6 +196,67 @@ export default function DashboardPage() {
     supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
       .then(({ count }) => { if (count !== null) setSessionCount(count) })
 
+    const loadTargetedSessions = async () => {
+      const { data: directTargets } = await supabase
+        .from('session_targets')
+        .select('session_id')
+        .eq('target_type', 'student')
+        .eq('target_id', user.id)
+
+      const directIds = directTargets?.map(t => t.session_id) || []
+      let allIds = [...new Set(directIds)]
+
+      if (!isCreatorRole(user.role)) {
+        const { data: myGroups } = await supabase
+          .from('group_members')
+          .select('group_id')
+          .eq('student_id', user.id)
+
+        let groupSessionIds: string[] = []
+        if (myGroups && myGroups.length > 0) {
+          const gids = myGroups.map(g => g.group_id)
+          const { data: groupTargets } = await supabase
+            .from('session_targets')
+            .select('session_id')
+            .eq('target_type', 'group')
+            .in('target_id', gids)
+          if (groupTargets) groupSessionIds = groupTargets.map(t => t.session_id)
+        }
+
+        allIds = [...new Set([...allIds, ...groupSessionIds])]
+      }
+
+      if (allIds.length === 0) {
+        setStudentSessions([])
+        return
+      }
+
+      const { data: sessions } = await supabase
+        .from('sessions')
+        .select('id, title, status, room_name, teacher_id, scheduled_at, started_at')
+        .in('id', allIds)
+        .in('status', ['live', 'scheduled'])
+        .order('created_at', { ascending: false })
+
+      if (sessions && sessions.length > 0) {
+        const visible = sessions.filter(s => s.teacher_id !== user.id)
+        if (visible.length === 0) {
+          setStudentSessions([])
+          return
+        }
+
+        const tIds = [...new Set(visible.map(s => s.teacher_id))]
+        const { data: tProfiles } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', tIds)
+        const nameMap = new Map(tProfiles?.map(p => [p.id, p.full_name]) || [])
+        setStudentSessions(visible.map(s => ({ ...s, teacher_name: nameMap.get(s.teacher_id) || 'Teacher' })) as StudentSession[])
+      } else {
+        setStudentSessions([])
+      }
+    }
+
     // ── Load student's teachers + sessions ──
     if (!isCreatorRole(user.role)) {
       supabase
@@ -243,61 +304,22 @@ export default function DashboardPage() {
       }
       loadEnrolledCourses()
 
-      const loadStudentSessions = async () => {
-        const { data: directTargets } = await supabase
-          .from('session_targets')
-          .select('session_id')
-          .eq('target_type', 'student')
-          .eq('target_id', user.id)
-
-        const { data: myGroups } = await supabase
-          .from('group_members')
-          .select('group_id')
-          .eq('student_id', user.id)
-
-        let groupSessionIds: string[] = []
-        if (myGroups && myGroups.length > 0) {
-          const gids = myGroups.map(g => g.group_id)
-          const { data: groupTargets } = await supabase
-            .from('session_targets')
-            .select('session_id')
-            .eq('target_type', 'group')
-            .in('target_id', gids)
-          if (groupTargets) groupSessionIds = groupTargets.map(t => t.session_id)
-        }
-
-        const directIds = directTargets?.map(t => t.session_id) || []
-        const allIds = [...new Set([...directIds, ...groupSessionIds])]
-
-        if (allIds.length > 0) {
-          const { data: sessions } = await supabase
-            .from('sessions')
-            .select('id, title, status, room_name, teacher_id, scheduled_at, started_at')
-            .in('id', allIds)
-            .in('status', ['live', 'scheduled'])
-            .order('created_at', { ascending: false })
-
-          if (sessions && sessions.length > 0) {
-            const tIds = [...new Set(sessions.map(s => s.teacher_id))]
-            const { data: tProfiles } = await supabase
-              .from('profiles')
-              .select('id, full_name')
-              .in('id', tIds)
-            const nameMap = new Map(tProfiles?.map(p => [p.id, p.full_name]) || [])
-            setStudentSessions(sessions.map(s => ({ ...s, teacher_name: nameMap.get(s.teacher_id) || 'Teacher' })) as StudentSession[])
-          } else {
-            setStudentSessions([])
-          }
-        } else {
-          setStudentSessions([])
-        }
-      }
-      loadStudentSessions()
+      loadTargetedSessions()
 
       const sessChannel = supabase
         .channel('dashboard-student-sessions')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => loadStudentSessions())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, () => loadStudentSessions())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => loadTargetedSessions())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, () => loadTargetedSessions())
+        .subscribe()
+
+      sessCleanupRef.current = () => { supabase.removeChannel(sessChannel) }
+    } else {
+      loadTargetedSessions()
+
+      const sessChannel = supabase
+        .channel('dashboard-assigned-sessions')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => loadTargetedSessions())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, () => loadTargetedSessions())
         .subscribe()
 
       sessCleanupRef.current = () => { supabase.removeChannel(sessChannel) }
@@ -431,14 +453,14 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Live & Upcoming Sessions (students only) ──────────────────── */}
-      {!creator && studentSessions.length > 0 && (
+      {/* ── Live & Upcoming Sessions (targeted users) ─────────────────── */}
+      {studentSessions.length > 0 && (
         <div className="card stagger-item" style={{ marginBottom: '24px', padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Radio size={16} color="var(--danger-400)" />
               <h3 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-                Live &amp; Upcoming Sessions
+                {creator ? 'Sessions Targeted To You' : 'Live & Upcoming Sessions'}
               </h3>
               {studentSessions.some(s => s.status === 'live') && (
                 <span style={{
