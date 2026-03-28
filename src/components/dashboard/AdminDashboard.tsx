@@ -639,16 +639,25 @@ export default function AdminDashboard() {
     )
   }
 
+  const handleRefresh = () => {
+    loadData()
+  }
+
   return (
     <div style={{ maxWidth: '1200px' }}>
       {/* Header */}
-      <div style={{ marginBottom: '28px' }}>
-        <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px' }}>
-          Admin Dashboard
-        </h1>
-        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-          Manage teachers, students, and system overview
-        </p>
+      <div style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px' }}>
+            Admin Dashboard
+          </h1>
+          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            Manage teachers, students, and system overview
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleRefresh} loading={loading}>
+          Refresh
+        </Button>
       </div>
 
       {/* Stats Cards */}
