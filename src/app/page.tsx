@@ -9,7 +9,7 @@ export default async function Home() {
     // Look up the user's profile
     const { data: profile } = (await supabase
       .from('profiles')
-      .select('role, school_id, is_super_admin')
+      .select('role, school_id, is_super_admin, onboarding_complete')
       .eq('id', user.id)
       .single()) as any
 
@@ -32,7 +32,12 @@ export default async function Home() {
       }
     }
 
-    // If user is logged in but no school assigned yet, go to onboarding
+    // Already onboarded or has a role (admin-created accounts) — go to dashboard
+    if (profile?.onboarding_complete || profile?.role) {
+      redirect('/dashboard')
+    }
+
+    // Truly new, unset account
     redirect('/onboarding')
   } else {
     // Not logged in: redirect to sign-in

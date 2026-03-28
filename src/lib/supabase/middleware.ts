@@ -82,9 +82,9 @@ async function getUserSchoolRedirect(
     }
   }
 
-  // No school — existing users go to old dashboard, new users go to onboarding
+  // No school — onboarded or has a role (admin-created) → dashboard; truly new → onboarding
   const url = requestUrl.clone()
-  url.pathname = profile?.onboarding_complete ? '/dashboard' : '/onboarding'
+  url.pathname = (profile?.onboarding_complete || profile?.role) ? '/dashboard' : '/onboarding'
   return NextResponse.redirect(url)
 }
 
@@ -167,8 +167,9 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url)
       }
 
-      // Already onboarded → send to their dashboard
-      if (profile?.onboarding_complete) {
+      // Redirect away if: already onboarded OR has role+school (admin-created accounts skip onboarding flow)
+      const isEffectivelyOnboarded = profile?.onboarding_complete || (profile?.role && profile?.school_id)
+      if (isEffectivelyOnboarded) {
         if (profile?.school_id) {
           const { data: school } = await supabase
             .from('schools')
@@ -187,7 +188,7 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url)
       }
     }
-    // Not authenticated or not yet onboarded → allow onboarding
+    // Not authenticated or genuinely not yet onboarded → allow onboarding
     return supabaseResponse
   }
 
