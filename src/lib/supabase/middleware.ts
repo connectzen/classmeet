@@ -122,15 +122,15 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
-  // ── Old auth routes → redirect ──
-  const oldAuthRoutes = ['/sign-in', '/sign-up', '/forgot-password', '/verify-email']
-  if (oldAuthRoutes.some(r => pathname === r || pathname.startsWith(r + '/'))) {
+  // ── Public auth routes: allow unauthenticated access ──
+  const publicAuthRoutes = ['/sign-in', '/sign-up', '/forgot-password', '/verify-email', '/set-password']
+  if (publicAuthRoutes.some(r => pathname === r || pathname.startsWith(r + '/'))) {
     if (user) {
+      // Already logged in — redirect to their dashboard/school
       return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
     }
-    const url = request.nextUrl.clone()
-    url.pathname = '/register-school'
-    return NextResponse.redirect(url)
+    // Not logged in — allow access to sign-in/sign-up
+    return supabaseResponse
   }
 
   // ── Old dashboard/admin routes → redirect to school-scoped ──
