@@ -258,8 +258,8 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* People section — teacher sees students, student sees teacher */}
-        {user?.id && (
+        {/* People section — teacher sees students, student sees teacher; admin sees nothing */}
+        {user?.id && user.role !== 'admin' && (
           <div style={{ paddingTop: '10px', overflowY: 'auto', flex: '0 1 auto', maxHeight: '40vh' }}>
             {isCreator ? (
               <StudentList teacherId={user.id} />
