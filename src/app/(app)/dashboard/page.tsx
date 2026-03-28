@@ -8,17 +8,16 @@ import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
 import {
-  Video, BookOpen, Users, BarChart2, Plus, ArrowRight,
-  Clock, Sparkles, LogIn, GraduationCap, PenLine, CalendarDays, Zap,
-  Radio, Circle, MessageSquare, Wifi, WifiOff,
+  Video, BookOpen, Users, Plus, ArrowRight,
+  Clock, Sparkles, CalendarDays, Zap, MessageSquare,
+  Radio, Circle, Wifi, WifiOff,
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import { isCreatorRole } from '@/lib/utils'
 import { useCountdown } from '@/hooks/useCountdown'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Stat   { label: string; value: string; icon: React.ElementType; color: string; bg: string }
-interface Action { label: string; desc: string; icon: React.ElementType; color: string; href?: string; comingSoon?: boolean }
+interface Action { label: string; desc: string; icon: React.ElementType; color: string; href?: string; comingSoon?: boolean; statKey?: string }
 interface StudentSession { id: string; title: string; status: 'live' | 'scheduled' | 'ended'; room_name: string; teacher_id: string; scheduled_at: string | null; started_at: string | null; teacher_name?: string }
 
 // ─── Dashboard Session Card ───────────────────────────────────────────────────
@@ -103,36 +102,19 @@ function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin:
   )
 }
 
-// ─── Stats per role ───────────────────────────────────────────────────────────
-const TEACHER_STATS: Stat[] = [
-  { label: 'Live Sessions',  value: '0', icon: Video,    color: 'var(--primary-400)', bg: 'rgba(99,102,241,0.1)'  },
-  { label: 'Courses',        value: '0', icon: BookOpen, color: 'var(--accent-400)',  bg: 'rgba(168,85,247,0.1)' },
-  { label: 'Students',       value: '0', icon: Users,    color: 'var(--success-400)', bg: 'rgba(34,197,94,0.1)'  },
-  { label: 'Hours Taught',   value: '0', icon: BarChart2,color: 'var(--info-400)',    bg: 'rgba(59,130,246,0.1)' },
-]
-
-const STUDENT_STATS: Stat[] = [
-  { label: 'Sessions Joined',   value: '0', icon: Video,          color: 'var(--primary-400)', bg: 'rgba(99,102,241,0.1)'  },
-  { label: 'Enrolled Courses',  value: '0', icon: BookOpen,       color: 'var(--accent-400)',  bg: 'rgba(168,85,247,0.1)' },
-  { label: 'Quizzes Taken',     value: '0', icon: PenLine,        color: 'var(--success-400)', bg: 'rgba(34,197,94,0.1)'  },
-  { label: 'Study Hours',       value: '0', icon: GraduationCap,  color: 'var(--info-400)',    bg: 'rgba(59,130,246,0.1)' },
-]
-
 // ─── Quick actions per role ───────────────────────────────────────────────────
 const TEACHER_ACTIONS: Action[] = [
-  { label: 'Start Live Room',  desc: 'Host a video session now',  icon: Video,    color: 'var(--primary-500)', href: '/dashboard/rooms'   },
-  { label: 'Create Course',    desc: 'Build and share content',   icon: BookOpen,     color: 'var(--accent-500)',   href: '/dashboard/courses'   },
-  { label: 'Invite Members',   desc: 'Grow your classroom',       icon: Users,        color: 'var(--success-400)',  href: '/dashboard/members'   },
-  { label: 'Messages',         desc: 'Chat with your students',   icon: MessageSquare,color: 'var(--warning-400)',  href: '/dashboard/messages'  },
-  { label: 'Schedule Session', desc: 'Plan ahead with calendar',  icon: CalendarDays, color: 'var(--info-400)',     href: '/dashboard/rooms'     },
-  { label: 'View Analytics',   desc: 'Track your engagement',     icon: BarChart2,    color: 'var(--accent-400)',   href: '/dashboard/analytics' },
+  { label: 'Start Live Room',  desc: 'Host a video session',  icon: Video,    color: 'var(--primary-500)', href: '/dashboard/rooms',   statKey: 'sessionCount' },
+  { label: 'Create Course',    desc: 'Build course content',   icon: BookOpen,     color: 'var(--accent-500)',   href: '/dashboard/courses', statKey: 'courseCount'   },
+  { label: 'Invite Members',   desc: 'Manage your students',       icon: Users,        color: 'var(--success-400)',  href: '/dashboard/members',   statKey: 'studentCount'   },
+  { label: 'Messages',         desc: 'Chat with students',   icon: MessageSquare,color: 'var(--warning-400)',  href: '/dashboard/messages'  },
 ]
 
 const STUDENT_ACTIONS: Action[] = [
-  { label: 'Join a Room',      desc: 'Enter a live class session', icon: LogIn,        color: 'var(--primary-500)', href: '/dashboard/rooms'    },
-  { label: 'Browse Courses',   desc: 'Explore available courses',  icon: BookOpen,     color: 'var(--accent-500)',  href: '/dashboard/courses'  },
-  { label: 'Messages',         desc: 'Chat with your teachers',    icon: MessageSquare,color: 'var(--success-400)', href: '/dashboard/messages' },
-  { label: 'My Schedule',      desc: 'View upcoming sessions',     icon: CalendarDays, color: 'var(--info-400)',    href: '/dashboard/rooms'    },
+  { label: 'Join a Room',      desc: 'Enter a live class', icon: Video,        color: 'var(--primary-500)', href: '/dashboard/rooms',    statKey: 'sessionsJoined' },
+  { label: 'Browse Courses',   desc: 'Explore courses',  icon: BookOpen,     color: 'var(--accent-500)',  href: '/dashboard/courses', statKey: 'enrolledCourseCount'  },
+  { label: 'Messages',         desc: 'Chat with teachers',    icon: MessageSquare,color: 'var(--success-400)', href: '/dashboard/messages' },
+  { label: 'My Schedule',      desc: 'View sessions',     icon: CalendarDays, color: 'var(--info-400)',    href: '/dashboard/rooms'    },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -344,20 +326,6 @@ export default function DashboardPage() {
     }
   }, [user?.id])
 
-  const teacherStats = useMemo(() => TEACHER_STATS.map(s => {
-    if (s.label === 'Students') return { ...s, value: String(studentCount) }
-    if (s.label === 'Courses') return { ...s, value: String(courseCount) }
-    if (s.label === 'Live Sessions') return { ...s, value: String(sessionCount) }
-    return s
-  }), [studentCount, courseCount, sessionCount])
-
-  const studentStats = useMemo(() => STUDENT_STATS.map(s => {
-    if (s.label === 'Sessions Joined')  return { ...s, value: String(studentSessions.length) }
-    if (s.label === 'Enrolled Courses') return { ...s, value: String(enrolledCourseCount) }
-    return s
-  }), [studentSessions.length, enrolledCourseCount])
-
-  const stats   = creator ? teacherStats  : studentStats
   const actions = creator ? TEACHER_ACTIONS : STUDENT_ACTIONS
 
   const greeting = useMemo(() => {
@@ -472,22 +440,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Stats ─────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '28px' }}>
-        {stats.map((stat, i) => {
-          const Icon = stat.icon
-          return (
-            <div key={stat.label} className="card stagger-item" style={{ animationDelay: `${i * 60}ms`, padding: '20px' }}>
-              <div style={{ width: 40, height: 40, background: stat.bg, borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                <Icon size={18} color={stat.color} />
-              </div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{stat.value}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>{stat.label}</div>
-            </div>
-          )
-        })}
-      </div>
-
       {/* ── Quick Actions ─────────────────────────────────────────────────── */}
       <h3 style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '12px' }}>
         Quick Actions
@@ -495,20 +447,36 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '32px' }}>
         {actions.map((action, i) => {
           const Icon = action.icon
+          
+          // Get stat value for this action
+          let statValue = ''
+          if (action.statKey === 'sessionCount') statValue = String(sessionCount)
+          if (action.statKey === 'courseCount') statValue = String(courseCount)
+          if (action.statKey === 'studentCount') statValue = String(studentCount)
+          if (action.statKey === 'sessionsJoined') statValue = String(studentSessions.length)
+          if (action.statKey === 'enrolledCourseCount') statValue = String(enrolledCourseCount)
+          
           return (
             <div
               key={action.label}
               className="card card-interactive dash-action-card stagger-item"
-              style={{ animationDelay: `${(i + 4) * 60}ms`, padding: '20px', cursor: 'pointer' }}
+              style={{ animationDelay: `${i * 60}ms`, padding: '20px', cursor: 'pointer', position: 'relative', display: 'flex', flexDirection: 'column' }}
               role="button"
               tabIndex={0}
               onClick={() => handleAction(action)}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleAction(action)}
             >
+              {/* Stat badge in top right */}
+              {statValue && (
+                <div style={{ position: 'absolute', top: '12px', right: '12px', textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: action.color, lineHeight: 1 }}>{statValue}</div>
+                </div>
+              )}
+              
               <div className="dash-action-icon" style={{ width: 44, height: 44, borderRadius: 'var(--radius-lg)', background: `color-mix(in srgb, ${action.color} 15%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
                 <Icon size={20} color={action.color} />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', flex: 1 }}>
                 <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{action.label}</span>
                 {action.comingSoon && (
                   <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 'var(--radius-full)', background: 'rgba(168,85,247,0.15)', color: 'var(--accent-400)', border: '1px solid rgba(168,85,247,0.25)', fontWeight: 600, letterSpacing: '0.03em' }}>SOON</span>
