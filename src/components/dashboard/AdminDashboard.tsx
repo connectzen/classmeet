@@ -519,7 +519,7 @@ export default function AdminDashboard() {
               const student = studentsData.find(s => s.id === e.student_id)
               return student ? { ...student, status: e.status as 'active' | 'inactive' | 'pending', enrolled_at: e.enrolled_at } : null
             })
-            .filter((s): s is Student => s !== null)
+            .filter((s) => s !== null) as Student[]
           return { ...teacher, students, studentCount: students.length }
         })
 
