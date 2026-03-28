@@ -56,9 +56,9 @@ async function getUserSchoolRedirect(
     }
   }
 
-  // No school — send to registration
+  // No school — existing users go to old dashboard, new users go to onboarding
   const url = requestUrl.clone()
-  url.pathname = '/register-school'
+  url.pathname = profile?.onboarding_complete ? '/dashboard' : '/onboarding'
   return NextResponse.redirect(url)
 }
 
@@ -139,7 +139,7 @@ export async function updateSession(request: NextRequest) {
       return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
     }
     const url = request.nextUrl.clone()
-    url.pathname = '/register-school'
+    url.pathname = '/sign-in'
     return NextResponse.redirect(url)
   }
 
@@ -218,7 +218,7 @@ export async function updateSession(request: NextRequest) {
 
     if (!profile?.school_id) {
       const url = request.nextUrl.clone()
-      url.pathname = '/register-school'
+      url.pathname = '/onboarding'
       return NextResponse.redirect(url)
     }
 

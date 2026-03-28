@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -121,10 +122,10 @@ export default function SchoolSignInPage() {
       </form>
 
       <p style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '20px' }}>
-        Don&apos;t have a school?{' '}
-        <a href="/register-school" style={{ fontWeight: 500 }}>
-          Register one
-        </a>
+        Don&apos;t have an account?{' '}
+        <Link href="/sign-up" style={{ fontWeight: 500 }}>
+          Sign up
+        </Link>
       </p>
     </AuthCard>
   )
