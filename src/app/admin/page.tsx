@@ -9,8 +9,8 @@ import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import {
-  Shield, Users, BookOpen, Search, Trash2,
-  UserCheck, GraduationCap,
+  Shield, Users, GraduationCap, Search, Trash2,
+  UserCheck,
   RefreshCw, Home,
 } from 'lucide-react'
 
@@ -41,7 +41,21 @@ interface AdminGroup {
   created_at: string
 }
 
-type Tab = 'users' | 'courses' | 'groups'
+interface UnassignedStudent {
+  id: string
+  full_name: string | null
+  avatar_url: string | null
+  created_at: string
+}
+
+interface TeacherForAssignment {
+  id: string
+  full_name: string | null
+  avatar_url: string | null
+  role: string
+}
+
+type Tab = 'users' | 'courses' | 'groups' | 'unassigned'
 
 export default function AdminPage() {
   const router = useRouter()
@@ -52,20 +66,35 @@ export default function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [courses, setCourses] = useState<AdminCourse[]>([])
   const [groups, setGroups] = useState<AdminGroup[]>([])
+  const [unassignedStudents, setUnassignedStudents] = useState<UnassignedStudent[]>([])
+  const [availableTeachers, setAvailableTeachers] = useState<TeacherForAssignment[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const [usersRes, coursesRes, groupsRes] = await Promise.all([
+    const [usersRes, coursesRes, groupsRes, teachersRes, allStudentsRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.rpc as any)('admin_get_users') as Promise<{ data: AdminUser[] | null }>,
       supabase.from('courses').select('*').order('created_at', { ascending: false }),
       supabase.from('groups').select('*').order('created_at', { ascending: false }),
+      supabase.from('profiles').select('id, full_name, avatar_url, role').in('role', ['teacher', 'admin']),
+      supabase.from('profiles').select('id, full_name, avatar_url, created_at').eq('role', 'student'),
     ])
     if (usersRes.data) setUsers(usersRes.data)
     if (coursesRes.data) setCourses(coursesRes.data as AdminCourse[])
     if (groupsRes.data) setGroups(groupsRes.data as AdminGroup[])
+    if (teachersRes.data) setAvailableTeachers(teachersRes.data as TeacherForAssignment[])
+
+    // Filter unassigned students
+    if (allStudentsRes.data) {
+      const { data: assignedStudentIds } = await supabase
+        .from('teacher_students')
+        .select('student_id')
+      const assignedIds = new Set(assignedStudentIds?.map(r => r.student_id) || [])
+      const unassigned = allStudentsRes.data.filter(s => !assignedIds.has(s.id))
+      setUnassignedStudents(unassigned as UnassignedStudent[])
+    }
     setLoading(false)
   }, [supabase])
 
@@ -91,6 +120,10 @@ export default function AdminPage() {
 
   const filteredGroups = groups.filter(g =>
     g.name?.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const filteredUnassigned = unassignedStudents.filter(s =>
+    s.full_name?.toLowerCase().includes(search.toLowerCase())
   )
 
   async function changeRole(userId: string, newRole: UserRole) {
@@ -127,6 +160,19 @@ export default function AdminPage() {
     if (!confirm('Delete this group?')) return
     await supabase.from('groups').delete().eq('id', groupId)
     setGroups(prev => prev.filter(g => g.id !== groupId))
+  }
+
+  async function assignStudentToTeacher(studentId: string, teacherId: string) {
+    const res = await fetch('/api/admin/assign-student', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId, teacherId }),
+    })
+    if (res.ok) {
+      setUnassignedStudents(prev => prev.filter(s => s.id !== studentId))
+    } else {
+      alert('Failed to assign student')
+    }
   }
 
   const cardStyle: React.CSSProperties = {
@@ -197,7 +243,7 @@ export default function AdminPage() {
             { label: 'Total Users', value: users.length, icon: <Users size={18} />, color: '#6366f1' },
             { label: 'Teachers', value: users.filter(u => u.role === 'teacher').length, icon: <GraduationCap size={18} />, color: '#3b82f6' },
             { label: 'Students', value: users.filter(u => u.role === 'student').length, icon: <UserCheck size={18} />, color: '#22c55e' },
-            { label: 'Courses', value: courses.length, icon: <BookOpen size={18} />, color: '#f59e0b' },
+            { label: 'Unassigned', value: unassignedStudents.length, icon: <UserCheck size={18} />, color: '#f59e0b' },
           ].map(stat => (
             <div key={stat.label} style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: '14px' }}>
               <div style={{ width: 40, height: 40, borderRadius: '10px', background: `${stat.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: stat.color }}>
@@ -215,6 +261,7 @@ export default function AdminPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button style={tabStyle(tab === 'users')} onClick={() => setTab('users')}>Users ({users.length})</button>
+            <button style={tabStyle(tab === 'unassigned')} onClick={() => setTab('unassigned')}>Unassigned ({unassignedStudents.length})</button>
             <button style={tabStyle(tab === 'courses')} onClick={() => setTab('courses')}>Courses ({courses.length})</button>
             <button style={tabStyle(tab === 'groups')} onClick={() => setTab('groups')}>Groups ({groups.length})</button>
           </div>
@@ -385,6 +432,61 @@ export default function AdminPage() {
                 ))}
                 {filteredGroups.length === 0 && (
                   <tr><td colSpan={3} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-muted)' }}>No groups found</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {tab === 'unassigned' && (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Student</th>
+                  <th style={thStyle}>Joined</th>
+                  <th style={thStyle}>Assign To</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUnassigned.map(s => (
+                  <tr key={s.id}>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Avatar name={s.full_name} src={s.avatar_url} size="sm" />
+                        <span style={{ fontWeight: 500 }}>{s.full_name || '(no name)'}</span>
+                      </div>
+                    </td>
+                    <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <select
+                          defaultValue=""
+                          onChange={(e) => {
+                            const teacherId = e.target.value
+                            if (teacherId) {
+                              assignStudentToTeacher(s.id, teacherId)
+                            }
+                          }}
+                          style={{
+                            padding: '4px 8px', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-default)', background: 'var(--bg-elevated)',
+                            color: 'var(--text-primary)', cursor: 'pointer', flex: 1,
+                          }}
+                        >
+                          <option value="">Select teacher...</option>
+                          {availableTeachers.map(t => (
+                            <option key={t.id} value={t.id}>{t.full_name || '(no name)'}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredUnassigned.length === 0 && (
+                  <tr><td colSpan={3} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-muted)' }}>
+                    {unassignedStudents.length === 0 ? 'No unassigned students' : 'No results found'}
+                  </td></tr>
                 )}
               </tbody>
             </table>

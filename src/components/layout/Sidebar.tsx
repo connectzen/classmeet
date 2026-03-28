@@ -181,7 +181,21 @@ function TeacherInfo({ studentId }: { studentId: string }) {
     return (
       <div className="sidebar-section">
         <div className="sidebar-section-label">My Teachers</div>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px' }}>No teacher assigned</p>
+        <div style={{
+          margin: '8px 12px',
+          padding: '12px 14px',
+          backgroundColor: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.2)',
+          borderRadius: '8px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500, marginBottom: '4px' }}>
+            Welcome to ClassMeet!
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+            Awaiting teacher assignment or join a classroom
+          </div>
+        </div>
       </div>
     )
   }
