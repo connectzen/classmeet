@@ -128,11 +128,59 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // ── Onboarding: redirect authenticated users away ──
+  // ── Onboarding: only redirect away users who are already onboarded or super admin ──
   if (pathname === '/onboarding') {
     if (user) {
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+      const result = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      const profile = result.data as any
+
+      // Super admin → check by flag first, then by email
+      let isSuperAdmin = profile?.is_super_admin || false
+      if (!isSuperAdmin) {
+        try {
+          const { data: settings } = await (supabase as any)
+            .from('system_settings')
+            .select('setting_value')
+            .eq('setting_key', 'super_admin_email')
+            .single()
+          const superAdminEmail = settings?.setting_value?.email
+          if (superAdminEmail && user.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
+            isSuperAdmin = true
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (isSuperAdmin) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/superadmin'
+        return NextResponse.redirect(url)
+      }
+
+      // Already onboarded → send to their dashboard
+      if (profile?.onboarding_complete) {
+        if (profile?.school_id) {
+          const { data: school } = await supabase
+            .from('schools')
+            .select('slug')
+            .eq('id', profile.school_id)
+            .single()
+          if (school) {
+            const roleRoute = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
+            const url = request.nextUrl.clone()
+            url.pathname = `/${school.slug}/${roleRoute}`
+            return NextResponse.redirect(url)
+          }
+        }
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        return NextResponse.redirect(url)
+      }
     }
+    // Not authenticated or not yet onboarded → allow onboarding
     return supabaseResponse
   }
 
