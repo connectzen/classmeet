@@ -28,16 +28,37 @@ export default function OnboardingPage() {
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) { router.push('/sign-in'); return }
 
+    // Check if user is the designated super admin
+    let finalRole = role
+    let isSuperAdmin = false
+
+    try {
+      const { data: settings } = await (supabase as any)
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'super_admin_email')
+        .single()
+
+      const superAdminEmail = settings?.setting_value?.email
+      if (superAdminEmail && authUser.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
+        finalRole = 'super_admin'
+        isSuperAdmin = true
+      }
+    } catch {
+      // If settings lookup fails, just use the selected role
+    }
+
     // For school admins, redirect to school registration
-    if (role === 'admin') {
+    if (finalRole === 'admin') {
       router.push('/register-school')
       return
     }
 
-    // For teacher/student, save role and redirect to dashboard
+    // For super_admin/teacher/student, save role and redirect
     await supabase.from('profiles').upsert({
       id: authUser.id,
-      role,
+      role: finalRole,
+      is_super_admin: isSuperAdmin,
       goals: [],
       subjects: [],
       onboarding_complete: true,
@@ -49,14 +70,15 @@ export default function OnboardingPage() {
       email: authUser.email ?? '',
       fullName: authUser.user_metadata?.full_name ?? '',
       avatarUrl: null,
-      role,
+      role: finalRole,
       onboardingComplete: true,
       schoolId: null,
       schoolSlug: null,
-      isSuperAdmin: false,
+      isSuperAdmin,
     })
 
-    router.push('/dashboard')
+    // Super admin goes to /superadmin, others go to /dashboard
+    router.push(isSuperAdmin ? '/superadmin' : '/dashboard')
   }
 
   return (

@@ -24,6 +24,7 @@ const STATIC_FIRST_SEGMENTS = new Set([
 async function getUserSchoolRedirect(
   supabase: ReturnType<typeof createServerClient<Database>>,
   userId: string,
+  userEmail: string,
   requestUrl: NextRequest['nextUrl'],
 ) {
   const result = await supabase
@@ -34,8 +35,26 @@ async function getUserSchoolRedirect(
 
   const profile = result.data as any
 
+  // Check if email matches super admin email
+  let isSuperAdmin = profile?.is_super_admin || false
+  if (!isSuperAdmin) {
+    try {
+      const { data: settings } = await (supabase as any)
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'super_admin_email')
+        .single()
+      const superAdminEmail = settings?.setting_value?.email
+      if (superAdminEmail && userEmail.toLowerCase() === superAdminEmail.toLowerCase()) {
+        isSuperAdmin = true
+      }
+    } catch {
+      // Ignore if system_settings lookup fails
+    }
+  }
+
   // Super admin → redirect to /superadmin
-  if (profile?.is_super_admin) {
+  if (isSuperAdmin) {
     const url = requestUrl.clone()
     url.pathname = '/superadmin'
     return NextResponse.redirect(url)
@@ -117,7 +136,7 @@ export async function updateSession(request: NextRequest) {
   // ── Register school: public for unauthenticated, redirect if user has school ──
   if (pathname === '/register-school') {
     if (user) {
-      return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
     return supabaseResponse
   }
@@ -127,7 +146,7 @@ export async function updateSession(request: NextRequest) {
   if (publicAuthRoutes.some(r => pathname === r || pathname.startsWith(r + '/'))) {
     if (user) {
       // Already logged in — redirect to their dashboard/school
-      return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
     // Not logged in — allow access to sign-in/sign-up
     return supabaseResponse
@@ -136,7 +155,7 @@ export async function updateSession(request: NextRequest) {
   // ── Old dashboard/admin routes → redirect to school-scoped ──
   if (pathname.startsWith('/dashboard') || pathname === '/admin' || pathname.startsWith('/admin/')) {
     if (user) {
-      return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
     const url = request.nextUrl.clone()
     url.pathname = '/sign-in'
@@ -161,7 +180,7 @@ export async function updateSession(request: NextRequest) {
 
     if (!profile?.is_super_admin) {
       // Not a super admin — redirect to their school/dashboard
-      return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
 
     return supabaseResponse
@@ -230,7 +249,7 @@ export async function updateSession(request: NextRequest) {
 
     if (!school || profile.school_id !== school.id) {
       // User doesn't belong to this school — redirect to their own
-      return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
 
     // Admin routes: verify admin role

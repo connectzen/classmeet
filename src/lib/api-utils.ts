@@ -105,3 +105,21 @@ export async function auditSuperAdminAction(
     // Don't fail the main operation if audit fails
   }
 }
+
+export async function getSuperAdminEmail(supabase: any): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'super_admin_email')
+      .single()
+    return data?.setting_value?.email || null
+  } catch {
+    return null
+  }
+}
+
+export async function isSuperAdminByEmail(supabase: any, email: string): Promise<boolean> {
+  const superAdminEmail = await getSuperAdminEmail(supabase)
+  return superAdminEmail ? email.toLowerCase() === superAdminEmail.toLowerCase() : false
+}
