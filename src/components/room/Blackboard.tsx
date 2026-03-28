@@ -5,7 +5,7 @@ import * as fabric from 'fabric'
 import BlackboardToolbar from './BlackboardToolbar'
 
 // ── Types ────────────────────────────────────────────────────────────────────
-export type BlackboardEvent =
+export type BlackboardEvent = (
   | { type: 'activate' }
   | { type: 'deactivate' }
   | { type: 'snapshot'; data: string }
@@ -20,6 +20,7 @@ export type BlackboardEvent =
   | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string; width: number }
   | { type: 'shape-preview-end' }
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
+) & { senderId?: string }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
 

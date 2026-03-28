@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
-import type { Quiz, QuizQuestion as DBQuizQuestion, Course, Topic, Lesson, QuizSubmission } from '@/lib/supabase/types'
+import type { Quiz, QuizQuestion as DBQuizQuestion, Course, Topic, Lesson, QuizSubmission, UserRole } from '@/lib/supabase/types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getInitials(name: string) {
@@ -214,6 +214,8 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({})
   const [courseScrollTop, setCourseScrollTop] = useState(0)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [sessionTeacherId, setSessionTeacherId] = useState<string | null>(null)
+  const [participantProfileMap, setParticipantProfileMap] = useState<Map<string, { id: string; role: UserRole }>>(new Map())
   const [quizSubmissions, setQuizSubmissions] = useState<QuizSubmission[]>([])
   const [quizSubmitted, setQuizSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState(false)
@@ -274,12 +276,13 @@ function RoomInner({ roomName }: { roomName: string }) {
       // Find session by room_name
       const { data: session } = await supabase
         .from('sessions')
-        .select('id')
+        .select('id, teacher_id')
         .eq('room_name', roomName)
         .single()
       if (!session) return
       setSessionId(session.id)
       sessionIdRef.current = session.id
+      if (session.teacher_id) setSessionTeacherId(session.teacher_id)
 
       // Load linked courses with topics + lessons
       const { data: sessionCourses } = await supabase
@@ -346,6 +349,33 @@ function RoomInner({ roomName }: { roomName: string }) {
     load()
   }, [roomName])
 
+  // Participant profile map: identity (full_name) -> { id, role }
+  const participantIdentityKey = useMemo(
+    () => participants.map(p => p.identity).sort().join('|'),
+    [participants]
+  )
+  useEffect(() => {
+    if (participants.length === 0) return
+    const load = async () => {
+      const supabase = createClient()
+      const identities = participants.map(p => p.identity)
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, role')
+        .in('full_name', identities)
+      if (profiles) {
+        const map = new Map<string, { id: string; role: UserRole }>()
+        for (const profile of profiles) {
+          if (profile.full_name) {
+            map.set(profile.full_name, { id: profile.id, role: profile.role as UserRole })
+          }
+        }
+        setParticipantProfileMap(map)
+      }
+    }
+    load()
+  }, [participantIdentityKey])
+
   // Hand raise data channel
   const { send: sendHandData } = useDataChannel(HAND_TOPIC, (msg) => {
     const data = JSON.parse(decoder.decode(msg.payload))
@@ -382,25 +412,23 @@ function RoomInner({ roomName }: { roomName: string }) {
       event.type === 'object-moving'
     ) {
       // Live drawing / cursor / shape-preview: call imperatively to bypass React state batching
-      if (!isTeacher) {
-        blackboardRef.current?.applyLiveEvent(event)
-      }
+      // All participants (including co-teachers/admins) receive live draw events
+      blackboardRef.current?.applyLiveEvent(event)
     } else {
-      // Drawing events — only apply if not host (host already has the state)
-      if (!isTeacher) {
-        // A snapshot arriving means the blackboard IS active — ensure it's visible
-        // (covers the case where the activate event was missed)
-        if (event.type === 'snapshot') {
-          setBlackboardActive(true)
-        }
-        setBlackboardEvent(event)
+      // Persistent drawing events — apply to all participants
+      // A snapshot arriving means the blackboard IS active — ensure it's visible
+      if (event.type === 'snapshot') {
+        setBlackboardActive(true)
       }
+      setBlackboardEvent(event)
     }
   })
 
   // Host: broadcast blackboard canvas events
   const handleBlackboardEvent = useCallback((event: BlackboardEvent) => {
-    const payload = encoder.encode(JSON.stringify(event))
+    // Attach sender identity so receivers can identify the source
+    const eventWithSender: BlackboardEvent = { ...event, senderId: localParticipant.identity }
+    const payload = encoder.encode(JSON.stringify(eventWithSender))
     // Use unreliable transport for ephemeral preview events to avoid head-of-line blocking.
     // text-cursor is kept reliable so the hide event (visible:false) is guaranteed to arrive;
     // otherwise a dropped packet leaves the caret permanently visible on student side.
@@ -409,7 +437,7 @@ function RoomInner({ roomName }: { roomName: string }) {
                       event.type === 'cursor-move' ||
                       event.type === 'object-moving'
     sendBlackboardData(payload, { reliable: !ephemeral })
-  }, [sendBlackboardData])
+  }, [sendBlackboardData, localParticipant.identity])
 
   // Presentation data channel — syncs course/quiz presentation state
   const { send: sendPresentData } = useDataChannel(PRESENT_TOPIC, (msg) => {
@@ -982,14 +1010,19 @@ function RoomInner({ roomName }: { roomName: string }) {
     setRaisedHands(new Set())
   }, [])
 
-  // Find the teacher participant (first non-student, or the host)
+  // Find the session owner (room creator) to default on main stage
   const teacherParticipant = useMemo(() => {
-    // If local user is teacher, they are the teacher
+    // Match participant whose profile ID equals the session's teacher_id
+    if (sessionTeacherId) {
+      const match = participants.find(p => participantProfileMap.get(p.identity)?.id === sessionTeacherId)
+      if (match) return match
+    }
+    // Fallback: if local user is teacher/admin, show them on stage
     if (isTeacher) return localParticipant
-    // Otherwise, find first remote participant (usually the teacher/host)
+    // Last resort: first remote participant
     const remote = participants.find(p => !p.isLocal)
     return remote || participants[0]
-  }, [isTeacher, localParticipant, participants])
+  }, [sessionTeacherId, participantProfileMap, isTeacher, localParticipant, participants])
 
   // Determine who's on the main stage
   const spotlightParticipant = useMemo(() => {
@@ -1070,6 +1103,8 @@ function RoomInner({ roomName }: { roomName: string }) {
           isTeacher={isTeacher}
           onPromote={handlePromote}
           onClose={() => setParticipantsVisible(false)}
+          participantProfileMap={participantProfileMap}
+          sessionTeacherId={sessionTeacherId}
         />
       )}
 
@@ -1224,6 +1259,8 @@ function RoomInner({ roomName }: { roomName: string }) {
               isTeacher={isTeacher}
               onPromote={handlePromote}
               onClose={() => setParticipantsVisible(false)}
+              participantProfileMap={participantProfileMap}
+              sessionTeacherId={sessionTeacherId}
             />
           </div>
         </div>
@@ -1245,9 +1282,11 @@ interface ParticipantsPanelProps {
   isTeacher: boolean
   onPromote: (identity: string) => void
   onClose: () => void
+  participantProfileMap: Map<string, { id: string; role: UserRole }>
+  sessionTeacherId: string | null
 }
 
-function ParticipantsPanel({ participants, cameraTracks, spotlightIdentity, teacherIdentity, raisedHands, isTeacher, onPromote, onClose }: ParticipantsPanelProps) {
+function ParticipantsPanel({ participants, cameraTracks, spotlightIdentity, teacherIdentity, raisedHands, isTeacher, onPromote, onClose, participantProfileMap, sessionTeacherId }: ParticipantsPanelProps) {
   return (
     <div className="room-sidebar room-sidebar-left">
       <div className="room-sidebar-header">
@@ -1265,6 +1304,7 @@ function ParticipantsPanel({ participants, cameraTracks, spotlightIdentity, teac
           const camTrack = cameraTracks.find(t => t.participant?.identity === p.identity)
           const isSpotlight = spotlightIdentity === p.identity
           const handUp = raisedHands.has(p.identity)
+          const profile = participantProfileMap.get(p.identity)
           return (
             <ParticipantCard
               key={p.identity}
@@ -1274,6 +1314,9 @@ function ParticipantsPanel({ participants, cameraTracks, spotlightIdentity, teac
               isHandRaised={handUp}
               isTeacher={isTeacher}
               isHost={p.identity === teacherIdentity}
+              participantRole={profile?.role}
+              participantProfileId={profile?.id}
+              sessionTeacherId={sessionTeacherId}
               onPromote={() => onPromote(p.identity)}
             />
           )
@@ -1284,7 +1327,7 @@ function ParticipantsPanel({ participants, cameraTracks, spotlightIdentity, teac
 }
 
 // ── Participant Card ─────────────────────────────────────────────────────────
-function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isTeacher, isHost, onPromote }: {
+function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isTeacher, isHost, onPromote, participantRole, participantProfileId, sessionTeacherId }: {
   participant: LKParticipant
   camTrack?: TrackReferenceOrPlaceholder
   isSpotlight: boolean
@@ -1292,6 +1335,9 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
   isTeacher: boolean
   isHost: boolean
   onPromote: () => void
+  participantRole?: UserRole
+  participantProfileId?: string
+  sessionTeacherId?: string | null
 }) {
   const isSpeaking = useIsSpeaking(participant)
   const isMuted = !participant.isMicrophoneEnabled
@@ -1320,8 +1366,16 @@ function ParticipantCard({ participant, camTrack, isSpotlight, isHandRaised, isT
           {participant.name || participant.identity}
           {participant.isLocal && <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}> (You)</span>}
         </div>
-        <div style={{ fontSize: '0.7rem', color: isHost ? 'var(--primary-400)' : 'var(--text-muted)' }}>
-          {participant.isLocal ? 'You' : isHost ? 'Teacher' : 'Student'}
+        <div style={{ fontSize: '0.7rem', color: isHost ? 'var(--primary-400)' : participantRole === 'teacher' || participantRole === 'admin' ? 'var(--primary-300)' : 'var(--text-muted)' }}>
+          {participant.isLocal
+            ? 'You'
+            : participantProfileId && sessionTeacherId && participantProfileId === sessionTeacherId
+              ? 'Teacher'
+              : participantRole === 'admin'
+                ? 'Admin'
+                : participantRole === 'teacher'
+                  ? 'Teacher'
+                  : 'Student'}
         </div>
       </div>
 
