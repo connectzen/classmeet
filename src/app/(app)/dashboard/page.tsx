@@ -10,7 +10,7 @@ import Button from '@/components/ui/Button'
 import {
   Video, BookOpen, Users, Plus, ArrowRight,
   Clock, Sparkles, CalendarDays, Zap, MessageSquare,
-  Radio, Circle, Wifi, WifiOff,
+  Radio, Circle, Wifi, WifiOff, GraduationCap,
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import { isCreatorRole } from '@/lib/utils'
