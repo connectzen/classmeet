@@ -3,7 +3,6 @@
 // Admin Dashboard - System-wide management view for classroom administrators
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useAppStore } from '@/store/app-store'
 import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -455,7 +454,6 @@ function TeachersSection({ teachersWithStudents, onRemoveStudent }: {
 // Main AdminDashboard Component
 export default function AdminDashboard() {
   const toast = useToast()
-  const currentUser = useAppStore(s => s.user)
 
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [allStudents, setAllStudents] = useState<Student[]>([])
@@ -465,80 +463,42 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
 
   const loadData = useCallback(async () => {
-    const supabase = createClient()
     setLoading(true)
     try {
-      // Get all teachers (admins are not teachers — they manage the system)
-      const { data: teachersData } = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url, role, subjects')
-        .eq('role', 'teacher')
-        .order('full_name', { ascending: true })
+      const res = await fetch('/api/admin/dashboard-data')
+      if (!res.ok) throw new Error('Failed to fetch dashboard data')
+      const { data } = await res.json()
 
-      const allTeachers = teachersData || []
+      const allTeachers = data.teachers || []
+      const studentsData = data.students || []
+      const enrollmentsData = data.enrollments || []
+
       setTeachers(allTeachers as Teacher[])
+      setAllStudents(studentsData as Student[])
+      setUnassignedStudents((data.unassignedStudents || []) as Student[])
 
-      // Get all students (including member, guest, and student roles)
-      const { data: studentsData } = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url, role, created_at')
-        .in('role', ['student', 'member', 'guest'])
-        .order('full_name', { ascending: true })
+      // Build teachers with students
+      const enrollmentsByTeacher = new Map<string, typeof enrollmentsData>()
+      enrollmentsData.forEach((e: { teacher_id: string; student_id: string; status: string; enrolled_at: string }) => {
+        if (!enrollmentsByTeacher.has(e.teacher_id)) {
+          enrollmentsByTeacher.set(e.teacher_id, [])
+        }
+        enrollmentsByTeacher.get(e.teacher_id)!.push(e)
+      })
 
-      if (studentsData) {
-        setAllStudents(studentsData as Student[])
+      const teachersWithStudents = allTeachers.map((teacher: Teacher) => {
+        const enrollments = enrollmentsByTeacher.get(teacher.id) || []
+        const students = enrollments
+          .map((e: { student_id: string; status: string; enrolled_at: string }) => {
+            const student = studentsData.find((s: Student) => s.id === e.student_id)
+            return student ? { ...student, status: e.status as 'active' | 'inactive' | 'pending', enrolled_at: e.enrolled_at } : null
+          })
+          .filter((s: Student | null) => s !== null) as Student[]
+        return { ...teacher, students, studentCount: students.length }
+      })
 
-        // Get all assigned student IDs
-        const { data: assignedData } = await supabase
-          .from('teacher_students')
-          .select('student_id')
-
-        const assignedIds = new Set(assignedData?.map(r => r.student_id) || [])
-        const unassigned = studentsData.filter(s => !assignedIds.has(s.id))
-        setUnassignedStudents(unassigned as Student[])
-
-        // Get student enrollment details for teachers
-        const { data: enrollmentsData } = await supabase
-          .from('teacher_students')
-          .select('teacher_id, student_id, status, enrolled_at')
-
-        const enrollmentsByTeacher = new Map<string, typeof enrollmentsData>()
-        enrollmentsData?.forEach(e => {
-          if (!enrollmentsByTeacher.has(e.teacher_id)) {
-            enrollmentsByTeacher.set(e.teacher_id, [])
-          }
-          enrollmentsByTeacher.get(e.teacher_id)!.push(e)
-        })
-
-        // Build teachers with students
-        const teachersWithStudents = allTeachers.map(teacher => {
-          const enrollments = enrollmentsByTeacher.get(teacher.id) || []
-          const students = enrollments
-            .map(e => {
-              const student = studentsData.find(s => s.id === e.student_id)
-              return student ? { ...student, status: e.status as 'active' | 'inactive' | 'pending', enrolled_at: e.enrolled_at } : null
-            })
-            .filter((s) => s !== null) as Student[]
-          return { ...teacher, students, studentCount: students.length }
-        })
-
-        setTeachersWithStudents(teachersWithStudents)
-
-        // Update stats
-        setStats({
-          totalTeachers: allTeachers.length,
-          totalStudents: studentsData?.length || 0,
-          unassignedCount: unassigned.length,
-          totalCourses: 0, // Will be set below
-        })
-
-        // Get course count
-        const { count: courseCount } = await supabase
-          .from('courses')
-          .select('*', { count: 'exact', head: true })
-
-        setStats(prev => ({ ...prev, totalCourses: courseCount || 0 }))
-      }
+      setTeachersWithStudents(teachersWithStudents)
+      setStats(data.stats)
     } catch (err) {
       console.error('Error loading admin dashboard data:', err)
       toast.show('Failed to load dashboard data')

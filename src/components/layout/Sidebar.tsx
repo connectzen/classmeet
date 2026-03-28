@@ -230,35 +230,23 @@ function AdminOverview() {
     const supabase = createClient()
 
     const load = async () => {
-      const [teachersRes, studentsRes, assignedRes] = await Promise.all([
-        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'teacher'),
-        supabase.from('profiles').select('id', { count: 'exact', head: true }).in('role', ['student', 'member', 'guest']),
-        supabase.from('teacher_students').select('student_id'),
-      ])
-
-      const totalStudents = studentsRes.count || 0
-
-      // To get unassigned count, we need actual student IDs
-      let unassignedCount = 0
-      if (totalStudents > 0) {
-        const { data: allStudents } = await supabase
-          .from('profiles')
-          .select('id')
-          .in('role', ['student', 'member', 'guest'])
-        const assignedIds = new Set(assignedRes.data?.map(r => r.student_id) || [])
-        unassignedCount = allStudents?.filter(s => !assignedIds.has(s.id)).length || 0
+      try {
+        const res = await fetch('/api/admin/dashboard-data')
+        if (!res.ok) return
+        const { data } = await res.json()
+        setCounts({
+          teachers: data.stats.totalTeachers,
+          students: data.stats.totalStudents,
+          unassigned: data.stats.unassignedCount,
+        })
+      } catch {
+        // Silently fail for sidebar counts
       }
-
-      setCounts({
-        teachers: teachersRes.count || 0,
-        students: totalStudents,
-        unassigned: unassignedCount,
-      })
     }
 
     load()
 
-    // Subscribe to changes in profiles and teacher_students
+    // Subscribe to changes to trigger re-fetch
     const ch1 = supabase
       .channel('sidebar-admin-profiles')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
