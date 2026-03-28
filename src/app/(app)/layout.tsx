@@ -23,6 +23,20 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect('/onboarding')
   }
 
+  // If user belongs to a school, redirect to school-scoped route
+  if (profile?.school_id) {
+    const { data: school } = await supabase
+      .from('schools')
+      .select('slug')
+      .eq('id', profile.school_id)
+      .single()
+
+    if (school) {
+      const roleSegment = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
+      redirect(`/${school.slug}/${roleSegment}/dashboard`)
+    }
+  }
+
   // Load school slug if user belongs to a school
   let schoolSlug: string | null = null
   if (profile?.school_id) {
@@ -59,4 +73,3 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     </AppStoreHydrator>
   )
 }
-
