@@ -557,7 +557,21 @@ export default function AdminDashboard() {
     const channel = supabase
       .channel('admin-dashboard')
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
+        schema: 'public',
+        table: 'teacher_students',
+      }, () => {
+        loadData()
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'teacher_students',
+      }, () => {
+        loadData()
+      })
+      .on('postgres_changes', {
+        event: 'DELETE',
         schema: 'public',
         table: 'teacher_students',
       }, () => {
