@@ -1,5 +1,36 @@
 export type UserRole = 'admin' | 'member' | 'teacher' | 'student' | 'guest'
 
+export type School = {
+  id: string
+  name: string
+  slug: string
+  logo_url: string | null
+  primary_color: string
+  secondary_color: string
+  admin_id: string
+  default_teacher_password: string
+  default_student_password: string
+  created_at: string
+  updated_at: string
+}
+
+export type Class = {
+  id: string
+  school_id: string
+  name: string
+  description: string | null
+  teacher_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ClassMember = {
+  id: string
+  class_id: string
+  student_id: string
+  added_at: string
+}
+
 export type Profile = {
   id: string
   full_name: string | null
@@ -10,6 +41,7 @@ export type Profile = {
   onboarding_complete: boolean
   referred_by: string | null
   last_seen: string | null
+  school_id: string | null
   created_at: string
   updated_at: string
 }
@@ -29,6 +61,7 @@ export type Course = {
   subject: string
   level: string
   published: boolean
+  school_id: string | null
   created_at: string
   updated_at: string
 }
@@ -58,6 +91,7 @@ export type TeacherStudent = {
   student_id: string
   status: 'active' | 'inactive' | 'pending'
   enrolled_at: string
+  school_id: string | null
   created_at: string
 }
 
@@ -66,6 +100,7 @@ export type Group = {
   teacher_id: string
   name: string
   description: string | null
+  school_id: string | null
   created_at: string
   updated_at: string
 }
@@ -88,6 +123,7 @@ export type Session = {
   started_at: string | null
   ended_at: string | null
   room_name: string
+  school_id: string | null
   created_at: string
   updated_at: string
 }
@@ -116,6 +152,7 @@ export type Quiz = {
   pass_threshold: number
   reveal_delay_days: number | null
   exam_start_date: string | null
+  school_id: string | null
   created_at: string
   updated_at: string
 }
@@ -191,6 +228,7 @@ export type Conversation = {
   type: 'direct' | 'group'
   name: string | null
   created_by: string | null
+  school_id: string | null
   created_at: string
   updated_at: string
 }
@@ -215,6 +253,30 @@ export type Message = {
 export type Database = {
   public: {
     Tables: {
+      schools: {
+        Row: School
+        Insert: Omit<School, 'id' | 'created_at' | 'updated_at' | 'logo_url' | 'primary_color' | 'secondary_color' | 'default_teacher_password' | 'default_student_password'> & {
+          logo_url?: string | null
+          primary_color?: string
+          secondary_color?: string
+          default_teacher_password?: string
+          default_student_password?: string
+        }
+        Update: Partial<Omit<School, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      classes: {
+        Row: Class
+        Insert: Omit<Class, 'id' | 'created_at' | 'updated_at' | 'teacher_id' | 'description'> & { teacher_id?: string | null; description?: string | null }
+        Update: Partial<Omit<Class, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      class_members: {
+        Row: ClassMember
+        Insert: Omit<ClassMember, 'id' | 'added_at'>
+        Update: Partial<Omit<ClassMember, 'id' | 'added_at'>>
+        Relationships: []
+      }
       profiles: {
         Row: Profile
         Insert: Partial<Profile> & { id: string }
@@ -229,7 +291,7 @@ export type Database = {
       }
       courses: {
         Row: Course
-        Insert: Omit<Course, 'id' | 'created_at' | 'updated_at' | 'published'>
+        Insert: Omit<Course, 'id' | 'created_at' | 'updated_at' | 'published' | 'school_id'> & { school_id?: string | null }
         Update: Partial<Omit<Course, 'id' | 'created_at'>>
         Relationships: []
       }
@@ -247,13 +309,13 @@ export type Database = {
       }
       teacher_students: {
         Row: TeacherStudent
-        Insert: Omit<TeacherStudent, 'id' | 'created_at' | 'enrolled_at' | 'status'>
+        Insert: Omit<TeacherStudent, 'id' | 'created_at' | 'enrolled_at' | 'status' | 'school_id'> & { school_id?: string | null }
         Update: Partial<Omit<TeacherStudent, 'id' | 'created_at'>>
         Relationships: []
       }
       groups: {
         Row: Group
-        Insert: Omit<Group, 'id' | 'created_at' | 'updated_at'>
+        Insert: Omit<Group, 'id' | 'created_at' | 'updated_at' | 'school_id'> & { school_id?: string | null }
         Update: Partial<Omit<Group, 'id' | 'created_at'>>
         Relationships: []
       }
@@ -265,7 +327,7 @@ export type Database = {
       }
       sessions: {
         Row: Session
-        Insert: Omit<Session, 'id' | 'created_at' | 'updated_at' | 'started_at' | 'ended_at'> & { started_at?: string | null; ended_at?: string | null }
+        Insert: Omit<Session, 'id' | 'created_at' | 'updated_at' | 'started_at' | 'ended_at' | 'school_id'> & { started_at?: string | null; ended_at?: string | null; school_id?: string | null }
         Update: Partial<Omit<Session, 'id' | 'created_at'>>
         Relationships: []
       }
@@ -283,7 +345,7 @@ export type Database = {
       }
       quizzes: {
         Row: Quiz
-        Insert: Omit<Quiz, 'id' | 'created_at' | 'updated_at' | 'pass_threshold' | 'reveal_delay_days' | 'exam_start_date'> & { pass_threshold?: number; reveal_delay_days?: number | null; exam_start_date?: string | null }
+        Insert: Omit<Quiz, 'id' | 'created_at' | 'updated_at' | 'pass_threshold' | 'reveal_delay_days' | 'exam_start_date' | 'school_id'> & { pass_threshold?: number; reveal_delay_days?: number | null; exam_start_date?: string | null; school_id?: string | null }
         Update: Partial<Omit<Quiz, 'id' | 'created_at'>>
         Relationships: []
       }
@@ -325,7 +387,7 @@ export type Database = {
       }
       conversations: {
         Row: Conversation
-        Insert: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>
+        Insert: Omit<Conversation, 'id' | 'created_at' | 'updated_at' | 'school_id'> & { school_id?: string | null }
         Update: Partial<Omit<Conversation, 'id' | 'created_at'>>
         Relationships: []
       }
@@ -355,6 +417,10 @@ export type Database = {
       is_session_owner: {
         Args: { sid: string }
         Returns: boolean
+      }
+      get_user_school_id: {
+        Args: Record<string, never>
+        Returns: string | null
       }
     }
     Enums: {

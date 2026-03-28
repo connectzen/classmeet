@@ -43,6 +43,8 @@ export default function OnboardingPage() {
       avatarUrl: null,
       role,
       onboardingComplete: true,
+      schoolId: null,
+      schoolSlug: null,
     })
 
     router.push('/dashboard')

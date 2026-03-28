@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, Video, BookOpen, MessageSquare, Users, BarChart2, FolderOpen, ChevronDown, HelpCircle } from 'lucide-react'
@@ -11,21 +11,35 @@ import UserMenu from './UserMenu'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/lib/supabase/types'
 
-const COMMUNITY_LINKS = [
-  { href: '/dashboard/members',   label: 'Members',   icon: Users     },
-  { href: '/dashboard/groups',    label: 'Groups',    icon: FolderOpen },
-  { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart2  },
-]
-
 const COMMUNITY_ROLES: UserRole[] = ['teacher', 'admin']
 
 export default function TopBar() {
   const { toggleSidebar, user } = useAppStore()
   const pathname = usePathname()
   const role = user?.role as UserRole | undefined
+  const schoolSlug = user?.schoolSlug
   const isCreator = role === 'teacher' || role === 'admin'
   const liveCount = useLiveSessionCount(user?.id, isCreator)
   const unreadMsgCount = useUnreadMessageCount(user?.id)
+
+  // Build school-scoped base path
+  const basePath = useMemo(() => {
+    if (schoolSlug) {
+      const roleSegment = role === 'admin' ? 'admin' : role === 'teacher' ? 'teacher' : 'student'
+      return `/${schoolSlug}/${roleSegment}/dashboard`
+    }
+    return '/dashboard'
+  }, [schoolSlug, role])
+
+  const dashboardPath = schoolSlug
+    ? `/${schoolSlug}/${role === 'admin' ? 'admin' : role === 'teacher' ? 'teacher' : 'student'}`
+    : '/dashboard'
+
+  const COMMUNITY_LINKS = useMemo(() => [
+    { href: `${basePath}/members`,   label: 'Members',   icon: Users     },
+    { href: `${basePath}/groups`,    label: 'Groups',    icon: FolderOpen },
+    { href: `${basePath}/analytics`, label: 'Analytics', icon: BarChart2  },
+  ], [basePath])
 
   const [communityOpen, setCommunityOpen] = useState(false)
   const communityRef = useRef<HTMLDivElement>(null)
@@ -49,7 +63,7 @@ export default function TopBar() {
   const isCommunityActive = COMMUNITY_LINKS.some(
     ({ href }) => pathname === href || pathname.startsWith(href + '/')
   )
-  const MORE_PATHS = ['/dashboard/rooms', '/dashboard/courses', '/dashboard/quizzes', '/dashboard/messages', ...COMMUNITY_LINKS.map(l => l.href)]
+  const MORE_PATHS = [`${basePath}/rooms`, `${basePath}/courses`, `${basePath}/quizzes`, `${basePath}/messages`, ...COMMUNITY_LINKS.map(l => l.href)]
   const isMoreActive = MORE_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
 
   return (
@@ -68,16 +82,16 @@ export default function TopBar() {
         <nav className="topbar-nav" aria-label="Main navigation">
           {/* Dashboard */}
           <Link
-            href="/dashboard"
-            className={cn('topbar-nav-link', pathname === '/dashboard' && 'active')}
+            href={dashboardPath}
+            className={cn('topbar-nav-link', pathname === dashboardPath && 'active')}
           >
             Dashboard
           </Link>
 
           {/* Live Rooms */}
           <Link
-            href="/dashboard/rooms"
-            className={cn('topbar-nav-link', (pathname === '/dashboard/rooms' || pathname.startsWith('/dashboard/rooms/')) && 'active')}
+            href={`${basePath}/rooms`}
+            className={cn('topbar-nav-link', (pathname === `${basePath}/rooms` || pathname.startsWith(`${basePath}/rooms/`)) && 'active')}
           >
             <Video size={14} />
             Live Rooms
@@ -88,8 +102,8 @@ export default function TopBar() {
 
           {/* Courses */}
           <Link
-            href="/dashboard/courses"
-            className={cn('topbar-nav-link', (pathname === '/dashboard/courses' || pathname.startsWith('/dashboard/courses/')) && 'active')}
+            href={`${basePath}/courses`}
+            className={cn('topbar-nav-link', (pathname === `${basePath}/courses` || pathname.startsWith(`${basePath}/courses/`)) && 'active')}
           >
             <BookOpen size={14} />
             Courses
@@ -97,8 +111,8 @@ export default function TopBar() {
 
           {/* Exams */}
           <Link
-            href="/dashboard/quizzes"
-            className={cn('topbar-nav-link', (pathname === '/dashboard/quizzes' || pathname.startsWith('/dashboard/quizzes/')) && 'active')}
+            href={`${basePath}/quizzes`}
+            className={cn('topbar-nav-link', (pathname === `${basePath}/quizzes` || pathname.startsWith(`${basePath}/quizzes/`)) && 'active')}
           >
             <HelpCircle size={14} />
             Exams
@@ -106,8 +120,8 @@ export default function TopBar() {
 
           {/* Messages */}
           <Link
-            href="/dashboard/messages"
-            className={cn('topbar-nav-link', (pathname === '/dashboard/messages' || pathname.startsWith('/dashboard/messages/')) && 'active')}
+            href={`${basePath}/messages`}
+            className={cn('topbar-nav-link', (pathname === `${basePath}/messages` || pathname.startsWith(`${basePath}/messages/`)) && 'active')}
           >
             <MessageSquare size={14} />
             Messages
@@ -161,8 +175,8 @@ export default function TopBar() {
         {/* Mobile nav: Dashboard + More dropdown */}
         <nav className="topbar-nav-mobile" aria-label="Mobile navigation">
           <Link
-            href="/dashboard"
-            className={cn('topbar-nav-link', pathname === '/dashboard' && 'active')}
+            href={dashboardPath}
+            className={cn('topbar-nav-link', pathname === dashboardPath && 'active')}
           >
             Dashboard
           </Link>
@@ -182,8 +196,8 @@ export default function TopBar() {
             {mobileMoreOpen && (
               <div className="topbar-dropdown topbar-more-dropdown">
                 <Link
-                  href="/dashboard/rooms"
-                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/rooms' || pathname.startsWith('/dashboard/rooms/')) && 'active')}
+                  href={`${basePath}/rooms`}
+                  className={cn('topbar-dropdown-item', (pathname === `${basePath}/rooms` || pathname.startsWith(`${basePath}/rooms/`)) && 'active')}
                   onClick={() => setMobileMoreOpen(false)}
                 >
                   <Video size={15} />
@@ -191,24 +205,24 @@ export default function TopBar() {
                   {liveCount > 0 && <span className="topbar-badge" style={{ marginLeft: 'auto' }}>{liveCount}</span>}
                 </Link>
                 <Link
-                  href="/dashboard/courses"
-                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/courses' || pathname.startsWith('/dashboard/courses/')) && 'active')}
+                  href={`${basePath}/courses`}
+                  className={cn('topbar-dropdown-item', (pathname === `${basePath}/courses` || pathname.startsWith(`${basePath}/courses/`)) && 'active')}
                   onClick={() => setMobileMoreOpen(false)}
                 >
                   <BookOpen size={15} />
                   Courses
                 </Link>
                 <Link
-                  href="/dashboard/quizzes"
-                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/quizzes' || pathname.startsWith('/dashboard/quizzes/')) && 'active')}
+                  href={`${basePath}/quizzes`}
+                  className={cn('topbar-dropdown-item', (pathname === `${basePath}/quizzes` || pathname.startsWith(`${basePath}/quizzes/`)) && 'active')}
                   onClick={() => setMobileMoreOpen(false)}
                 >
                   <HelpCircle size={15} />
                   Exams
                 </Link>
                 <Link
-                  href="/dashboard/messages"
-                  className={cn('topbar-dropdown-item', (pathname === '/dashboard/messages' || pathname.startsWith('/dashboard/messages/')) && 'active')}
+                  href={`${basePath}/messages`}
+                  className={cn('topbar-dropdown-item', (pathname === `${basePath}/messages` || pathname.startsWith(`${basePath}/messages/`)) && 'active')}
                   onClick={() => setMobileMoreOpen(false)}
                 >
                   <MessageSquare size={15} />

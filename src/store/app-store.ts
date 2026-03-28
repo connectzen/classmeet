@@ -10,6 +10,8 @@ interface AppUser {
   avatarUrl: string | null
   role: UserRole
   onboardingComplete: boolean
+  schoolId: string | null
+  schoolSlug: string | null
 }
 
 interface AppState {

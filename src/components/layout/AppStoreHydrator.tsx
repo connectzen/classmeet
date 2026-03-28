@@ -16,11 +16,13 @@ interface Props {
     avatarUrl: string | null
     role: UserRole | string
     onboardingComplete: boolean
+    schoolId?: string | null
+    schoolSlug?: string | null
   }
   children: ReactNode
 }
 
-const PRESENCE_CHANNEL = 'classmeet-presence'
+const PRESENCE_CHANNEL_PREFIX = 'classmeet-presence'
 const DB_HEARTBEAT_INTERVAL = 60_000 // Update DB last_seen every 60s
 
 export default function AppStoreHydrator({ user, children }: Props) {
@@ -35,6 +37,8 @@ export default function AppStoreHydrator({ user, children }: Props) {
       avatarUrl: user.avatarUrl,
       role: (user.role as UserRole) ?? 'student',
       onboardingComplete: user.onboardingComplete,
+      schoolId: user.schoolId ?? null,
+      schoolSlug: user.schoolSlug ?? null,
     })
   }, [user, setUser])
 
@@ -61,16 +65,21 @@ export default function AppStoreHydrator({ user, children }: Props) {
       return users
     }
 
+    // Scope presence channel to school if available
+    const presenceChannel = user.schoolId
+      ? `${PRESENCE_CHANNEL_PREFIX}-${user.schoolId}`
+      : PRESENCE_CHANNEL_PREFIX
+
     // Remove any stale presence channels left over from a previous session
     // (e.g. singleton Supabase client survived a sign-out → sign-in cycle)
     for (const ch of supabase.getChannels()) {
-      if (ch.subTopic === PRESENCE_CHANNEL) {
+      if (ch.subTopic === presenceChannel) {
         supabase.removeChannel(ch)
       }
     }
 
     // Set up the presence channel
-    const channel = supabase.channel(PRESENCE_CHANNEL, {
+    const channel = supabase.channel(presenceChannel, {
       config: { presence: { key: user.id } },
     })
 

@@ -14,13 +14,24 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Load profile
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, avatar_url, role, onboarding_complete')
+    .select('full_name, avatar_url, role, onboarding_complete, school_id')
     .eq('id', user.id)
     .single()
 
   // Redirect new users to onboarding before they can access the app
   if (!profile?.onboarding_complete) {
     redirect('/onboarding')
+  }
+
+  // Load school slug if user belongs to a school
+  let schoolSlug: string | null = null
+  if (profile?.school_id) {
+    const { data: school } = await supabase
+      .from('schools')
+      .select('slug')
+      .eq('id', profile.school_id)
+      .single()
+    schoolSlug = school?.slug ?? null
   }
 
   const appUser = {
@@ -30,6 +41,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     avatarUrl: profile?.avatar_url ?? null,
     role: profile?.role ?? 'student',
     onboardingComplete: profile?.onboarding_complete ?? false,
+    schoolId: profile?.school_id ?? null,
+    schoolSlug,
   }
 
   return (

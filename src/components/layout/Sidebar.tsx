@@ -14,15 +14,23 @@ import { cn } from '@/lib/utils'
 type NavLink = { href: string; label: string; icon: React.ElementType; roles?: UserRole[]; badgeKey?: string }
 type NavSection = { section: string; links: NavLink[] }
 
-const NAV: NavSection[] = [
-  {
-    section: 'System',
-    links: [
-      { href: '/dashboard/settings', label: 'Settings',   icon: Settings                            },
-      { href: '/admin',              label: 'Admin Panel', icon: ShieldCheck, roles: ['admin']       },
-    ],
-  },
-]
+function getNavLinks(schoolSlug: string | null, role: UserRole | undefined): NavSection[] {
+  const basePath = schoolSlug
+    ? `/${schoolSlug}/${role === 'admin' ? 'admin' : role === 'teacher' ? 'teacher' : 'student'}`
+    : '/dashboard'
+
+  return [
+    {
+      section: 'System',
+      links: [
+        { href: `${basePath}/settings`, label: 'Settings', icon: Settings },
+        ...(schoolSlug && role === 'admin' ? [
+          { href: `/${schoolSlug}/admin`, label: 'Admin Panel', icon: ShieldCheck, roles: ['admin'] as UserRole[] },
+        ] : []),
+      ],
+    },
+  ]
+}
 
 // ── Offline status helper (DB last_seen for offline users) ──
 function formatLastSeen(lastSeen: string | null): string {
@@ -290,7 +298,9 @@ export default function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen, user } = useAppStore()
   const role = user?.role as UserRole | undefined
+  const schoolSlug = user?.schoolSlug ?? null
   const isCreator = role === 'teacher' || role === 'admin'
+  const NAV = getNavLinks(schoolSlug, role)
 
   return (
     <>
