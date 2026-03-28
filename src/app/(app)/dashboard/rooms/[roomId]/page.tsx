@@ -1159,6 +1159,7 @@ function RoomInner({ roomName }: { roomName: string }) {
           onRevealResults={revealResults}
           onRefreshSubmissions={refreshSubmissions}
           quizResultRevealed={quizResultRevealed}
+          allowStudentDrawing={allowStudentDrawing}
         />
 
         {/* Quiz result reveal overlay */}
@@ -1347,6 +1348,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   quizSubmitted, submitError, quizSubmissions, quizProgress, onBroadcastProgress,
   submittedStudents,
   onGradeSubmission, onRevealResults, onRefreshSubmissions, quizResultRevealed,
+  allowStudentDrawing,
 }: {
   participant: LKParticipant | undefined
   screenShare: TrackReferenceOrPlaceholder | null
