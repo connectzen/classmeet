@@ -542,7 +542,7 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       console.error('Error loading admin dashboard data:', err)
-      toast.error('Failed to load dashboard data')
+      toast.show('Failed to load dashboard data')
     } finally {
       setLoading(false)
     }
@@ -587,14 +587,14 @@ export default function AdminDashboard() {
         body: JSON.stringify({ studentId, teacherId }),
       })
       if (res.ok) {
-        toast.success('Student assigned successfully!')
+        toast.show('Student assigned successfully!')
         loadData()
       } else {
-        toast.error('Failed to assign student')
+        toast.show('Failed to assign student')
       }
     } catch (err) {
       console.error('Error assigning student:', err)
-      toast.error('Error assigning student')
+      toast.show('Error assigning student')
     }
   }
 
@@ -607,14 +607,14 @@ export default function AdminDashboard() {
         body: JSON.stringify({ studentId, teacherId }),
       })
       if (res.ok) {
-        toast.success('Student removed successfully!')
+        toast.show('Student removed successfully!')
         loadData()
       } else {
-        toast.error('Failed to remove student')
+        toast.show('Failed to remove student')
       }
     } catch (err) {
       console.error('Error removing student:', err)
-      toast.error('Error removing student')
+      toast.show('Error removing student')
     }
   }
 
