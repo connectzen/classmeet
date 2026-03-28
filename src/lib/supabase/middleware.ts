@@ -47,6 +47,13 @@ async function getUserSchoolRedirect(
       const superAdminEmail = settings?.setting_value?.email
       if (superAdminEmail && userEmail.toLowerCase() === superAdminEmail.toLowerCase()) {
         isSuperAdmin = true
+        // Persist the flag so future checks are faster
+        await supabase.from('profiles').update({
+          is_super_admin: true,
+          role: 'super_admin',
+          onboarding_complete: true,
+          updated_at: new Date().toISOString(),
+        }).eq('id', userId)
       }
     } catch {
       // Ignore if system_settings lookup fails
@@ -234,7 +241,30 @@ export async function updateSession(request: NextRequest) {
 
     const profile = result.data as any
 
-    if (!profile?.is_super_admin) {
+    // Check by flag first, then by email match
+    let isSuperAdmin = profile?.is_super_admin || false
+    if (!isSuperAdmin) {
+      try {
+        const { data: settings } = await (supabase as any)
+          .from('system_settings')
+          .select('setting_value')
+          .eq('setting_key', 'super_admin_email')
+          .single()
+        const superAdminEmail = settings?.setting_value?.email
+        if (superAdminEmail && user.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
+          isSuperAdmin = true
+          // Persist the flag so future checks are faster
+          await supabase.from('profiles').update({
+            is_super_admin: true,
+            role: 'super_admin',
+            onboarding_complete: true,
+            updated_at: new Date().toISOString(),
+          }).eq('id', user.id)
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (!isSuperAdmin) {
       // Not a super admin — redirect to their school/dashboard
       return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
@@ -287,14 +317,18 @@ export async function updateSession(request: NextRequest) {
     // Verify user belongs to this school
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, school_id')
+      .select('role, school_id, is_super_admin')
       .eq('id', user.id)
       .single()
 
     if (!profile?.school_id) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/onboarding'
-      return NextResponse.redirect(url)
+      // Super admin has no school — redirect to /superadmin, not /onboarding
+      if ((profile as any)?.is_super_admin) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/superadmin'
+        return NextResponse.redirect(url)
+      }
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
 
     const { data: school } = await supabase
