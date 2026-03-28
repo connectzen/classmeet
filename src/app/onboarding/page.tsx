@@ -97,13 +97,7 @@ export default function OnboardingPage() {
       // If settings lookup fails, just use the selected role
     }
 
-    // For school admins, redirect to school registration
-    if (finalRole === 'admin') {
-      router.push('/register-school')
-      return
-    }
-
-    // For super_admin/teacher/student, save role and redirect
+    // Save profile for ALL roles (including admin) before redirecting
     await supabase.from('profiles').upsert({
       id: authUser.id,
       role: finalRole,
@@ -126,8 +120,14 @@ export default function OnboardingPage() {
       isSuperAdmin,
     })
 
-    // Super admin goes to /superadmin, others go to /dashboard
-    router.push(isSuperAdmin ? '/superadmin' : '/dashboard')
+    // Route based on role
+    if (isSuperAdmin) {
+      router.push('/superadmin')
+    } else if (finalRole === 'admin') {
+      router.push('/register-school')
+    } else {
+      router.push('/dashboard')
+    }
   }
 
   return (

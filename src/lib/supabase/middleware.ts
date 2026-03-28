@@ -25,8 +25,11 @@ async function getUserSchoolRedirect(
   supabase: ReturnType<typeof createServerClient<Database>>,
   userId: string,
   userEmail: string,
-  requestUrl: NextRequest['nextUrl'],
+  request: NextRequest,
 ) {
+  const requestUrl = request.nextUrl
+  let supabasePassthrough = NextResponse.next({ request })
+
   const result = await supabase
     .from('profiles')
     .select('*')
@@ -62,6 +65,7 @@ async function getUserSchoolRedirect(
 
   // Super admin → redirect to /superadmin
   if (isSuperAdmin) {
+    if (requestUrl.pathname === '/superadmin') return supabasePassthrough
     const url = requestUrl.clone()
     url.pathname = '/superadmin'
     return NextResponse.redirect(url)
@@ -76,15 +80,21 @@ async function getUserSchoolRedirect(
 
     if (school) {
       const roleRoute = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
+      const dest = `/${school.slug}/${roleRoute}`
+      if (requestUrl.pathname === dest) return supabasePassthrough
       const url = requestUrl.clone()
-      url.pathname = `/${school.slug}/${roleRoute}`
+      url.pathname = dest
       return NextResponse.redirect(url)
     }
   }
 
-  // No school — onboarded or has a role (admin-created) → dashboard; truly new → onboarding
+  // No school — onboarded or has a role → dashboard; truly new → onboarding
+  const dest = (profile?.onboarding_complete || profile?.role) ? '/dashboard' : '/onboarding'
+  if (requestUrl.pathname === dest || requestUrl.pathname.startsWith(dest + '/')) {
+    return supabasePassthrough
+  }
   const url = requestUrl.clone()
-  url.pathname = (profile?.onboarding_complete || profile?.role) ? '/dashboard' : '/onboarding'
+  url.pathname = dest
   return NextResponse.redirect(url)
 }
 
@@ -197,10 +207,19 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
-  // ── Register school: public for unauthenticated, redirect if user has school ──
+  // ── Register school: allow admins without a school to access ──
   if (pathname === '/register-school') {
     if (user) {
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+      const result = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      const profile = result.data as any
+
+      // If admin with no school yet → allow access to register-school
+      if (profile?.role === 'admin' && !profile?.school_id) {
+        return supabaseResponse
+      }
+
+      // Otherwise redirect to their appropriate destination
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
     }
     return supabaseResponse
   }
@@ -210,7 +229,7 @@ export async function updateSession(request: NextRequest) {
   if (publicAuthRoutes.some(r => pathname === r || pathname.startsWith(r + '/'))) {
     if (user) {
       // Already logged in — redirect to their dashboard/school
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
     }
     // Not logged in — allow access to sign-in/sign-up
     return supabaseResponse
@@ -219,7 +238,7 @@ export async function updateSession(request: NextRequest) {
   // ── Root / and old dashboard/admin routes → resolve via getUserSchoolRedirect ──
   if (pathname === '/' || pathname.startsWith('/dashboard') || pathname === '/admin' || pathname.startsWith('/admin/')) {
     if (user) {
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
     }
     const url = request.nextUrl.clone()
     url.pathname = '/sign-in'
@@ -267,7 +286,7 @@ export async function updateSession(request: NextRequest) {
 
     if (!isSuperAdmin) {
       // Not a super admin — redirect to their school/dashboard
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
     }
 
     return supabaseResponse
@@ -329,7 +348,7 @@ export async function updateSession(request: NextRequest) {
         url.pathname = '/superadmin'
         return NextResponse.redirect(url)
       }
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
     }
 
     const { data: school } = await supabase
@@ -340,7 +359,7 @@ export async function updateSession(request: NextRequest) {
 
     if (!school || profile.school_id !== school.id) {
       // User doesn't belong to this school — redirect to their own
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
     }
 
     // Admin routes: verify admin role
