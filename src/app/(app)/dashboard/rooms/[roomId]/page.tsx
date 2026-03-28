@@ -1089,10 +1089,18 @@ function RoomInner({ roomName }: { roomName: string }) {
               className="room-icon-btn" 
               onClick={() => {
                 navigator.clipboard.writeText(roomName)
+                  .then(() => {
+                    alert('Room name copied to clipboard!')
+                  })
+                  .catch(() => {
+                    console.log('Copy failed, room name is: ' + roomName)
+                  })
               }} 
-              title="Copy room name"
+              title="Click to copy room name"
+              style={{ opacity: 0.7, fontSize: '0.85rem', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
               <Copy size={16} />
+              Copy
             </button>
             <span className="room-live-badge">LIVE</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
