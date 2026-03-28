@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Search } from 'lucide-react'
 
 interface User {
@@ -134,31 +135,33 @@ export default function UsersPage() {
             </thead>
             <tbody>
               {users.map((user) => (
-                <tr key={user.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {user.full_name || 'No name'}
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span
-                      style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        background: user.is_super_admin ? '#8b5cf6' : user.role === 'admin' ? '#3b82f6' : '#10b981',
-                        color: '#fff',
-                      }}
-                    >
-                      {user.is_super_admin ? 'Super Admin' : user.role}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
-                    {user.schools?.[0]?.name || 'No school'}
-                  </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
-                    {user.onboarding_complete ? '✓ Complete' : '⏳ Pending'}
-                  </td>
-                </tr>
+                <Link key={user.id} href={`/superadmin/users/${user.id}`} style={{ textDecoration: 'none' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}>
+                    <td style={{ padding: '12px 16px', color: 'var(--text-primary)', fontWeight: 500 }}>
+                      {user.full_name || 'No name'}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          background: user.is_super_admin ? '#8b5cf6' : user.role === 'admin' ? '#3b82f6' : '#10b981',
+                          color: '#fff',
+                        }}
+                      >
+                        {user.is_super_admin ? 'Super Admin' : user.role}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
+                      {user.schools?.[0]?.name || 'No school'}
+                    </td>
+                    <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
+                      {user.onboarding_complete ? '✓ Complete' : '⏳ Pending'}
+                    </td>
+                  </tr>
+                </Link>
               ))}
             </tbody>
           </table>
