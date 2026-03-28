@@ -53,20 +53,18 @@ function StudentDetailModal({ student, onClose, onAssign, onRemove, allTeachers,
   const [selectedTeacherId, setSelectedTeacherId] = useState('')
 
   return (
-    <>
-      {/* Backdrop */}
+    <div>
       <div
         style={{
           position: 'fixed',
           inset: 0,
           background: 'rgba(0, 0, 0, 0.5)',
           backdropFilter: 'blur(2px)',
-          zIndex: 'var(--z-modal)',
+          zIndex: 400,
           cursor: 'pointer',
         }}
         onClick={onClose}
       />
-      {/* Modal */}
       <div
         style={{
           position: 'fixed',
@@ -79,7 +77,7 @@ function StudentDetailModal({ student, onClose, onAssign, onRemove, allTeachers,
           padding: '24px',
           maxWidth: '400px',
           width: '90%',
-          zIndex: 'calc(var(--z-modal) + 1)',
+          zIndex: 401,
           boxShadow: 'var(--shadow-lg)',
         }}
         onClick={e => e.stopPropagation()}
@@ -98,13 +96,13 @@ function StudentDetailModal({ student, onClose, onAssign, onRemove, allTeachers,
           </div>
         </div>
 
-        {student.status && !isUnassigned && (
+        {student.status && !isUnassigned ? (
           <div style={{ marginBottom: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             Status: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{student.status}</span>
           </div>
-        )}
+        ) : null}
 
-        {isUnassigned && (
+        {isUnassigned ? (
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Assign to Teacher
@@ -128,10 +126,10 @@ function StudentDetailModal({ student, onClose, onAssign, onRemove, allTeachers,
               ))}
             </select>
           </div>
-        )}
+        ) : null}
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          {isUnassigned && selectedTeacherId && (
+          {isUnassigned && selectedTeacherId ? (
             <Button
               size="sm"
               onClick={() => {
@@ -141,25 +139,24 @@ function StudentDetailModal({ student, onClose, onAssign, onRemove, allTeachers,
             >
               Assign
             </Button>
-          )}
-          {!isUnassigned && onRemove && (
+          ) : null}
+          {!isUnassigned && onRemove ? (
             <Button
-              variant="danger"
               size="sm"
               onClick={() => {
                 onRemove()
                 onClose()
               }}
             >
-              <Trash2 size={14} /> Remove
+              Remove
             </Button>
-          )}
+          ) : null}
           <Button variant="outline" size="sm" onClick={onClose}>
             Close
           </Button>
         </div>
       </div>
-    </>
+    </div>
   )
 }
 
