@@ -18,6 +18,7 @@ interface Props {
     onboardingComplete: boolean
     schoolId?: string | null
     schoolSlug?: string | null
+    isSuperAdmin?: boolean
   }
   children: ReactNode
 }
@@ -39,6 +40,7 @@ export default function AppStoreHydrator({ user, children }: Props) {
       onboardingComplete: user.onboardingComplete,
       schoolId: user.schoolId ?? null,
       schoolSlug: user.schoolSlug ?? null,
+      isSuperAdmin: user.isSuperAdmin ?? false,
     })
   }, [user, setUser])
 

@@ -11,16 +11,23 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) redirect('/sign-in')
 
-  // Load profile
-  const { data: profile } = await supabase
+  // Load profile with all needed fields including is_super_admin
+  const { data: profileData } = await supabase
     .from('profiles')
-    .select('full_name, avatar_url, role, onboarding_complete, school_id')
+    .select('*')
     .eq('id', user.id)
     .single()
+
+  const profile = profileData as any
 
   // Redirect new users to onboarding before they can access the app
   if (!profile?.onboarding_complete) {
     redirect('/onboarding')
+  }
+
+  // Super admin → redirect to /superadmin
+  if (profile?.is_super_admin) {
+    redirect('/superadmin')
   }
 
   // If user belongs to a school, redirect to school-scoped route
@@ -57,6 +64,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     onboardingComplete: profile?.onboarding_complete ?? false,
     schoolId: profile?.school_id ?? null,
     schoolSlug,
+    isSuperAdmin: profile?.is_super_admin ?? false,
   }
 
   return (

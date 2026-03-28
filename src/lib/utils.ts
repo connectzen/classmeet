@@ -51,3 +51,19 @@ export function isCreatorRole(role: UserRole | null | undefined): boolean {
   return role === 'teacher' || role === 'admin'
 }
 
+export function isSuperAdminRole(role: UserRole | null | undefined): boolean {
+  return role === 'super_admin'
+}
+
+export function canManageSchools(role: UserRole | null | undefined): boolean {
+  return role === 'super_admin'
+}
+
+export function canManageAllUsers(role: UserRole | null | undefined): boolean {
+  return role === 'super_admin'
+}
+
+export function canAccessAdmin(role: UserRole | null | undefined): boolean {
+  return role === 'admin' || role === 'super_admin'
+}
+

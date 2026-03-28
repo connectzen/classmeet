@@ -12,6 +12,7 @@ interface AppUser {
   onboardingComplete: boolean
   schoolId: string | null
   schoolSlug: string | null
+  isSuperAdmin: boolean
 }
 
 interface AppState {

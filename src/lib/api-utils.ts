@@ -63,3 +63,45 @@ export async function requireSchoolContext(request: Request): Promise<{ userId: 
 
   return { userId: user.id, schoolId: profile.school_id }
 }
+
+export async function requireSuperAdmin(request: Request): Promise<string> {
+  const user = await requireAuth(request)
+  const supabase = await createClient()
+
+  const result = await supabase
+    .from('profiles')
+    .select('is_super_admin')
+    .eq('id', user.id)
+    .single()
+
+  const profile = result.data as any
+  const error = result.error
+
+  if (error || !profile?.is_super_admin) {
+    throw new ApiError('Super Admin access required', 403)
+  }
+
+  return user.id
+}
+
+export async function auditSuperAdminAction(
+  supabase: any,
+  userId: string,
+  action: string,
+  targetType: string | null,
+  targetId: string | null,
+  details: any
+): Promise<void> {
+  try {
+    await supabase.from('super_admin_audit_log').insert({
+      super_admin_id: userId,
+      action,
+      target_type: targetType,
+      target_id: targetId,
+      details: details || null,
+    })
+  } catch (err) {
+    console.error('[Audit Log Error]', err)
+    // Don't fail the main operation if audit fails
+  }
+}

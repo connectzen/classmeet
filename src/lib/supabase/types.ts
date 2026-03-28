@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'member' | 'teacher' | 'student' | 'guest'
+export type UserRole = 'super_admin' | 'admin' | 'member' | 'teacher' | 'student' | 'guest'
 
 export type School = {
   id: string
@@ -247,6 +247,25 @@ export type Message = {
   sender_id: string
   content: string
   created_at: string
+  updated_at: string
+}
+
+export type SuperAdminAuditLog = {
+  id: string
+  super_admin_id: string
+  action: string
+  target_type: string | null
+  target_id: string | null
+  details: any | null
+  created_at: string
+}
+
+export type SystemSettings = {
+  id: string
+  setting_key: string
+  setting_value: any
+  description: string | null
+  updated_by: string | null
   updated_at: string
 }
 

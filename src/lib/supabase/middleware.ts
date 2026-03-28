@@ -17,6 +17,7 @@ const STATIC_FIRST_SEGMENTS = new Set([
   'api',
   'dashboard',
   'room',
+  'superadmin',
 ])
 
 /** Redirect helper — look up user's school and build /{slug}/{role} path */
@@ -25,11 +26,20 @@ async function getUserSchoolRedirect(
   userId: string,
   requestUrl: NextRequest['nextUrl'],
 ) {
-  const { data: profile } = await supabase
+  const result = await supabase
     .from('profiles')
-    .select('role, school_id')
+    .select('*')
     .eq('id', userId)
     .single()
+
+  const profile = result.data as any
+
+  // Super admin → redirect to /superadmin
+  if (profile?.is_super_admin) {
+    const url = requestUrl.clone()
+    url.pathname = '/superadmin'
+    return NextResponse.redirect(url)
+  }
 
   if (profile?.school_id) {
     const { data: school } = await supabase
@@ -131,6 +141,30 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/register-school'
     return NextResponse.redirect(url)
+  }
+
+  // ── Super admin routes: require super admin role ──
+  if (pathname.startsWith('/superadmin')) {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/sign-in'
+      return NextResponse.redirect(url)
+    }
+
+    const result = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+
+    const profile = result.data as any
+
+    if (!profile?.is_super_admin) {
+      // Not a super admin — redirect to their school/dashboard
+      return getUserSchoolRedirect(supabase, user.id, request.nextUrl)
+    }
+
+    return supabaseResponse
   }
 
   // ── School-scoped routes: /{schoolSlug}/... ──

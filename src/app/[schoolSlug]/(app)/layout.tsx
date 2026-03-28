@@ -49,11 +49,13 @@ export default async function SchoolAppLayout({ children, params }: Props) {
     onboardingComplete: profile.onboarding_complete ?? false,
     schoolId: school.id,
     schoolSlug: school.slug,
+    isSuperAdmin: false,
   }
 
   const schoolContext = {
     schoolId: school.id,
     schoolSlug: school.slug,
+    isSuperAdmin: false,
     schoolName: school.name,
     schoolLogo: school.logo_url,
     primaryColor: school.primary_color,
