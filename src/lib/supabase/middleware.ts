@@ -315,7 +315,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     // Verify user belongs to this school
-    const { data: profile } = await supabase
+    const { data: profile } = await (supabase as any)
       .from('profiles')
       .select('role, school_id, is_super_admin')
       .eq('id', user.id)
@@ -323,7 +323,7 @@ export async function updateSession(request: NextRequest) {
 
     if (!profile?.school_id) {
       // Super admin has no school — redirect to /superadmin, not /onboarding
-      if ((profile as any)?.is_super_admin) {
+      if (profile?.is_super_admin) {
         const url = request.nextUrl.clone()
         url.pathname = '/superadmin'
         return NextResponse.redirect(url)
