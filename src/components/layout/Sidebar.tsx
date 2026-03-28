@@ -112,8 +112,8 @@ function StudentList({ teacherId }: { teacherId: string }) {
     return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2) }
   }, [teacherId])
 
-  const students = contacts.filter(c => c.role !== 'teacher')
-  const collabs  = contacts.filter(c => c.role === 'teacher')
+  const collabs  = contacts.filter(c => c.role === 'teacher' || c.role === 'admin')
+  const students = contacts.filter(c => !collabs.some(co => co.id === c.id))
 
   return (
     <>
