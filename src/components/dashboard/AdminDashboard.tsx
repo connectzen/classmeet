@@ -183,7 +183,7 @@ function UnassignedStudentsSection({ students, allTeachers, onAssign }: {
         Unassigned Students ({students.length})
       </h2>
 
-      {students.length > 0 && (
+      {students.length > 0 ? (
         <>
           <Input
             placeholder="Search unassigned students..."
