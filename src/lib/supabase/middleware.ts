@@ -216,8 +216,8 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
-  // ── Old dashboard/admin routes → redirect to school-scoped ──
-  if (pathname.startsWith('/dashboard') || pathname === '/admin' || pathname.startsWith('/admin/')) {
+  // ── Root / and old dashboard/admin routes → resolve via getUserSchoolRedirect ──
+  if (pathname === '/' || pathname.startsWith('/dashboard') || pathname === '/admin' || pathname.startsWith('/admin/')) {
     if (user) {
       return getUserSchoolRedirect(supabase, user.id, user.email || '', request.nextUrl)
     }
