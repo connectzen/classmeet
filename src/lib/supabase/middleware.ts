@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import type { Database } from './types'
+import { resolveUserDestination, roleSegment } from '../routing/user-destination'
 
 // Routes that are known static (never a school slug)
 const STATIC_FIRST_SEGMENTS = new Set([
@@ -20,15 +21,49 @@ const STATIC_FIRST_SEGMENTS = new Set([
   'superadmin',
 ])
 
-/** Redirect helper — look up user's school and build /{slug}/{role} path */
+async function resolveSuperAdminState(
+  supabase: ReturnType<typeof createServerClient<Database>>,
+  profile: any,
+  userId: string,
+  userEmail: string,
+) {
+  let isSuperAdmin = profile?.is_super_admin || profile?.role === 'super_admin' || false
+
+  if (isSuperAdmin) return true
+
+  try {
+    const { data: settings } = await (supabase as any)
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'super_admin_email')
+      .single()
+
+    const superAdminEmail = settings?.setting_value?.email
+    if (superAdminEmail && userEmail.toLowerCase() === superAdminEmail.toLowerCase()) {
+      isSuperAdmin = true
+      await supabase.from('profiles').update({
+        is_super_admin: true,
+        role: 'super_admin',
+        onboarding_complete: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', userId)
+    }
+  } catch {
+    // Ignore if system_settings lookup fails
+  }
+
+  return isSuperAdmin
+}
+
+/** Redirect helper - resolve canonical destination from role and school assignment */
 async function getUserSchoolRedirect(
   supabase: ReturnType<typeof createServerClient<Database>>,
   userId: string,
   userEmail: string,
   request: NextRequest,
+  supabasePassthrough: NextResponse,
 ) {
   const requestUrl = request.nextUrl
-  let supabasePassthrough = NextResponse.next({ request })
 
   const result = await supabase
     .from('profiles')
@@ -37,62 +72,28 @@ async function getUserSchoolRedirect(
     .single()
 
   const profile = result.data as any
+  const isSuperAdmin = await resolveSuperAdminState(supabase, profile, userId, userEmail)
 
-  // Check if email matches super admin email
-  let isSuperAdmin = profile?.is_super_admin || false
-  if (!isSuperAdmin) {
-    try {
-      const { data: settings } = await (supabase as any)
-        .from('system_settings')
-        .select('setting_value')
-        .eq('setting_key', 'super_admin_email')
-        .single()
-      const superAdminEmail = settings?.setting_value?.email
-      if (superAdminEmail && userEmail.toLowerCase() === superAdminEmail.toLowerCase()) {
-        isSuperAdmin = true
-        // Persist the flag so future checks are faster
-        await supabase.from('profiles').update({
-          is_super_admin: true,
-          role: 'super_admin',
-          onboarding_complete: true,
-          updated_at: new Date().toISOString(),
-        }).eq('id', userId)
-      }
-    } catch {
-      // Ignore if system_settings lookup fails
-    }
-  }
-
-  // Super admin → redirect to /superadmin
-  if (isSuperAdmin) {
-    if (requestUrl.pathname === '/superadmin') return supabasePassthrough
-    const url = requestUrl.clone()
-    url.pathname = '/superadmin'
-    return NextResponse.redirect(url)
-  }
-
+  let schoolSlug: string | null = null
   if (profile?.school_id) {
     const { data: school } = await supabase
       .from('schools')
       .select('slug')
       .eq('id', profile.school_id)
       .single()
-
-    if (school) {
-      const roleRoute = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
-      const dest = `/${school.slug}/${roleRoute}`
-      if (requestUrl.pathname === dest) return supabasePassthrough
-      const url = requestUrl.clone()
-      url.pathname = dest
-      return NextResponse.redirect(url)
-    }
+    schoolSlug = school?.slug ?? null
   }
 
-  // No school — onboarded or has a role → dashboard; truly new → onboarding
-  const dest = (profile?.onboarding_complete || profile?.role) ? '/dashboard' : '/onboarding'
+  const dest = resolveUserDestination({
+    role: profile?.role,
+    school_id: profile?.school_id,
+    is_super_admin: isSuperAdmin,
+  }, schoolSlug)
+
   if (requestUrl.pathname === dest || requestUrl.pathname.startsWith(dest + '/')) {
     return supabasePassthrough
   }
+
   const url = requestUrl.clone()
   url.pathname = dest
   return NextResponse.redirect(url)
@@ -126,12 +127,12 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const firstSegment = pathname.split('/')[1] || ''
 
-  // ── API routes: always pass through ──
+  // API routes always pass through.
   if (pathname.startsWith('/api/') || pathname.startsWith('/auth/')) {
     return supabaseResponse
   }
 
-  // ── Password setup guard (invited users) ──
+  // Invited users must finish password setup before accessing app pages.
   if (
     user &&
     user.user_metadata?.needs_password_setup === true &&
@@ -145,107 +146,101 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // ── Onboarding: only redirect away users who are already onboarded or super admin ──
+  // Onboarding: only users with role unset may stay here.
   if (pathname === '/onboarding') {
-    if (user) {
-      const result = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-      const profile = result.data as any
-
-      // Super admin → check by flag first, then by email
-      let isSuperAdmin = profile?.is_super_admin || false
-      if (!isSuperAdmin) {
-        try {
-          const { data: settings } = await (supabase as any)
-            .from('system_settings')
-            .select('setting_value')
-            .eq('setting_key', 'super_admin_email')
-            .single()
-          const superAdminEmail = settings?.setting_value?.email
-          if (superAdminEmail && user.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
-            isSuperAdmin = true
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (isSuperAdmin) {
-        const url = request.nextUrl.clone()
-        url.pathname = '/superadmin'
-        return NextResponse.redirect(url)
-      }
-
-      // Redirect away if: already onboarded OR has role+school (admin-created accounts skip onboarding flow)
-      const isEffectivelyOnboarded = profile?.onboarding_complete || (profile?.role && profile?.school_id)
-      if (isEffectivelyOnboarded) {
-        if (profile?.school_id) {
-          const { data: school } = await supabase
-            .from('schools')
-            .select('slug')
-            .eq('id', profile.school_id)
-            .single()
-          if (school) {
-            const roleRoute = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
-            const url = request.nextUrl.clone()
-            url.pathname = `/${school.slug}/${roleRoute}`
-            return NextResponse.redirect(url)
-          }
-        }
-        const url = request.nextUrl.clone()
-        url.pathname = '/dashboard'
-        return NextResponse.redirect(url)
-      }
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/sign-in'
+      return NextResponse.redirect(url)
     }
-    // Not authenticated or genuinely not yet onboarded → allow onboarding
+
+    const result = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+
+    const profile = result.data as any
+    const isSuperAdmin = await resolveSuperAdminState(supabase, profile, user.id, user.email || '')
+
+    if (isSuperAdmin) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/superadmin'
+      return NextResponse.redirect(url)
+    }
+
+    if (profile?.role) {
+      if (profile.role === 'admin' && !profile.school_id) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/register-school'
+        return NextResponse.redirect(url)
+      }
+
+      if (profile.school_id) {
+        const { data: school } = await supabase
+          .from('schools')
+          .select('slug')
+          .eq('id', profile.school_id)
+          .single()
+
+        if (school?.slug) {
+          const url = request.nextUrl.clone()
+          url.pathname = `/${school.slug}/${roleSegment(profile.role)}`
+          return NextResponse.redirect(url)
+        }
+      }
+
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+
     return supabaseResponse
   }
 
-  // ── Public routes ──
+  // Public routes.
   if (pathname.startsWith('/invite') || pathname.startsWith('/set-password')) {
     return supabaseResponse
   }
 
-  // ── Register school: allow admins without a school to access ──
+  // Register school is only for signed-in admins without a school.
   if (pathname === '/register-school') {
-    if (user) {
-      const result = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      const profile = result.data as any
-
-      // If admin with no school yet → allow access to register-school
-      if (profile?.role === 'admin' && !profile?.school_id) {
-        return supabaseResponse
-      }
-
-      // Otherwise redirect to their appropriate destination
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/sign-in'
+      return NextResponse.redirect(url)
     }
-    return supabaseResponse
+
+    const result = await supabase.from('profiles').select('*').eq('id', user.id).single()
+    const profile = result.data as any
+
+    if (profile?.role === 'admin' && !profile?.school_id) {
+      return supabaseResponse
+    }
+
+    return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
   }
 
-  // ── Public auth routes: allow unauthenticated access ──
+  // Public auth routes.
   const publicAuthRoutes = ['/sign-in', '/sign-up', '/forgot-password', '/verify-email', '/set-password']
   if (publicAuthRoutes.some(r => pathname === r || pathname.startsWith(r + '/'))) {
     if (user) {
-      // Already logged in — redirect to their dashboard/school
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
     }
-    // Not logged in — allow access to sign-in/sign-up
     return supabaseResponse
   }
 
-  // ── Root / and old dashboard/admin routes → resolve via getUserSchoolRedirect ──
+  // Root and legacy entry routes.
   if (pathname === '/' || pathname.startsWith('/dashboard') || pathname === '/admin' || pathname.startsWith('/admin/')) {
     if (user) {
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
     }
     const url = request.nextUrl.clone()
     url.pathname = '/sign-in'
     return NextResponse.redirect(url)
   }
 
-  // ── Super admin routes: require super admin role ──
+  // Super admin pages require super admin role.
   if (pathname.startsWith('/superadmin')) {
     if (!user) {
       const url = request.nextUrl.clone()
@@ -260,54 +255,35 @@ export async function updateSession(request: NextRequest) {
       .single()
 
     const profile = result.data as any
-
-    // Check by flag first, then by email match
-    let isSuperAdmin = profile?.is_super_admin || false
-    if (!isSuperAdmin) {
-      try {
-        const { data: settings } = await (supabase as any)
-          .from('system_settings')
-          .select('setting_value')
-          .eq('setting_key', 'super_admin_email')
-          .single()
-        const superAdminEmail = settings?.setting_value?.email
-        if (superAdminEmail && user.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
-          isSuperAdmin = true
-          // Persist the flag so future checks are faster
-          await supabase.from('profiles').update({
-            is_super_admin: true,
-            role: 'super_admin',
-            onboarding_complete: true,
-            updated_at: new Date().toISOString(),
-          }).eq('id', user.id)
-        }
-      } catch { /* ignore */ }
-    }
+    const isSuperAdmin = await resolveSuperAdminState(supabase, profile, user.id, user.email || '')
 
     if (!isSuperAdmin) {
-      // Not a super admin — redirect to their school/dashboard
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
     }
 
     return supabaseResponse
   }
 
-  // ── School-scoped routes: /{schoolSlug}/... ──
+  // School-scoped routes: /{schoolSlug}/...
   const isSchoolRoute = !STATIC_FIRST_SEGMENTS.has(firstSegment) && firstSegment.length > 0
   if (isSchoolRoute) {
     const segments = pathname.split('/')
     const schoolSlug = segments[1]
     const subPath = segments.slice(2).join('/')
 
-    // /{schoolSlug}/sign-in — allow unauthenticated
     if (subPath === 'sign-in') {
       if (user) {
-        // Already logged in — check if they belong to this school
         const { data: profile } = await supabase
           .from('profiles')
           .select('role, school_id')
           .eq('id', user.id)
           .single()
+
+        if (!profile?.role) {
+          const url = request.nextUrl.clone()
+          url.pathname = '/onboarding'
+          return NextResponse.redirect(url)
+        }
 
         if (profile?.school_id) {
           const { data: school } = await supabase
@@ -317,38 +293,42 @@ export async function updateSession(request: NextRequest) {
             .single()
 
           if (school?.slug === schoolSlug) {
-            const roleRoute = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
             const url = request.nextUrl.clone()
-            url.pathname = `/${schoolSlug}/${roleRoute}`
+            url.pathname = `/${schoolSlug}/${roleSegment(profile.role)}`
             return NextResponse.redirect(url)
           }
         }
+
+        return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
       }
       return supabaseResponse
     }
 
-    // All other school routes require auth
     if (!user) {
       const url = request.nextUrl.clone()
       url.pathname = `/${schoolSlug}/sign-in`
       return NextResponse.redirect(url)
     }
 
-    // Verify user belongs to this school
     const { data: profile } = await (supabase as any)
       .from('profiles')
       .select('role, school_id, is_super_admin')
       .eq('id', user.id)
       .single()
 
+    if (!profile?.role) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      return NextResponse.redirect(url)
+    }
+
     if (!profile?.school_id) {
-      // Super admin has no school — redirect to /superadmin, not /onboarding
-      if (profile?.is_super_admin) {
+      if (profile?.is_super_admin || profile?.role === 'super_admin') {
         const url = request.nextUrl.clone()
         url.pathname = '/superadmin'
         return NextResponse.redirect(url)
       }
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
     }
 
     const { data: school } = await supabase
@@ -358,15 +338,12 @@ export async function updateSession(request: NextRequest) {
       .single()
 
     if (!school || profile.school_id !== school.id) {
-      // User doesn't belong to this school — redirect to their own
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request)
+      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
     }
 
-    // Admin routes: verify admin role
     if (subPath.startsWith('admin') && profile.role !== 'admin') {
-      const roleRoute = profile.role === 'teacher' ? 'teacher' : 'student'
       const url = request.nextUrl.clone()
-      url.pathname = `/${schoolSlug}/${roleRoute}`
+      url.pathname = `/${schoolSlug}/${roleSegment(profile.role)}`
       return NextResponse.redirect(url)
     }
 

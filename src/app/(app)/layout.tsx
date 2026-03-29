@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/layout/Sidebar'
 import TopBar from '@/components/layout/TopBar'
 import AppStoreHydrator from '@/components/layout/AppStoreHydrator'
+import { roleSegment } from '@/lib/routing/user-destination'
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
@@ -20,14 +21,19 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   const profile = profileData as any
 
-  // Redirect new users to onboarding before they can access the app
-  if (!profile?.onboarding_complete) {
+  // Onboarding is only for users that have no role yet.
+  if (!profile?.role) {
     redirect('/onboarding')
   }
 
   // Super admin → redirect to /superadmin
-  if (profile?.is_super_admin) {
+  if (profile?.is_super_admin || profile?.role === 'super_admin') {
     redirect('/superadmin')
+  }
+
+  // School admins without a school should complete school setup.
+  if (profile?.role === 'admin' && !profile?.school_id) {
+    redirect('/register-school')
   }
 
   // If user belongs to a school, redirect to school-scoped route
@@ -39,8 +45,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       .single()
 
     if (school) {
-      const roleSegment = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
-      redirect(`/${school.slug}/${roleSegment}/dashboard`)
+      redirect(`/${school.slug}/${roleSegment(profile.role)}`)
     }
   }
 

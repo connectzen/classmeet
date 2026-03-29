@@ -82,7 +82,7 @@ function VerifyEmailContent() {
     }
 
     setSuccess(true)
-    setTimeout(() => router.push('/onboarding'), 1500)
+    setTimeout(() => router.push('/dashboard'), 1500)
   }
 
   async function handleResend() {

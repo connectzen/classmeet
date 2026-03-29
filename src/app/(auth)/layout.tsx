@@ -43,14 +43,23 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       // straight to the invite page if they're already set up).
       // Only show the expired UI when there is genuinely no session.
       const supabase = createClient()
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          const next = new URLSearchParams(window.location.search).get('next') ?? '/dashboard'
-          window.location.replace(next)
-        } else {
+      const timeoutMs = 8000
+      Promise.race([
+        supabase.auth.getSession(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Session lookup timed out')), timeoutMs)),
+      ])
+        .then((result: any) => {
+          const session = result?.data?.session
+          if (session) {
+            const next = new URLSearchParams(window.location.search).get('next') ?? '/dashboard'
+            window.location.replace(next)
+            return
+          }
           setPhase('expired')
-        }
-      })
+        })
+        .catch(() => {
+          window.location.replace('/sign-in')
+        })
       return
     }
 
@@ -69,12 +78,17 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
     }
 
     const supabase = createClient()
+    const timeoutMs = 10000
 
-    supabase.auth
-      .setSession({ access_token: accessToken, refresh_token: refreshToken })
-      .then(({ data: { session }, error }) => {
+    Promise.race([
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Sign-in timed out')), timeoutMs)),
+    ])
+      .then((result: any) => {
+        const session = result?.data?.session
+        const error = result?.error
         if (error || !session) {
-          setPhase('ready')
+          window.location.replace('/sign-in')
           return
         }
 
@@ -88,6 +102,9 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         } else {
           window.location.replace('/dashboard')
         }
+      })
+      .catch(() => {
+        window.location.replace('/sign-in')
       })
   }, [])
 

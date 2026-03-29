@@ -37,7 +37,7 @@ export default async function SchoolAppLayout({ children, params }: Props) {
 
   // Verify user belongs to this school
   if (!profile || profile.school_id !== school.id) {
-    redirect('/onboarding')
+    redirect('/dashboard')
   }
 
   const appUser = {

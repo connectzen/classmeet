@@ -1,46 +1,30 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { resolveUserDestination } from '@/lib/routing/user-destination'
 
 export default async function Home() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (user) {
-    // Look up the user's profile
-    const { data: profile } = (await supabase
-      .from('profiles')
-      .select('role, school_id, is_super_admin, onboarding_complete')
-      .eq('id', user.id)
-      .single()) as any
-
-    // Super admin goes to super admin dashboard
-    if (profile?.is_super_admin || profile?.role === 'super_admin') {
-      redirect('/superadmin')
-    }
-
-    // If user has a school, redirect to their school dashboard
-    if (profile?.school_id) {
-      const { data: school } = await supabase
-        .from('schools')
-        .select('slug')
-        .eq('id', profile.school_id)
-        .single()
-
-      if (school) {
-        const roleRoute = profile.role === 'admin' ? 'admin' : profile.role === 'teacher' ? 'teacher' : 'student'
-        redirect(`/${school.slug}/${roleRoute}`)
-      }
-    }
-
-    // Already onboarded or has a role (admin-created accounts) — go to dashboard
-    if (profile?.onboarding_complete || profile?.role) {
-      redirect('/dashboard')
-    }
-
-    // Truly new, unset account
-    redirect('/onboarding')
-  } else {
-    // Not logged in: redirect to sign-in
+  if (!user) {
     redirect('/sign-in')
   }
+
+  const { data: profile } = (await supabase
+    .from('profiles')
+    .select('role, school_id, is_super_admin')
+    .eq('id', user.id)
+    .single()) as any
+
+  let schoolSlug: string | null = null
+  if (profile?.school_id) {
+    const { data: school } = await supabase
+      .from('schools')
+      .select('slug')
+      .eq('id', profile.school_id)
+      .single()
+    schoolSlug = school?.slug ?? null
+  }
+
+  redirect(resolveUserDestination(profile, schoolSlug))
 }

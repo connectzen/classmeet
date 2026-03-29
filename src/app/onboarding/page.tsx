@@ -7,6 +7,7 @@ import { useAppStore } from '@/store/app-store'
 import type { UserRole } from '@/lib/supabase/types'
 import Button from '@/components/ui/Button'
 import { Video } from 'lucide-react'
+import { resolveUserDestination } from '@/lib/routing/user-destination'
 
 const ROLES: { value: UserRole; label: string; emoji: string; desc: string }[] = [
   { value: 'teacher', label: 'Teacher', emoji: '🎓', desc: 'I host live classes and create content' },
@@ -21,53 +22,77 @@ export default function OnboardingPage() {
   const [role, setRole] = useState<UserRole | null>(null)
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [checkError, setCheckError] = useState<string | null>(null)
 
   // Check if user is already onboarded, if so redirect them
   useEffect(() => {
+    let mounted = true
     const checkOnboarding = async () => {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        setChecking(false)
-        return
-      }
+      try {
+        const timeoutMs = 8000
+        const timeout = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('User lookup timed out')), timeoutMs)
+        })
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('onboarding_complete, is_super_admin, school_id, role')
-        .eq('id', user.id)
-        .single()
+        const userResult = await Promise.race([supabase.auth.getUser(), timeout]) as Awaited<ReturnType<typeof supabase.auth.getUser>>
+        const user = userResult.data.user
 
-      const p = profile as any
+        if (!user) {
+          router.replace('/sign-in')
+          return
+        }
 
-      // Super admin → redirect to /superadmin
-      if (p?.is_super_admin) {
-        router.push('/superadmin')
-        return
-      }
+        const profileResult = await Promise.race([
+          supabase
+            .from('profiles')
+            .select('role, is_super_admin, school_id')
+            .eq('id', user.id)
+            .single(),
+          timeout,
+        ]) as any
 
-      // Already onboarded → redirect to their school/dashboard
-      if (p?.onboarding_complete) {
-        if (p?.school_id) {
-          const { data: school } = await supabase
+        const profile = profileResult.data as any
+
+        if (profile?.school_id) {
+          const schoolResult = await supabase
             .from('schools')
             .select('slug')
-            .eq('id', p.school_id)
+            .eq('id', profile.school_id)
             .single()
-          if (school) {
-            const roleRoute = p.role === 'admin' ? 'admin' : p.role === 'teacher' ? 'teacher' : 'student'
-            router.push(`/${school.slug}/${roleRoute}`)
+
+          const schoolSlug = schoolResult.data?.slug ?? null
+          const destination = resolveUserDestination(profile, schoolSlug)
+          if (destination !== '/onboarding') {
+            router.replace(destination)
+            return
+          }
+        } else {
+          const destination = resolveUserDestination(profile, null)
+          if (destination !== '/onboarding') {
+            router.replace(destination)
             return
           }
         }
-        router.push('/dashboard')
-        return
-      }
 
-      setChecking(false)
+        if (mounted) {
+          setChecking(false)
+          setCheckError(null)
+        }
+      } catch {
+        if (mounted) {
+          setCheckError('We could not load your account. Redirecting to sign in...')
+          setChecking(false)
+        }
+        router.replace('/sign-in')
+      }
     }
 
     checkOnboarding()
+
+    return () => {
+      mounted = false
+    }
   }, [router])
 
   async function handleFinish() {
@@ -75,7 +100,11 @@ export default function OnboardingPage() {
     setLoading(true)
     const supabase = createClient()
     const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) { router.push('/sign-in'); return }
+    if (!authUser) {
+      setLoading(false)
+      router.replace('/sign-in')
+      return
+    }
 
     // Check if user is the designated super admin
     let finalRole = role
@@ -98,7 +127,7 @@ export default function OnboardingPage() {
     }
 
     // Save profile for ALL roles (including admin) before redirecting
-    await supabase.from('profiles').upsert({
+    const { error: upsertError } = await supabase.from('profiles').upsert({
       id: authUser.id,
       role: finalRole,
       is_super_admin: isSuperAdmin,
@@ -107,6 +136,12 @@ export default function OnboardingPage() {
       onboarding_complete: true,
       updated_at: new Date().toISOString(),
     })
+
+    if (upsertError) {
+      setLoading(false)
+      router.replace('/sign-in')
+      return
+    }
 
     setUser({
       id: authUser.id,
@@ -121,13 +156,13 @@ export default function OnboardingPage() {
     })
 
     // Route based on role
-    if (isSuperAdmin) {
-      router.push('/superadmin')
-    } else if (finalRole === 'admin') {
-      router.push('/register-school')
-    } else {
-      router.push('/dashboard')
-    }
+    const destination = resolveUserDestination({
+      role: finalRole,
+      school_id: null,
+      is_super_admin: isSuperAdmin,
+    }, null)
+
+    router.replace(destination)
   }
 
   return (
@@ -146,6 +181,9 @@ export default function OnboardingPage() {
         </div>
       ) : (
         <div className="onboard-card animate-slide-up">
+          {checkError && (
+            <p style={{ color: 'var(--error-400)', marginBottom: '12px', fontSize: '0.85rem' }}>{checkError}</p>
+          )}
           <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '8px' }}>Who are you?</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.9rem' }}>Choose your role to get started.</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
