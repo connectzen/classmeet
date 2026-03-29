@@ -15,7 +15,9 @@ export async function POST(request: Request) {
       .eq('id', user.id)
       .single()
 
-    if (!profile || !['teacher', 'admin'].includes(profile.role)) {
+    const canSendInvites = profile?.role === 'teacher' || profile?.role === 'admin'
+
+    if (!canSendInvites) {
       return apiError('Only teachers can send invites', 403)
     }
 

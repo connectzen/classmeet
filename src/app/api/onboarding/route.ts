@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { apiError, apiResponse, requireAuth } from '@/lib/api-utils'
 import { resolveUserDestination } from '@/lib/routing/user-destination'
 import type { UserRole } from '@/lib/supabase/types'
+import type { RedirectProfile } from '@/lib/routing/user-destination'
 
 const ALLOWED_ROLES: UserRole[] = ['teacher', 'student', 'admin']
 
@@ -48,14 +49,21 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     }
 
-    const { data: profile, error } = await supabase
+    const result = await supabase
       .from('profiles')
       .upsert(profilePayload, { onConflict: 'id' })
       .select('role, school_id, is_super_admin')
       .single()
 
+    const profile = result.data as RedirectProfile | null
+    const error = result.error
+
     if (error) {
       throw error
+    }
+
+    if (!profile) {
+      throw new Error('Could not load saved profile')
     }
 
     const destination = resolveUserDestination(profile, null)
