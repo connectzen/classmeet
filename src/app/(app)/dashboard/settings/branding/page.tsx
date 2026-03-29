@@ -136,10 +136,13 @@ export default function BrandingPage() {
           </label>
           <Input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { if (e.target.value.length <= 30) setName(e.target.value) }}
             placeholder="My Classroom"
             required
           />
+          <div style={{ fontSize: '0.7rem', color: name.length >= 25 ? 'var(--warning-400)' : 'var(--text-disabled)', textAlign: 'right', marginTop: '2px' }}>
+            {name.length}/30
+          </div>
         </div>
 
         {/* URL Slug */}

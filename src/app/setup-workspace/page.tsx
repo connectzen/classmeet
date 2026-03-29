@@ -154,14 +154,19 @@ export default function SetupWorkspacePage() {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Workspace name */}
-          <Input
-            label="Workspace Name"
-            placeholder="Mr. Jones Academy"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            leftIcon={<Type size={15} />}
-          />
+          <div>
+            <Input
+              label="Workspace Name"
+              placeholder="Mr. Jones Academy"
+              value={name}
+              onChange={(e) => { if (e.target.value.length <= 30) setName(e.target.value) }}
+              required
+              leftIcon={<Type size={15} />}
+            />
+            <div style={{ fontSize: '0.7rem', color: name.length >= 25 ? 'var(--warning-400)' : 'var(--text-disabled)', textAlign: 'right', marginTop: '2px' }}>
+              {name.length}/30
+            </div>
+          </div>
 
           {/* Slug */}
           <div>

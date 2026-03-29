@@ -274,14 +274,19 @@ export default function SettingsPage() {
                 <CheckCircle2 size={15} style={{ flexShrink: 0 }} /><span>Workspace updated!</span>
               </div>
             )}
-            <Input
-              label="Classroom Name"
-              required
-              value={wsName}
-              onChange={e => setWsName(e.target.value)}
-              placeholder="My Classroom"
-              helper="This is displayed in your sidebar and to your students"
-            />
+            <div>
+              <Input
+                label="Classroom Name"
+                required
+                value={wsName}
+                onChange={e => { if (e.target.value.length <= 30) setWsName(e.target.value) }}
+                placeholder="My Classroom"
+                helper="This is displayed in your sidebar and to your students"
+              />
+              <div style={{ fontSize: '0.7rem', color: wsName.length >= 25 ? 'var(--warning-400)' : 'var(--text-disabled)', textAlign: 'right', marginTop: '2px' }}>
+                {wsName.length}/30
+              </div>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Link
                 href={brandingHref}

@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button'
 import AdminDashboard from '@/components/dashboard/AdminDashboard'
 import {
   Video, BookOpen, Users, ArrowRight,
-  Clock, Sparkles, CalendarDays, Zap, MessageSquare,
+  Clock, CalendarDays, Zap, MessageSquare,
   Radio, Circle, Wifi, WifiOff, GraduationCap,
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
@@ -21,6 +21,19 @@ import type { TeacherPermissionKey } from '@/lib/supabase/types'
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Action { label: string; desc: string; icon: React.ElementType; color: string; href?: string; comingSoon?: boolean; statKey?: string; permissionCheck?: (perms: TeacherPermissionKey[]) => boolean }
 interface StudentSession { id: string; title: string; status: 'live' | 'scheduled' | 'ended'; room_name: string; teacher_id: string; scheduled_at: string | null; started_at: string | null; teacher_name?: string }
+interface ActivityItem { id: string; type: 'session' | 'course' | 'student'; title: string; time: string; icon: React.ElementType; color: string }
+
+function formatTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 
 // ─── Dashboard Session Card ───────────────────────────────────────────────────
 function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin: () => void }) {
@@ -159,6 +172,7 @@ export default function DashboardPage() {
   const [teachers, setTeachers] = useState<{ id: string; full_name: string | null; avatar_url: string | null; subjects: string[] }[]>([])
   const [studentSessions, setStudentSessions] = useState<StudentSession[]>([])
   const [enrolledCourseCount, setEnrolledCourseCount] = useState(0)
+  const [activity, setActivity] = useState<ActivityItem[]>([])
 
   const creator = isCreatorRole(user?.role)
   const isAdmin = user?.role === 'admin'
@@ -384,6 +398,85 @@ export default function DashboardPage() {
     }
   }, [user?.id])
 
+  // ── Load recent activity ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return
+    const supabase = createClient()
+    const items: ActivityItem[] = []
+
+    async function loadActivity() {
+      if (isCreatorRole(user!.role)) {
+        // Teacher: recent sessions + courses + new students
+        const [{ data: recentSessions }, { data: recentCourses }, { data: recentStudents }] = await Promise.all([
+          supabase.from('sessions').select('id, title, status, created_at').eq('teacher_id', user!.id).order('created_at', { ascending: false }).limit(5),
+          supabase.from('courses').select('id, title, created_at').eq('teacher_id', user!.id).order('created_at', { ascending: false }).limit(5),
+          supabase.from('teacher_students').select('student_id, created_at').eq('teacher_id', user!.id).order('created_at', { ascending: false }).limit(5),
+        ])
+
+        recentSessions?.forEach(s => items.push({
+          id: `s-${s.id}`, type: 'session',
+          title: s.status === 'ended' ? `Session ended: ${s.title}` : s.status === 'live' ? `Live now: ${s.title}` : `Scheduled: ${s.title}`,
+          time: s.created_at, icon: Video, color: s.status === 'live' ? 'var(--success-400)' : 'var(--primary-400)',
+        }))
+        recentCourses?.forEach(c => items.push({
+          id: `c-${c.id}`, type: 'course',
+          title: `Course created: ${c.title}`,
+          time: c.created_at, icon: BookOpen, color: 'var(--accent-400)',
+        }))
+
+        if (recentStudents && recentStudents.length > 0) {
+          const sIds = recentStudents.map(s => s.student_id)
+          const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', sIds)
+          const nameMap = new Map(profiles?.map(p => [p.id, p.full_name]) ?? [])
+          recentStudents.forEach(s => items.push({
+            id: `st-${s.student_id}`, type: 'student',
+            title: `${nameMap.get(s.student_id) ?? 'A student'} joined`,
+            time: s.created_at, icon: Users, color: 'var(--success-400)',
+          }))
+        }
+      } else {
+        // Student: sessions joined, courses enrolled
+        const { data: recentSessions } = await supabase
+          .from('session_targets').select('session_id, created_at')
+          .eq('target_type', 'student').eq('target_id', user!.id)
+          .order('created_at', { ascending: false }).limit(5)
+
+        if (recentSessions && recentSessions.length > 0) {
+          const sessIds = recentSessions.map(s => s.session_id)
+          const { data: sessions } = await supabase.from('sessions').select('id, title').in('id', sessIds)
+          const sessMap = new Map(sessions?.map(s => [s.id, s.title]) ?? [])
+          recentSessions.forEach(s => items.push({
+            id: `s-${s.session_id}`, type: 'session',
+            title: `Invited to: ${sessMap.get(s.session_id) ?? 'Session'}`,
+            time: s.created_at, icon: Video, color: 'var(--primary-400)',
+          }))
+        }
+
+        const { data: recentCourses } = await supabase
+          .from('course_targets').select('course_id, created_at')
+          .eq('target_type', 'student').eq('target_id', user!.id)
+          .order('created_at', { ascending: false }).limit(5)
+
+        if (recentCourses && recentCourses.length > 0) {
+          const cIds = recentCourses.map(c => c.course_id)
+          const { data: courses } = await supabase.from('courses').select('id, title').in('id', cIds)
+          const courseMap = new Map(courses?.map(c => [c.id, c.title]) ?? [])
+          recentCourses.forEach(c => items.push({
+            id: `c-${c.course_id}`, type: 'course',
+            title: `Enrolled in: ${courseMap.get(c.course_id) ?? 'Course'}`,
+            time: c.created_at, icon: BookOpen, color: 'var(--accent-400)',
+          }))
+        }
+      }
+
+      // Sort by time descending, take latest 8
+      items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+      setActivity(items.slice(0, 8))
+    }
+
+    loadActivity()
+  }, [user?.id])
+
   const userPerms = (user?.permissions ?? []) as TeacherPermissionKey[]
   const allActions = creator ? TEACHER_ACTIONS : STUDENT_ACTIONS
   const actions = allActions.filter(a => !a.permissionCheck || a.permissionCheck(userPerms))
@@ -528,24 +621,56 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* ── Recent Activity placeholder ───────────────────────────────────── */}
+      {/* ── Recent Activity ─────────────────────────────────────────────── */}
       <h3 style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '12px' }}>
         Recent Activity
       </h3>
-      <div className="card stagger-item" style={{ animationDelay: '420ms', padding: '40px', textAlign: 'center' }}>
-        <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-          <Clock size={24} color="var(--text-muted)" />
+      {activity.length === 0 ? (
+        <div className="card stagger-item" style={{ animationDelay: '420ms', padding: '40px', textAlign: 'center' }}>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Clock size={24} color="var(--text-muted)" />
+          </div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>No activity yet</div>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: 0 }}>
+            {creator
+              ? 'Start a live room, create a course, or invite students to see activity here.'
+              : 'Join sessions and enroll in courses to see your activity here.'}
+          </p>
         </div>
-        <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>No activity yet</div>
-        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 16px' }}>
-          {creator
-            ? 'Your sessions, courses, and student activity will appear here.'
-            : 'Your joined sessions, quiz results, and course progress will appear here.'}
-        </p>
-        <Button variant="outline" size="sm" icon={<Sparkles size={14} />} onClick={() => showToast('✨ Feature tour — coming soon!')}>
-          Explore features
-        </Button>
-      </div>
+      ) : (
+        <div className="card stagger-item" style={{ animationDelay: '420ms', padding: '0', overflow: 'hidden' }}>
+          {activity.map((item, i) => {
+            const Icon = item.icon
+            const timeAgo = formatTimeAgo(item.time)
+            return (
+              <div
+                key={item.id}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px',
+                  padding: '14px 20px',
+                  borderBottom: i < activity.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                }}
+              >
+                <div style={{
+                  width: 32, height: 32, borderRadius: 'var(--radius-md)',
+                  background: `color-mix(in srgb, ${item.color} 15%, transparent)`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <Icon size={15} color={item.color} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.title}
+                  </div>
+                </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-disabled)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {timeAgo}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* ── Toast ─────────────────────────────────────────────────────────── */}
       {toast && (

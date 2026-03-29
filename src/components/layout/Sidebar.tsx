@@ -385,7 +385,7 @@ export default function Sidebar() {
               <Video size={20} color="#fff" />
             </div>
           )}
-          <span className="logo-text">{school?.schoolName ?? 'ClassMeet'}</span>
+          <span className="logo-text" title={school?.schoolName ?? 'ClassMeet'}>{school?.schoolName ?? 'ClassMeet'}</span>
 
           {/* Mobile close */}
           <button

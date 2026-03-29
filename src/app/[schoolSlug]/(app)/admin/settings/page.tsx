@@ -206,9 +206,12 @@ export default function AdminSettingsPage() {
               <Input
                 label="School Name"
                 value={schoolName}
-                onChange={(e) => setSchoolName(e.target.value)}
+                onChange={(e) => { if (e.target.value.length <= 30) setSchoolName(e.target.value) }}
                 required
               />
+              <div style={{ fontSize: '0.7rem', color: schoolName.length >= 25 ? 'var(--warning-400)' : 'var(--text-disabled)', textAlign: 'right', marginTop: '2px' }}>
+                {schoolName.length}/30
+              </div>
             </div>
 
             <div style={{ marginBottom: 20 }}>
