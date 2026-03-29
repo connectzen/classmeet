@@ -49,7 +49,7 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
       dashLinks.push({ href: `${basePath}/dashboard/analytics`, label: 'Analytics', icon: BarChart2 })
     }
 
-    sections.push({ section: 'Dashboard', links: dashLinks })
+    sections.push({ section: '', links: dashLinks })
   }
 
   // System section
@@ -57,11 +57,10 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
     { href: `${basePath}/dashboard/settings`, label: 'Settings', icon: Settings },
   ]
   if (schoolSlug && role === 'admin') {
-    // Admin also gets a Dashboard link + Admin Panel
-    sections.unshift({ section: 'Dashboard', links: [
+    // Admin gets Dashboard as first nav item
+    sections.unshift({ section: '', links: [
       { href: `/${schoolSlug}/admin`, label: 'Dashboard', icon: LayoutDashboard },
     ] })
-    systemLinks.push({ href: `/${schoolSlug}/admin`, label: 'Admin Panel', icon: ShieldCheck, roles: ['admin'] as UserRole[] })
   }
   if (isTeacher && canManageBranding(role, useAppStore.getState().user?.teacherType)) {
     systemLinks.push({ href: `${basePath}/dashboard/settings/branding`, label: 'Branding', icon: Palette })
@@ -494,8 +493,8 @@ export default function Sidebar() {
             )
             if (visibleLinks.length === 0) return null
             return (
-              <div key={section.section} className="sidebar-section" style={{ marginBottom: 0, padding: '8px 0 4px' }}>
-                <div className="sidebar-section-label">{section.section}</div>
+              <div key={section.section || 'nav'} className="sidebar-section" style={{ marginBottom: 0, padding: '8px 0 4px' }}>
+                {section.section && <div className="sidebar-section-label">{section.section}</div>}
                 {visibleLinks.map((link) => {
                   const Icon = link.icon
                   const isDashboardLink = link.label === 'Dashboard'
