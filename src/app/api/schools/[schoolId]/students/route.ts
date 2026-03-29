@@ -71,9 +71,8 @@ export async function POST(
     // Create auth user via service role
     const admin = createAdminClient()
 
-    // Invite user by email — sends a welcome email with a magic link
-    const setPasswordNext = encodeURIComponent(`/${school.slug}/student`)
-    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/set-password?next=${setPasswordNext}`)}`
+    // Try inviteUserByEmail first — sends a welcome email with login credentials
+    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/${school.slug}/student`)}`
 
     const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
@@ -82,8 +81,12 @@ export async function POST(
         school_name: school.name,
         school_logo: school.logo_url || '',
         role: 'student',
+        default_password: finalPassword,
+        login_url: `${origin}/${school.slug}/sign-in`,
       },
     })
+
+    let userId: string
 
     if (inviteError || !inviteData.user) {
       // If user already exists, fall back to createUser
@@ -100,37 +103,21 @@ export async function POST(
           throw new ApiError(authError?.message || 'Failed to create student user', 400)
         }
 
-        // Upsert profile for existing user
-        const { data: profile, error: profileError } = await admin
-          .from('profiles')
-          .upsert({
-            id: authData.user.id,
-            full_name: fullName,
-            role: 'student',
-            school_id: schoolId,
-            onboarding_complete: true,
-            goals: [],
-            subjects: [],
-          })
-          .select()
-          .single()
-
-        if (profileError) {
-          await admin.auth.admin.deleteUser(authData.user.id)
-          throw new ApiError(profileError.message || 'Failed to create student profile', 500)
-        }
-
-        return apiResponse(profile, 201)
+        userId = authData.user.id
+      } else {
+        throw new ApiError(inviteError?.message || 'Failed to invite student', 400)
       }
-
-      throw new ApiError(inviteError?.message || 'Failed to invite student', 400)
+    } else {
+      userId = inviteData.user.id
+      // Set the password on the invited user so they can log in immediately
+      await admin.auth.admin.updateUserById(userId, { password: finalPassword })
     }
 
     // Upsert profile with student role
     const { data: profile, error: profileError } = await admin
       .from('profiles')
       .upsert({
-        id: inviteData.user.id,
+        id: userId,
         full_name: fullName,
         role: 'student',
         school_id: schoolId,
@@ -142,7 +129,7 @@ export async function POST(
       .single()
 
     if (profileError) {
-      await admin.auth.admin.deleteUser(inviteData.user.id)
+      await admin.auth.admin.deleteUser(userId)
       throw new ApiError(profileError.message || 'Failed to create student profile', 500)
     }
 
