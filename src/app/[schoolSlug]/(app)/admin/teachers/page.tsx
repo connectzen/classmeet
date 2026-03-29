@@ -6,10 +6,12 @@ import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
-import { Users, Plus, Trash2, X, Eye, EyeOff, ArrowLeft, Search, Shield, Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { Users, Plus, Trash2, X, Eye, EyeOff, ArrowLeft, Search, Shield, Check, ChevronDown, ChevronRight, BookOpen, GraduationCap, Info, UserPlus, FolderOpen } from 'lucide-react'
 import Link from 'next/link'
 import { ALL_PERMISSIONS } from '@/lib/permissions'
 import type { TeacherPermissionKey } from '@/lib/supabase/types'
+
+type ExpandTab = 'permissions' | 'assignments' | 'students'
 
 const PERMISSION_LABELS: Record<TeacherPermissionKey, string> = {
   invite_students: 'Invite Students',
@@ -21,12 +23,43 @@ const PERMISSION_LABELS: Record<TeacherPermissionKey, string> = {
   manage_settings: 'Manage Settings',
 }
 
+const PERMISSION_DESCRIPTIONS: Record<TeacherPermissionKey, string> = {
+  invite_students: 'Allow this teacher to invite new students to the school via email or link.',
+  invite_teachers: 'Allow this teacher to invite other teachers to join the school.',
+  create_groups: 'Allow this teacher to create and manage student groups for organized teaching.',
+  create_courses: 'Allow this teacher to create courses, add topics, and publish learning materials.',
+  create_sessions: 'Allow this teacher to start and schedule live classroom sessions (rooms).',
+  manage_quizzes: 'Allow this teacher to create quizzes, exams, and grade student submissions.',
+  manage_settings: 'Allow this teacher to access and modify school settings and branding.',
+}
+
 interface Teacher {
   id: string
   full_name: string | null
   role: string
   created_at: string
   email?: string
+}
+
+interface AssignedClass {
+  id: string
+  name: string
+  description: string | null
+  memberCount: number
+}
+
+interface AssignedGroup {
+  id: string
+  name: string
+  description: string | null
+  memberCount: number
+}
+
+interface StudentInfo {
+  id: string
+  full_name: string | null
+  status: 'active' | 'inactive' | 'pending'
+  enrolled_at: string
 }
 
 export default function AdminTeachersPage() {
@@ -38,8 +71,21 @@ export default function AdminTeachersPage() {
   const [showForm, setShowForm] = useState(false)
   const [search, setSearch] = useState('')
   const [expandedTeacher, setExpandedTeacher] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<ExpandTab>('permissions')
   const [teacherPerms, setTeacherPerms] = useState<Map<string, TeacherPermissionKey[]>>(new Map())
   const [savingPerm, setSavingPerm] = useState(false)
+  const [hoveredPerm, setHoveredPerm] = useState<TeacherPermissionKey | null>(null)
+
+  // Assignments state
+  const [teacherClasses, setTeacherClasses] = useState<Map<string, AssignedClass[]>>(new Map())
+  const [teacherGroups, setTeacherGroups] = useState<Map<string, AssignedGroup[]>>(new Map())
+  const [allClasses, setAllClasses] = useState<{ id: string; name: string }[]>([])
+  const [assigningClass, setAssigningClass] = useState(false)
+  const [selectedClassId, setSelectedClassId] = useState('')
+
+  // Students state
+  const [teacherStudents, setTeacherStudents] = useState<Map<string, StudentInfo[]>>(new Map())
+  const [loadingStudents, setLoadingStudents] = useState(false)
 
   // Form state
   const [formName, setFormName] = useState('')
@@ -145,6 +191,115 @@ export default function AdminTeachersPage() {
     await supabase.from('teacher_permissions').delete().eq('teacher_id', teacherId)
     setTeacherPerms(prev => new Map(prev).set(teacherId, []))
     setSavingPerm(false)
+  }
+
+  // Load classes & groups assigned to a teacher
+  const loadAssignments = useCallback(async (teacherId: string) => {
+    const supabase = createClient()
+    // Classes where teacher_id matches
+    const { data: classes } = await supabase
+      .from('classes')
+      .select('id, name, description')
+      .eq('school_id', school.schoolId)
+      .eq('teacher_id', teacherId)
+    // For each class, get member count
+    const classesWithCount: AssignedClass[] = []
+    for (const c of classes ?? []) {
+      const { count } = await supabase
+        .from('class_members')
+        .select('id', { count: 'exact', head: true })
+        .eq('class_id', c.id)
+      classesWithCount.push({ ...c, memberCount: count ?? 0 })
+    }
+    setTeacherClasses(prev => new Map(prev).set(teacherId, classesWithCount))
+
+    // Groups owned by this teacher in this school
+    const { data: groups } = await supabase
+      .from('groups')
+      .select('id, name, description')
+      .eq('school_id', school.schoolId)
+      .eq('teacher_id', teacherId)
+    const groupsWithCount: AssignedGroup[] = []
+    for (const g of groups ?? []) {
+      const { count } = await supabase
+        .from('group_members')
+        .select('id', { count: 'exact', head: true })
+        .eq('group_id', g.id)
+      groupsWithCount.push({ ...g, memberCount: count ?? 0 })
+    }
+    setTeacherGroups(prev => new Map(prev).set(teacherId, groupsWithCount))
+  }, [school.schoolId])
+
+  // Load all school classes (for the assign dropdown)
+  const loadAllClasses = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('classes')
+      .select('id, name, teacher_id')
+      .eq('school_id', school.schoolId)
+    setAllClasses((data ?? []).map(c => ({ id: c.id, name: c.name })))
+  }, [school.schoolId])
+
+  // Assign a class to a teacher
+  async function assignClassToTeacher(teacherId: string, classId: string) {
+    setAssigningClass(true)
+    const supabase = createClient()
+    await supabase.from('classes').update({ teacher_id: teacherId }).eq('id', classId)
+    await loadAssignments(teacherId)
+    setSelectedClassId('')
+    setAssigningClass(false)
+  }
+
+  // Unassign a class from teacher
+  async function unassignClass(teacherId: string, classId: string) {
+    const supabase = createClient()
+    await supabase.from('classes').update({ teacher_id: null }).eq('id', classId)
+    await loadAssignments(teacherId)
+  }
+
+  // Load students under a teacher (via teacher_students table)
+  const loadStudents = useCallback(async (teacherId: string) => {
+    setLoadingStudents(true)
+    const supabase = createClient()
+    const { data: enrollments } = await supabase
+      .from('teacher_students')
+      .select('student_id, status, enrolled_at')
+      .eq('teacher_id', teacherId)
+      .eq('school_id', school.schoolId)
+
+    if (!enrollments || enrollments.length === 0) {
+      setTeacherStudents(prev => new Map(prev).set(teacherId, []))
+      setLoadingStudents(false)
+      return
+    }
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', enrollments.map(e => e.student_id))
+
+    const profileMap = new Map((profiles ?? []).map(p => [p.id, p.full_name]))
+    const students: StudentInfo[] = enrollments.map(e => ({
+      id: e.student_id,
+      full_name: profileMap.get(e.student_id) ?? null,
+      status: e.status as StudentInfo['status'],
+      enrolled_at: e.enrolled_at,
+    }))
+    setTeacherStudents(prev => new Map(prev).set(teacherId, students))
+    setLoadingStudents(false)
+  }, [school.schoolId])
+
+  // Handle expanding a teacher row
+  function handleExpandTeacher(teacherId: string) {
+    const isClosing = expandedTeacher === teacherId
+    const next = isClosing ? null : teacherId
+    setExpandedTeacher(next)
+    if (next) {
+      if (!teacherPerms.has(teacherId)) loadPerms(teacherId)
+      loadAssignments(teacherId)
+      loadAllClasses()
+      loadStudents(teacherId)
+    }
   }
 
   const handleSubmit = async () => {
@@ -374,32 +529,41 @@ export default function AdminTeachersPage() {
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr auto',
                 padding: '14px 20px',
-                borderBottom: '1px solid var(--border-subtle)',
+                borderBottom: expandedTeacher === teacher.id ? 'none' : '1px solid var(--border-subtle)',
                 alignItems: 'center',
                 fontSize: '0.875rem',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
               }}
+              onClick={() => handleExpandTeacher(teacher.id)}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  onClick={() => {
-                    const next = expandedTeacher === teacher.id ? null : teacher.id
-                    setExpandedTeacher(next)
-                    if (next && !teacherPerms.has(teacher.id)) loadPerms(teacher.id)
-                  }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--text-muted)' }}
-                >
-                  {expandedTeacher === teacher.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </button>
+                <div style={{ color: 'var(--text-muted)', display: 'flex', transition: 'transform 0.2s', transform: expandedTeacher === teacher.id ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                  <ChevronRight size={16} />
+                </div>
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'var(--primary-500)', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.75rem', fontWeight: 700, flexShrink: 0,
+                }}>
+                  {(teacher.full_name || 'U').charAt(0).toUpperCase()}
+                </div>
                 <div>
                   <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
                     {teacher.full_name || 'Unnamed'}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
+                    {(teacherPerms.get(teacher.id) ?? []).length} of {ALL_PERMISSIONS.length} permissions
+                    {' · '}
+                    {(teacherStudents.get(teacher.id) ?? []).length} students
                   </div>
                 </div>
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                 {new Date(teacher.created_at).toLocaleDateString()}
               </div>
-              <div>
+              <div onClick={(e) => e.stopPropagation()}>
                 {deleteId === teacher.id ? (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Confirm?</span>
@@ -429,49 +593,322 @@ export default function AdminTeachersPage() {
               </div>
             </div>
 
-            {/* Expandable permissions section */}
+            {/* Expandable detail section with tabs */}
             {expandedTeacher === teacher.id && (
-              <div style={{ padding: '16px 20px 16px 44px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary, rgba(0,0,0,0.02))' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                    <Shield size={14} /> Permissions
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Button variant="outline" size="sm" onClick={() => grantAllPerms(teacher.id)} disabled={savingPerm}>Grant All</Button>
-                    <Button variant="ghost" size="sm" onClick={() => revokeAllPerms(teacher.id)} disabled={savingPerm}>Revoke All</Button>
-                  </div>
+              <div style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary, rgba(0,0,0,0.02))' }}>
+                {/* Tab bar */}
+                <div style={{ display: 'flex', gap: 0, padding: '0 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+                  {([
+                    { key: 'permissions' as ExpandTab, label: 'Permissions', icon: <Shield size={14} />, count: (teacherPerms.get(teacher.id) ?? []).length },
+                    { key: 'assignments' as ExpandTab, label: 'Assignments', icon: <FolderOpen size={14} />, count: (teacherClasses.get(teacher.id) ?? []).length + (teacherGroups.get(teacher.id) ?? []).length },
+                    { key: 'students' as ExpandTab, label: 'Students', icon: <GraduationCap size={14} />, count: (teacherStudents.get(teacher.id) ?? []).length },
+                  ]).map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '10px 16px', fontSize: '0.8rem', fontWeight: 600,
+                        color: activeTab === tab.key ? 'var(--primary-500)' : 'var(--text-muted)',
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        borderBottom: activeTab === tab.key ? '2px solid var(--primary-500)' : '2px solid transparent',
+                        marginBottom: -1, transition: 'all 0.15s',
+                      }}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                      <span style={{
+                        background: activeTab === tab.key ? 'var(--primary-500)' : 'var(--border-default)',
+                        color: activeTab === tab.key ? '#fff' : 'var(--text-muted)',
+                        fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px',
+                        borderRadius: 10, minWidth: 18, textAlign: 'center',
+                      }}>
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
-                  {ALL_PERMISSIONS.map(perm => {
-                    const has = (teacherPerms.get(teacher.id) ?? []).includes(perm)
-                    return (
-                      <button
-                        key={perm}
-                        onClick={() => togglePerm(teacher.id, perm, has)}
-                        disabled={savingPerm}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8,
-                          padding: '8px 10px', borderRadius: 6,
-                          border: `1px solid ${has ? 'var(--primary-500)' : 'var(--border-default)'}`,
-                          background: has ? 'rgba(99,102,241,0.08)' : 'transparent',
-                          cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500,
-                          color: has ? 'var(--primary-500)' : 'var(--text-muted)',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <div style={{
-                          width: 16, height: 16, borderRadius: 3,
-                          border: `2px solid ${has ? 'var(--primary-500)' : 'var(--border-default)'}`,
-                          background: has ? 'var(--primary-500)' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0,
-                        }}>
-                          {has && <Check size={10} color="#fff" />}
+
+                {/* Tab content */}
+                <div style={{ padding: '16px 20px' }}>
+
+                  {/* ── PERMISSIONS TAB ── */}
+                  {activeTab === 'permissions' && (
+                    <div>
+                      {/* Info banner */}
+                      <div style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px',
+                        background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)',
+                        borderRadius: 8, marginBottom: 14, fontSize: '0.78rem', color: 'var(--text-muted)',
+                      }}>
+                        <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <span>
+                          <strong style={{ color: 'var(--primary-500)' }}>Enabled</strong> permissions are highlighted in purple.
+                          Click any permission to toggle it on or off. Hover over a permission to see what it does.
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {(teacherPerms.get(teacher.id) ?? []).length} of {ALL_PERMISSIONS.length} enabled
                         </div>
-                        {PERMISSION_LABELS[perm]}
-                      </button>
-                    )
-                  })}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <Button variant="outline" size="sm" onClick={() => grantAllPerms(teacher.id)} disabled={savingPerm}>
+                            Grant All
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => revokeAllPerms(teacher.id)} disabled={savingPerm}>
+                            Revoke All
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+                        {ALL_PERMISSIONS.map(perm => {
+                          const has = (teacherPerms.get(teacher.id) ?? []).includes(perm)
+                          const isHovered = hoveredPerm === perm
+                          return (
+                            <div key={perm} style={{ position: 'relative' }}>
+                              <button
+                                onClick={() => togglePerm(teacher.id, perm, has)}
+                                onMouseEnter={() => setHoveredPerm(perm)}
+                                onMouseLeave={() => setHoveredPerm(null)}
+                                disabled={savingPerm}
+                                title={PERMISSION_DESCRIPTIONS[perm]}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                                  padding: '10px 12px', borderRadius: 8,
+                                  border: `1.5px solid ${has ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                                  background: has ? 'rgba(99,102,241,0.08)' : 'transparent',
+                                  cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500,
+                                  color: has ? 'var(--primary-500)' : 'var(--text-muted)',
+                                  textAlign: 'left', transition: 'all 0.15s',
+                                }}
+                              >
+                                <div style={{
+                                  width: 20, height: 20, borderRadius: 4,
+                                  border: `2px solid ${has ? 'var(--primary-500)' : 'var(--border-default)'}`,
+                                  background: has ? 'var(--primary-500)' : 'transparent',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  flexShrink: 0, transition: 'all 0.15s',
+                                }}>
+                                  {has && <Check size={12} color="#fff" />}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <div>{PERMISSION_LABELS[perm]}</div>
+                                  <div style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                                    {has ? 'Click to revoke' : 'Click to grant'}
+                                  </div>
+                                </div>
+                              </button>
+
+                              {/* Tooltip on hover */}
+                              {isHovered && (
+                                <div style={{
+                                  position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                                  marginBottom: 6, padding: '8px 12px', borderRadius: 8,
+                                  background: 'var(--card-bg, #1e1e2e)', border: '1px solid var(--border-subtle)',
+                                  boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                                  fontSize: '0.75rem', color: 'var(--text-primary)',
+                                  width: 240, zIndex: 20, lineHeight: 1.4,
+                                  pointerEvents: 'none',
+                                }}>
+                                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{PERMISSION_LABELS[perm]}</div>
+                                  <div style={{ color: 'var(--text-muted)' }}>{PERMISSION_DESCRIPTIONS[perm]}</div>
+                                  <div style={{
+                                    position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%) rotate(45deg)',
+                                    width: 8, height: 8, background: 'var(--card-bg, #1e1e2e)',
+                                    borderRight: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)',
+                                  }} />
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── ASSIGNMENTS TAB ── */}
+                  {activeTab === 'assignments' && (
+                    <div>
+                      {/* Classes section */}
+                      <div style={{ marginBottom: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            <BookOpen size={15} />
+                            Classes
+                          </div>
+                        </div>
+
+                        {/* Assign class form */}
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+                          <select
+                            value={selectedClassId}
+                            onChange={(e) => setSelectedClassId(e.target.value)}
+                            style={{
+                              flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: '0.82rem',
+                              background: 'var(--input-bg, var(--card-bg))', color: 'var(--text-primary)',
+                              border: '1px solid var(--border-default)', outline: 'none',
+                            }}
+                          >
+                            <option value="">Select a class to assign...</option>
+                            {allClasses
+                              .filter(c => !(teacherClasses.get(teacher.id) ?? []).some(tc => tc.id === c.id))
+                              .map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                          </select>
+                          <Button
+                            size="sm"
+                            onClick={() => selectedClassId && assignClassToTeacher(teacher.id, selectedClassId)}
+                            disabled={!selectedClassId || assigningClass}
+                            loading={assigningClass}
+                          >
+                            Assign
+                          </Button>
+                        </div>
+
+                        {/* Assigned classes list */}
+                        {(teacherClasses.get(teacher.id) ?? []).length === 0 ? (
+                          <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.8rem', border: '1px dashed var(--border-default)', borderRadius: 8 }}>
+                            No classes assigned. Select a class above to assign it to this teacher.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {(teacherClasses.get(teacher.id) ?? []).map(cls => (
+                              <div key={cls.id} style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '10px 12px', borderRadius: 8,
+                                border: '1px solid var(--border-subtle)', background: 'var(--card-bg)',
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <BookOpen size={14} color="var(--primary-500)" />
+                                  <div>
+                                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-primary)' }}>{cls.name}</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{cls.memberCount} student{cls.memberCount !== 1 ? 's' : ''}</div>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => unassignClass(teacher.id, cls.id)}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, display: 'flex', borderRadius: 4 }}
+                                  title="Unassign class"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Groups section */}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <FolderOpen size={15} />
+                          Groups
+                        </div>
+
+                        {(teacherGroups.get(teacher.id) ?? []).length === 0 ? (
+                          <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.8rem', border: '1px dashed var(--border-default)', borderRadius: 8 }}>
+                            This teacher hasn&apos;t created any groups yet. Groups are created by teachers with the &quot;Create Groups&quot; permission.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {(teacherGroups.get(teacher.id) ?? []).map(grp => (
+                              <div key={grp.id} style={{
+                                display: 'flex', alignItems: 'center', padding: '10px 12px',
+                                borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--card-bg)',
+                                gap: 8,
+                              }}>
+                                <FolderOpen size={14} color="var(--secondary-500, #818cf8)" />
+                                <div>
+                                  <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-primary)' }}>{grp.name}</div>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{grp.memberCount} member{grp.memberCount !== 1 ? 's' : ''}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── STUDENTS TAB ── */}
+                  {activeTab === 'students' && (
+                    <div>
+                      <div style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px',
+                        background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)',
+                        borderRadius: 8, marginBottom: 14, fontSize: '0.78rem', color: 'var(--text-muted)',
+                      }}>
+                        <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <span>Students enrolled under this teacher via the teacher-student enrollment system. These are students this teacher can manage, create sessions for, and assign to groups.</span>
+                      </div>
+
+                      {loadingStudents ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>Loading students...</div>
+                      ) : (teacherStudents.get(teacher.id) ?? []).length === 0 ? (
+                        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.82rem', border: '1px dashed var(--border-default)', borderRadius: 8 }}>
+                          <GraduationCap size={24} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
+                          <div>No students enrolled under this teacher yet.</div>
+                          <div style={{ fontSize: '0.72rem', marginTop: 4 }}>Students are enrolled when they join via invite link or are assigned by the school admin.</div>
+                        </div>
+                      ) : (
+                        <div>
+                          {/* Student count summary */}
+                          <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                            {(['active', 'pending', 'inactive'] as const).map(status => {
+                              const count = (teacherStudents.get(teacher.id) ?? []).filter(s => s.status === status).length
+                              if (count === 0) return null
+                              const colors = { active: '#22c55e', pending: '#f59e0b', inactive: '#6b7280' }
+                              return (
+                                <div key={status} style={{
+                                  display: 'flex', alignItems: 'center', gap: 6,
+                                  fontSize: '0.75rem', color: colors[status],
+                                }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors[status] }} />
+                                  {count} {status}
+                                </div>
+                              )
+                            })}
+                          </div>
+
+                          {/* Student list */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                            {(teacherStudents.get(teacher.id) ?? []).map(student => {
+                              const statusColors = { active: '#22c55e', pending: '#f59e0b', inactive: '#6b7280' }
+                              return (
+                                <div key={student.id} style={{
+                                  display: 'flex', alignItems: 'center', gap: 10,
+                                  padding: '10px 12px', borderRadius: 8,
+                                  border: '1px solid var(--border-subtle)', background: 'var(--card-bg)',
+                                }}>
+                                  <div style={{
+                                    width: 28, height: 28, borderRadius: '50%',
+                                    background: 'var(--border-default)', color: 'var(--text-muted)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '0.7rem', fontWeight: 600, flexShrink: 0,
+                                  }}>
+                                    {(student.full_name || 'S').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {student.full_name || 'Unnamed Student'}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.68rem', color: 'var(--text-tertiary)' }}>
+                                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: statusColors[student.status] }} />
+                                      {student.status}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>
               </div>
             )}
