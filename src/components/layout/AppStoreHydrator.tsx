@@ -5,7 +5,7 @@ import { useAppStore } from '@/store/app-store'
 import { usePresenceStore } from '@/store/presence-store'
 import type { PresenceUser } from '@/store/presence-store'
 import { createClient } from '@/lib/supabase/client'
-import type { UserRole } from '@/lib/supabase/types'
+import type { UserRole, TeacherType } from '@/lib/supabase/types'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
 interface Props {
@@ -19,6 +19,9 @@ interface Props {
     schoolId?: string | null
     schoolSlug?: string | null
     isSuperAdmin?: boolean
+    teacherType?: TeacherType | null
+    workspaceSlug?: string | null
+    permissions?: string[]
   }
   children: ReactNode
 }
@@ -41,6 +44,9 @@ export default function AppStoreHydrator({ user, children }: Props) {
       schoolId: user.schoolId ?? null,
       schoolSlug: user.schoolSlug ?? null,
       isSuperAdmin: user.isSuperAdmin ?? false,
+      teacherType: user.teacherType ?? null,
+      workspaceSlug: user.workspaceSlug ?? null,
+      permissions: user.permissions ?? [],
     })
   }, [user, setUser])
 

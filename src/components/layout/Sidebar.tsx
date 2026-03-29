@@ -8,30 +8,61 @@ import { usePresenceStore } from '@/store/presence-store'
 import { useSchool } from '@/lib/school-context'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
+import { canInviteStudents, canInviteTeachers, canCreateGroups, canCreateCourses, canCreateSessions, canManageQuizzes, isOwnerTier } from '@/lib/permissions'
 import Avatar from '@/components/ui/Avatar'
-import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen } from 'lucide-react'
+import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen, FolderOpen, HelpCircle, MessageSquare, BarChart2, UserPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 
-type NavLink = { href: string; label: string; icon: React.ElementType; roles?: UserRole[]; badgeKey?: string }
+type NavLink = { href: string; label: string; icon: React.ElementType; roles?: UserRole[]; badgeKey?: string; permissionCheck?: (perms: string[]) => boolean }
 type NavSection = { section: string; links: NavLink[] }
 
-function getNavLinks(schoolSlug: string | null, role: UserRole | undefined): NavSection[] {
+function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, permissions: string[]): NavSection[] {
   const basePath = schoolSlug
     ? `/${schoolSlug}/${role === 'admin' ? 'admin' : role === 'teacher' ? 'teacher' : 'student'}`
     : '/dashboard'
 
-  return [
-    {
-      section: 'System',
-      links: [
-        { href: `${basePath}/settings`, label: 'Settings', icon: Settings },
-        ...(schoolSlug && role === 'admin' ? [
-          { href: `/${schoolSlug}/admin`, label: 'Admin Panel', icon: ShieldCheck, roles: ['admin'] as UserRole[] },
-        ] : []),
-      ],
-    },
+  const isTeacher = role === 'teacher'
+
+  const sections: NavSection[] = []
+
+  // Teacher/Student dashboard links
+  if (isTeacher || role === 'student') {
+    const dashLinks: NavLink[] = [
+      { href: `${basePath}/dashboard/rooms`, label: 'Rooms', icon: Video },
+      { href: `${basePath}/dashboard/courses`, label: 'Courses', icon: BookOpen, permissionCheck: (p) => role === 'student' || canCreateCourses(p as any) },
+      { href: `${basePath}/dashboard/messages`, label: 'Messages', icon: MessageSquare },
+    ]
+
+    if (isTeacher) {
+      if (canInviteStudents(permissions as any) || canInviteTeachers(permissions as any)) {
+        dashLinks.push({ href: `${basePath}/dashboard/members`, label: 'Members', icon: Users })
+      }
+      if (canCreateGroups(permissions as any)) {
+        dashLinks.push({ href: `${basePath}/dashboard/groups`, label: 'Groups', icon: FolderOpen })
+      }
+      if (canManageQuizzes(permissions as any)) {
+        dashLinks.push({ href: `${basePath}/dashboard/quizzes`, label: 'Quizzes', icon: HelpCircle })
+      }
+      dashLinks.push({ href: `${basePath}/dashboard/analytics`, label: 'Analytics', icon: BarChart2 })
+    }
+
+    sections.push({ section: 'Dashboard', links: dashLinks })
+  }
+
+  // System section
+  const systemLinks: NavLink[] = [
+    { href: `${basePath}/dashboard/settings`, label: 'Settings', icon: Settings },
   ]
+  if (schoolSlug && role === 'admin') {
+    systemLinks.push({ href: `/${schoolSlug}/admin`, label: 'Admin Panel', icon: ShieldCheck, roles: ['admin'] as UserRole[] })
+  }
+  if (isTeacher && isOwnerTier(role, useAppStore.getState().user?.teacherType)) {
+    systemLinks.push({ href: `${basePath}/dashboard/team`, label: 'Team', icon: UserPlus })
+  }
+  sections.push({ section: 'System', links: systemLinks })
+
+  return sections
 }
 
 // ── Offline status helper (DB last_seen for offline users) ──
@@ -319,7 +350,8 @@ export default function Sidebar() {
   const role = user?.role as UserRole | undefined
   const schoolSlug = user?.schoolSlug ?? null
   const isCreator = role === 'teacher' || role === 'admin'
-  const NAV = getNavLinks(schoolSlug, role)
+  const permissions = user?.permissions ?? []
+  const NAV = getNavLinks(schoolSlug, role, permissions)
 
   return (
     <>
@@ -384,7 +416,11 @@ export default function Sidebar() {
         <nav aria-label="System navigation" style={{ padding: '4px 0', borderTop: '1px solid var(--border-subtle)' }}>
           {NAV.map((section) => {
             const visibleLinks = section.links.filter(
-              (link) => !link.roles || (role && link.roles.includes(role))
+              (link) => {
+                if (link.roles && !(role && link.roles.includes(role))) return false
+                if (link.permissionCheck && !link.permissionCheck(permissions)) return false
+                return true
+              }
             )
             if (visibleLinks.length === 0) return null
             return (

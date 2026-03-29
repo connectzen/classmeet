@@ -180,6 +180,9 @@ export default function RegisterSchoolPage() {
         schoolId: json.data.school.id,
         schoolSlug: json.data.school.slug,
         isSuperAdmin: false,
+        teacherType: null,
+        workspaceSlug: null,
+        permissions: [],
       })
 
       // Redirect to school dashboard

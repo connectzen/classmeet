@@ -1,5 +1,16 @@
 export type UserRole = 'super_admin' | 'admin' | 'member' | 'teacher' | 'student' | 'guest'
 
+export type TeacherType = 'independent' | 'school_employed' | 'collaborator'
+
+export type TeacherPermissionKey =
+  | 'invite_students'
+  | 'invite_teachers'
+  | 'create_groups'
+  | 'create_courses'
+  | 'create_sessions'
+  | 'manage_quizzes'
+  | 'manage_settings'
+
 export type School = {
   id: string
   name: string
@@ -42,6 +53,8 @@ export type Profile = {
   referred_by: string | null
   last_seen: string | null
   school_id: string | null
+  teacher_type: TeacherType | null
+  invited_by: string | null
   created_at: string
   updated_at: string
 }
@@ -269,6 +282,28 @@ export type SystemSettings = {
   updated_at: string
 }
 
+export type TeacherWorkspace = {
+  id: string
+  teacher_id: string
+  name: string
+  slug: string
+  logo_url: string | null
+  primary_color: string
+  secondary_color: string
+  welcome_message: string | null
+  email_template_name: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type TeacherPermission = {
+  id: string
+  teacher_id: string
+  granted_by: string
+  permission: TeacherPermissionKey
+  created_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -420,6 +455,24 @@ export type Database = {
         Row: Message
         Insert: Omit<Message, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<Message, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      teacher_workspaces: {
+        Row: TeacherWorkspace
+        Insert: Omit<TeacherWorkspace, 'id' | 'created_at' | 'updated_at' | 'logo_url' | 'primary_color' | 'secondary_color' | 'welcome_message' | 'email_template_name'> & {
+          logo_url?: string | null
+          primary_color?: string
+          secondary_color?: string
+          welcome_message?: string | null
+          email_template_name?: string | null
+        }
+        Update: Partial<Omit<TeacherWorkspace, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      teacher_permissions: {
+        Row: TeacherPermission
+        Insert: Omit<TeacherPermission, 'id' | 'created_at'>
+        Update: Partial<Omit<TeacherPermission, 'id' | 'created_at'>>
         Relationships: []
       }
     }

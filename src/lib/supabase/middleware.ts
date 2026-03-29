@@ -6,6 +6,7 @@ import { resolveUserDestination, roleSegment } from '../routing/user-destination
 // Routes that are known static (never a school slug)
 const STATIC_FIRST_SEGMENTS = new Set([
   'register-school',
+  'setup-workspace',
   'sign-in',
   'sign-up',
   'forgot-password',
@@ -84,10 +85,30 @@ async function getUserSchoolRedirect(
     schoolSlug = school?.slug ?? null
   }
 
+  // Resolve workspace slug for independent/collaborator teachers
+  let workspaceSlug: string | null = null
+  if (profile?.role === 'teacher' && profile?.teacher_type === 'independent') {
+    const { data: ws } = await (supabase as any)
+      .from('teacher_workspaces')
+      .select('slug')
+      .eq('teacher_id', userId)
+      .maybeSingle()
+    workspaceSlug = ws?.slug ?? null
+  } else if (profile?.role === 'teacher' && profile?.teacher_type === 'collaborator' && profile?.invited_by) {
+    const { data: ws } = await (supabase as any)
+      .from('teacher_workspaces')
+      .select('slug')
+      .eq('teacher_id', profile.invited_by)
+      .maybeSingle()
+    workspaceSlug = ws?.slug ?? null
+  }
+
   const dest = resolveUserDestination({
     role: profile?.role,
     school_id: profile?.school_id,
     is_super_admin: isSuperAdmin,
+    teacher_type: profile?.teacher_type,
+    workspace_slug: workspaceSlug,
   }, schoolSlug)
 
   if (requestUrl.pathname === dest || requestUrl.pathname.startsWith(dest + '/')) {
@@ -190,6 +211,19 @@ export async function updateSession(request: NextRequest) {
         }
       }
 
+      // Independent teachers without a workspace go to setup
+      if (profile.role === 'teacher' && profile.teacher_type === 'independent') {
+        const { data: ws } = await (supabase as any)
+          .from('teacher_workspaces')
+          .select('slug')
+          .eq('teacher_id', user.id)
+          .maybeSingle()
+
+        const url = request.nextUrl.clone()
+        url.pathname = ws?.slug ? `/${ws.slug}/teacher` : '/setup-workspace'
+        return NextResponse.redirect(url)
+      }
+
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)
@@ -216,6 +250,31 @@ export async function updateSession(request: NextRequest) {
 
     if (profile?.role === 'admin' && !profile?.school_id) {
       return supabaseResponse
+    }
+
+    return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
+  }
+
+  // Setup workspace is only for independent teachers without a workspace.
+  if (pathname === '/setup-workspace') {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/sign-in'
+      return NextResponse.redirect(url)
+    }
+
+    const { data: profile } = await supabase.from('profiles').select('role, teacher_type').eq('id', user.id).single() as { data: any }
+
+    if (profile?.role === 'teacher' && profile?.teacher_type === 'independent') {
+      const { data: ws } = await (supabase as any)
+        .from('teacher_workspaces')
+        .select('slug')
+        .eq('teacher_id', user.id)
+        .maybeSingle()
+
+      if (!ws) {
+        return supabaseResponse
+      }
     }
 
     return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
@@ -264,11 +323,11 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
-  // School-scoped routes: /{schoolSlug}/...
-  const isSchoolRoute = !STATIC_FIRST_SEGMENTS.has(firstSegment) && firstSegment.length > 0
-  if (isSchoolRoute) {
+  // School-scoped routes: /{slug}/... (resolves both school slugs and teacher workspace slugs)
+  const isSlugRoute = !STATIC_FIRST_SEGMENTS.has(firstSegment) && firstSegment.length > 0
+  if (isSlugRoute) {
     const segments = pathname.split('/')
-    const schoolSlug = segments[1]
+    const slug = segments[1]
     const subPath = segments.slice(2).join('/')
 
     if (subPath === 'sign-in') {
@@ -292,9 +351,9 @@ export async function updateSession(request: NextRequest) {
             .eq('id', profile.school_id)
             .single()
 
-          if (school?.slug === schoolSlug) {
+          if (school?.slug === slug) {
             const url = request.nextUrl.clone()
-            url.pathname = `/${schoolSlug}/${roleSegment(profile.role)}`
+            url.pathname = `/${slug}/${roleSegment(profile.role)}`
             return NextResponse.redirect(url)
           }
         }
@@ -306,13 +365,13 @@ export async function updateSession(request: NextRequest) {
 
     if (!user) {
       const url = request.nextUrl.clone()
-      url.pathname = `/${schoolSlug}/sign-in`
+      url.pathname = `/${slug}/sign-in`
       return NextResponse.redirect(url)
     }
 
     const { data: profile } = await (supabase as any)
       .from('profiles')
-      .select('role, school_id, is_super_admin')
+      .select('role, school_id, is_super_admin, teacher_type, invited_by')
       .eq('id', user.id)
       .single()
 
@@ -322,32 +381,65 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    if (!profile?.school_id) {
-      if (profile?.is_super_admin || profile?.role === 'super_admin') {
-        const url = request.nextUrl.clone()
-        url.pathname = '/superadmin'
-        return NextResponse.redirect(url)
-      }
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
-    }
-
+    // Try resolving as a school slug first
     const { data: school } = await supabase
       .from('schools')
       .select('id, slug')
-      .eq('slug', schoolSlug)
+      .eq('slug', slug)
       .single()
 
-    if (!school || profile.school_id !== school.id) {
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
+    if (school) {
+      // School slug — verify membership
+      if (profile.school_id !== school.id) {
+        return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
+      }
+
+      if (subPath.startsWith('admin') && profile.role !== 'admin') {
+        const url = request.nextUrl.clone()
+        url.pathname = `/${slug}/${roleSegment(profile.role)}`
+        return NextResponse.redirect(url)
+      }
+
+      return supabaseResponse
     }
 
-    if (subPath.startsWith('admin') && profile.role !== 'admin') {
+    // Try resolving as a teacher workspace slug
+    const { data: workspace } = await (supabase as any)
+      .from('teacher_workspaces')
+      .select('id, slug, teacher_id')
+      .eq('slug', slug)
+      .maybeSingle()
+
+    if (workspace) {
+      const isOwner = workspace.teacher_id === user.id
+      const isCollaborator = profile.teacher_type === 'collaborator' && profile.invited_by === workspace.teacher_id
+      // Students linked via teacher_students table
+      let isStudent = false
+      if (profile.role === 'student') {
+        const { data: link } = await (supabase as any)
+          .from('teacher_students')
+          .select('id')
+          .eq('teacher_id', workspace.teacher_id)
+          .eq('student_id', user.id)
+          .maybeSingle()
+        isStudent = !!link
+      }
+
+      if (!isOwner && !isCollaborator && !isStudent) {
+        return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
+      }
+
+      return supabaseResponse
+    }
+
+    // Slug doesn't match any school or workspace
+    if (profile.is_super_admin || profile.role === 'super_admin') {
       const url = request.nextUrl.clone()
-      url.pathname = `/${schoolSlug}/${roleSegment(profile.role)}`
+      url.pathname = '/superadmin'
       return NextResponse.redirect(url)
     }
 
-    return supabaseResponse
+    return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
   }
 
   return supabaseResponse

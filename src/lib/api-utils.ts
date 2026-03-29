@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { User } from '@supabase/supabase-js'
+import type { TeacherPermissionKey } from '@/lib/supabase/types'
 
 export class ApiError extends Error {
   constructor(
@@ -122,4 +123,39 @@ export async function getSuperAdminEmail(supabase: any): Promise<string | null> 
 export async function isSuperAdminByEmail(supabase: any, email: string): Promise<boolean> {
   const superAdminEmail = await getSuperAdminEmail(supabase)
   return superAdminEmail ? email.toLowerCase() === superAdminEmail.toLowerCase() : false
+}
+
+export async function requirePermission(request: Request, permission: TeacherPermissionKey): Promise<{ userId: string; profile: any }> {
+  const user = await requireAuth(request)
+  const supabase = await createClient()
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, teacher_type, school_id')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile) throw new ApiError('Profile not found', 404)
+
+  // Owner-tier users (independent teachers, school admins) have all permissions
+  if (
+    profile.role === 'admin' ||
+    (profile.role === 'teacher' && profile.teacher_type === 'independent')
+  ) {
+    return { userId: user.id, profile }
+  }
+
+  // Check the teacher_permissions table for granted permissions
+  const { data: perm } = await supabase
+    .from('teacher_permissions')
+    .select('id')
+    .eq('teacher_id', user.id)
+    .eq('permission', permission)
+    .maybeSingle()
+
+  if (!perm) {
+    throw new ApiError(`Permission '${permission}' required`, 403)
+  }
+
+  return { userId: user.id, profile }
 }

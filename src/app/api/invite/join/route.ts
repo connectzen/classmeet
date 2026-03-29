@@ -27,15 +27,28 @@ export async function POST(request: Request) {
 
     const admin = createAdminClient()
 
+    // Build profile update payload
+    const profileUpdate: Record<string, any> = {
+      role,
+      onboarding_complete: true,
+      updated_at: new Date().toISOString(),
+    }
+
+    // Set teacher_type and invited_by for teachers joining as collaborators
+    if (role === 'teacher') {
+      profileUpdate.teacher_type = 'collaborator'
+      profileUpdate.invited_by = teacherId
+    }
+
     // Step 1 — set the chosen role on the profile (admin bypasses RLS)
     const { error: profileError } = await admin
       .from('profiles')
-      .update({ role, onboarding_complete: true, updated_at: new Date().toISOString() })
+      .update(profileUpdate)
       .eq('id', user.id)
 
     if (profileError) return apiError(profileError.message, 500)
 
-    // Step 2 — create the teacher↔student connection (admin bypasses RLS)
+    // Step 2 — create the teacher<>student connection (admin bypasses RLS)
     const { error: joinError } = await admin
       .from('teacher_students')
       .upsert(

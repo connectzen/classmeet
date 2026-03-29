@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAppStore } from '@/store/app-store'
-import type { UserRole } from '@/lib/supabase/types'
+import type { UserRole, TeacherType } from '@/lib/supabase/types'
 import Button from '@/components/ui/Button'
-import { Video } from 'lucide-react'
+import { Video, ArrowLeft } from 'lucide-react'
 import { resolveUserDestination } from '@/lib/routing/user-destination'
 
 const ROLES: { value: UserRole; label: string; emoji: string; desc: string }[] = [
@@ -15,11 +15,20 @@ const ROLES: { value: UserRole; label: string; emoji: string; desc: string }[] =
   { value: 'admin', label: 'School Admin', emoji: '🏫', desc: 'I manage a school and its users' },
 ]
 
+const TEACHER_TYPES: { value: TeacherType; label: string; emoji: string; desc: string }[] = [
+  { value: 'independent', label: 'Independent Teacher', emoji: '🚀', desc: 'I manage my own classroom, students, and branding' },
+  { value: 'school_employed', label: 'School Teacher', emoji: '🏫', desc: 'I belong to a school and will be assigned classes' },
+]
+
+type Step = 'role' | 'teacher-type'
+
 export default function OnboardingPage() {
   const router = useRouter()
   const setUser = useAppStore((s) => s.setUser)
 
+  const [step, setStep] = useState<Step>('role')
   const [role, setRole] = useState<UserRole | null>(null)
+  const [teacherType, setTeacherType] = useState<TeacherType | null>(null)
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
   const [checkError, setCheckError] = useState<string | null>(null)
@@ -96,8 +105,18 @@ export default function OnboardingPage() {
     }
   }, [router])
 
+  function handleRoleNext() {
+    if (!role) return
+    if (role === 'teacher') {
+      setStep('teacher-type')
+    } else {
+      handleFinish()
+    }
+  }
+
   async function handleFinish() {
     if (!role) return
+    if (role === 'teacher' && !teacherType) return
     setLoading(true)
     setSubmitError(null)
 
@@ -114,7 +133,7 @@ export default function OnboardingPage() {
       const response = await fetch('/api/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
+        body: JSON.stringify({ role, teacherType: role === 'teacher' ? teacherType : undefined }),
       })
 
       const payload = await response.json()
@@ -132,6 +151,9 @@ export default function OnboardingPage() {
         schoolId: payload.data.schoolId ?? null,
         schoolSlug: null,
         isSuperAdmin: payload.data.isSuperAdmin ?? false,
+        teacherType: payload.data.teacherType ?? null,
+        workspaceSlug: null,
+        permissions: [],
       })
 
       router.replace(payload.data.destination)
@@ -156,7 +178,7 @@ export default function OnboardingPage() {
         <div className="onboard-card animate-slide-up">
           <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</p>
         </div>
-      ) : (
+      ) : step === 'role' ? (
         <div className="onboard-card animate-slide-up">
           {checkError && (
             <p style={{ color: 'var(--error-400)', marginBottom: '12px', fontSize: '0.85rem' }}>{checkError}</p>
@@ -185,8 +207,48 @@ export default function OnboardingPage() {
             ))}
           </div>
           <Button
-            onClick={handleFinish}
+            onClick={handleRoleNext}
             disabled={!role}
+            loading={role !== 'teacher' && loading}
+            style={{ width: '100%', marginTop: '24px' }}
+          >
+            {role === 'teacher' ? 'Next' : 'Get Started'}
+          </Button>
+        </div>
+      ) : (
+        <div className="onboard-card animate-slide-up">
+          {submitError && (
+            <p style={{ color: 'var(--error-400)', marginBottom: '12px', fontSize: '0.85rem' }}>{submitError}</p>
+          )}
+          <button
+            onClick={() => { setStep('role'); setTeacherType(null) }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, marginBottom: '16px', fontSize: '0.85rem' }}
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '8px' }}>How will you teach?</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.9rem' }}>Tell us about your teaching setup.</p>
+          <div style={{ display: 'grid', gap: '12px' }}>
+            {TEACHER_TYPES.map((t) => (
+              <div
+                key={t.value}
+                className={`role-card ${teacherType === t.value ? 'selected' : ''}`}
+                onClick={() => setTeacherType(t.value)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && setTeacherType(t.value)}
+              >
+                <div className="role-card-icon">{t.emoji}</div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{t.label}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>{t.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <Button
+            onClick={handleFinish}
+            disabled={!teacherType}
             loading={loading}
             style={{ width: '100%', marginTop: '24px' }}
           >
@@ -197,4 +259,3 @@ export default function OnboardingPage() {
     </div>
   )
 }
-

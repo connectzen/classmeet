@@ -9,6 +9,10 @@ export interface SchoolContextValue {
   schoolLogo: string | null
   primaryColor: string
   secondaryColor: string
+  /** True when the context represents a teacher workspace, not a school */
+  isTeacherWorkspace?: boolean
+  /** The teacher who owns this workspace (set when isTeacherWorkspace is true) */
+  workspaceOwnerId?: string
 }
 
 const SchoolContext = createContext<SchoolContextValue | null>(null)

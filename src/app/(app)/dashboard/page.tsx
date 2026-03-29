@@ -16,9 +16,11 @@ import {
 import { useToast } from '@/hooks/useToast'
 import { isCreatorRole } from '@/lib/utils'
 import { useCountdown } from '@/hooks/useCountdown'
+import { canInviteStudents, canInviteTeachers, canCreateCourses, canCreateSessions, canManageQuizzes } from '@/lib/permissions'
+import type { TeacherPermissionKey } from '@/lib/supabase/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Action { label: string; desc: string; icon: React.ElementType; color: string; href?: string; comingSoon?: boolean; statKey?: string }
+interface Action { label: string; desc: string; icon: React.ElementType; color: string; href?: string; comingSoon?: boolean; statKey?: string; permissionCheck?: (perms: TeacherPermissionKey[]) => boolean }
 interface StudentSession { id: string; title: string; status: 'live' | 'scheduled' | 'ended'; room_name: string; teacher_id: string; scheduled_at: string | null; started_at: string | null; teacher_name?: string }
 
 // ─── Dashboard Session Card ───────────────────────────────────────────────────
@@ -133,9 +135,9 @@ function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin:
 
 // ─── Quick actions per role ───────────────────────────────────────────────────
 const TEACHER_ACTIONS: Action[] = [
-  { label: 'Start Live Room',  desc: 'Host a video session',  icon: Video,    color: 'var(--primary-500)', href: '/dashboard/rooms',   statKey: 'sessionCount' },
-  { label: 'Create Course',    desc: 'Build course content',   icon: BookOpen,     color: 'var(--accent-500)',   href: '/dashboard/courses', statKey: 'courseCount'   },
-  { label: 'Invite Members',   desc: 'Manage your students',       icon: Users,        color: 'var(--success-400)',  href: '/dashboard/members',   statKey: 'studentCount'   },
+  { label: 'Start Live Room',  desc: 'Host a video session',  icon: Video,    color: 'var(--primary-500)', href: '/dashboard/rooms',   statKey: 'sessionCount', permissionCheck: (p) => canCreateSessions(p) },
+  { label: 'Create Course',    desc: 'Build course content',   icon: BookOpen,     color: 'var(--accent-500)',   href: '/dashboard/courses', statKey: 'courseCount', permissionCheck: (p) => canCreateCourses(p)   },
+  { label: 'Invite Members',   desc: 'Manage your students',       icon: Users,        color: 'var(--success-400)',  href: '/dashboard/members',   statKey: 'studentCount', permissionCheck: (p) => canInviteStudents(p) || canInviteTeachers(p) },
   { label: 'Messages',         desc: 'Chat with students',   icon: MessageSquare,color: 'var(--warning-400)',  href: '/dashboard/messages'  },
 ]
 
@@ -383,7 +385,9 @@ export default function DashboardPage() {
     }
   }, [user?.id])
 
-  const actions = creator ? TEACHER_ACTIONS : STUDENT_ACTIONS
+  const userPerms = (user?.permissions ?? []) as TeacherPermissionKey[]
+  const allActions = creator ? TEACHER_ACTIONS : STUDENT_ACTIONS
+  const actions = allActions.filter(a => !a.permissionCheck || a.permissionCheck(userPerms))
 
   const greeting = useMemo(() => {
     const h = new Date().getHours()

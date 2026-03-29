@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { UserRole } from '@/lib/supabase/types'
+import type { UserRole, TeacherType } from '@/lib/supabase/types'
 
 
 interface AppUser {
@@ -13,6 +13,9 @@ interface AppUser {
   schoolId: string | null
   schoolSlug: string | null
   isSuperAdmin: boolean
+  teacherType: TeacherType | null
+  workspaceSlug: string | null
+  permissions: string[]
 }
 
 interface AppState {

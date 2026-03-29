@@ -6,6 +6,8 @@ import TopBar from '@/components/layout/TopBar'
 import AppStoreHydrator from '@/components/layout/AppStoreHydrator'
 import { SchoolHydrator } from '@/components/layout/SchoolHydrator'
 import { roleSegment } from '@/lib/routing/user-destination'
+import { resolveEffectivePermissions } from '@/lib/permissions'
+import type { TeacherType, TeacherPermissionKey } from '@/lib/supabase/types'
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
@@ -61,6 +63,28 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     schoolSlug = school?.slug ?? null
   }
 
+  // Load workspace slug for independent teachers
+  let workspaceSlug: string | null = null
+  if (profile?.role === 'teacher' && profile?.teacher_type === 'independent') {
+    const { data: workspace } = await supabase
+      .from('teacher_workspaces')
+      .select('slug')
+      .eq('teacher_id', user.id)
+      .single()
+    workspaceSlug = workspace?.slug ?? null
+  }
+
+  // Load granted permissions for teachers
+  let grantedPermissions: TeacherPermissionKey[] = []
+  if (profile?.role === 'teacher') {
+    const { data: perms } = await (supabase as any)
+      .from('teacher_permissions')
+      .select('permission')
+      .eq('teacher_id', user.id)
+    grantedPermissions = (perms ?? []).map((p: any) => p.permission)
+  }
+  const permissions = resolveEffectivePermissions(profile?.role, profile?.teacher_type, grantedPermissions)
+
   const appUser = {
     id: user.id,
     email: user.email ?? '',
@@ -71,6 +95,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     schoolId: profile?.school_id ?? null,
     schoolSlug,
     isSuperAdmin: profile?.is_super_admin ?? false,
+    teacherType: (profile?.teacher_type as TeacherType | null) ?? null,
+    workspaceSlug,
+    permissions,
   }
 
   const schoolContext = {

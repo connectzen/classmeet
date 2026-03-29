@@ -4,6 +4,8 @@ export interface RedirectProfile {
   role?: RedirectRole
   school_id?: string | null
   is_super_admin?: boolean | null
+  teacher_type?: string | null
+  workspace_slug?: string | null
 }
 
 export function roleSegment(role: RedirectRole): 'admin' | 'teacher' | 'student' {
@@ -26,6 +28,24 @@ export function resolveUserDestination(profile: RedirectProfile | null, schoolSl
 
   if (profile.role === 'admin' && !profile.school_id) {
     return '/register-school'
+  }
+
+  // Independent teachers with a workspace go to their workspace slug
+  if (profile.role === 'teacher' && profile.teacher_type === 'independent') {
+    if (profile.workspace_slug) {
+      return `/${profile.workspace_slug}/teacher`
+    }
+    // No workspace yet — send to setup
+    return '/setup-workspace'
+  }
+
+  // Collaborator teachers go to the inviting teacher's workspace
+  if (profile.role === 'teacher' && profile.teacher_type === 'collaborator') {
+    if (profile.workspace_slug) {
+      return `/${profile.workspace_slug}/teacher`
+    }
+    // Fallback to generic dashboard if workspace not resolved
+    return '/dashboard'
   }
 
   if (profile.school_id && schoolSlug) {

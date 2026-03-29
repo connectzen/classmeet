@@ -1,25 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { apiResponse, apiError } from '@/lib/api-utils'
+import { apiResponse, apiError, requirePermission } from '@/lib/api-utils'
 
 export async function POST(request: Request) {
   try {
-    // Verify caller is a teacher or admin
+    const { userId, profile } = await requirePermission(request, 'invite_students')
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return apiError('Unauthorized', 401)
 
-    const { data: profile } = await supabase
+    // Fetch full name for invite email
+    const { data: fullProfile } = await supabase
       .from('profiles')
-      .select('role, full_name')
-      .eq('id', user.id)
+      .select('full_name')
+      .eq('id', userId)
       .single()
-
-    const canSendInvites = profile?.role === 'teacher' || profile?.role === 'admin'
-
-    if (!canSendInvites) {
-      return apiError('Only teachers can send invites', 403)
-    }
 
     const body = await request.json()
     const { email, teacherId } = body
@@ -36,7 +29,7 @@ export async function POST(request: Request) {
     // Invite user — creates account if new, sends magic link if existing
     const { error } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
-      data: { invited_by: teacherId, invited_by_name: profile.full_name || 'A teacher', needs_password_setup: true },
+      data: { invited_by: teacherId, invited_by_name: fullProfile?.full_name || 'A teacher', needs_password_setup: true },
     })
 
     if (error) {

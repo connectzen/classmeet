@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
-import { apiResponse, apiError, requireAuth } from '@/lib/api-utils'
+import { apiResponse, apiError, requireAuth, requirePermission } from '@/lib/api-utils'
 
 export async function POST(request: Request) {
   try {
-    const user = await requireAuth(request)
+    const { userId } = await requirePermission(request, 'manage_quizzes')
     const body = await request.json()
     const supabase = await createClient()
 
@@ -13,21 +13,13 @@ export async function POST(request: Request) {
       return apiError('title is required', 400)
     }
 
-    // Get user's school context
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('school_id')
-      .eq('id', user.id)
-      .single()
-
     const { data, error } = await supabase
       .from('quizzes')
       .insert({
-        teacher_id: user.id,
+        teacher_id: userId,
         title,
         description: description || null,
         pass_threshold: pass_threshold ?? 70,
-        school_id: profile?.school_id || null,
       })
       .select()
       .single()
@@ -41,23 +33,11 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const user = await requireAuth(request)
+    await requireAuth(request)
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
 
-    // Get user's school context
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('school_id')
-      .eq('id', user.id)
-      .single()
-
     let query = supabase.from('quizzes').select('*')
-
-    // Filter by school_id if user has one
-    if (profile?.school_id) {
-      query = query.eq('school_id', profile.school_id)
-    }
 
     if (searchParams.has('teacher_id')) {
       query = query.eq('teacher_id', searchParams.get('teacher_id')!)

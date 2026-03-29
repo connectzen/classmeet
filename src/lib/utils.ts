@@ -67,3 +67,11 @@ export function canAccessAdmin(role: UserRole | null | undefined): boolean {
   return role === 'admin' || role === 'super_admin'
 }
 
+export function isIndependentTeacher(role: UserRole | null | undefined, teacherType: string | null | undefined): boolean {
+  return role === 'teacher' && teacherType === 'independent'
+}
+
+export function isOwnerTier(role: UserRole | null | undefined, teacherType: string | null | undefined): boolean {
+  return role === 'admin' || (role === 'teacher' && teacherType === 'independent')
+}
+
