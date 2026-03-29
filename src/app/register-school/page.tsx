@@ -30,17 +30,26 @@ export default function RegisterSchoolPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [authUser, setAuthUser] = useState<any>(null)
+  const [checkingAuth, setCheckingAuth] = useState(true)
 
   // Get current authenticated user
   useEffect(() => {
+    let mounted = true
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    const resolveUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!mounted) return
+
       if (!user) {
-        router.push('/sign-in')
+        setCheckingAuth(false)
+        setError('We could not verify your session. Please refresh this page.')
         return
       }
+
       setAuthUser(user)
-      // Pre-fill from user metadata if available
+      setCheckingAuth(false)
+
       if (user.user_metadata?.full_name) {
         const name = user.user_metadata.full_name
         const generated = name
@@ -51,7 +60,13 @@ export default function RegisterSchoolPage() {
           .replace(/^-|-$/g, '')
         setSchoolSlug(generated)
       }
-    })
+    }
+
+    resolveUser()
+
+    return () => {
+      mounted = false
+    }
   }, [router])
 
   // Auto-generate slug from school name
@@ -141,12 +156,18 @@ export default function RegisterSchoolPage() {
       }
 
       // Update user profile with school info and admin role
-      await supabase.from('profiles').update({
+      const { error: profileError } = await supabase.from('profiles').update({
         role: 'admin',
         school_id: json.data.school.id,
         onboarding_complete: true,
         updated_at: new Date().toISOString(),
       }).eq('id', authUser.id)
+
+      if (profileError) {
+        setError(profileError.message)
+        setLoading(false)
+        return
+      }
 
       // Update app store
       setUser({
@@ -169,11 +190,11 @@ export default function RegisterSchoolPage() {
     }
   }
 
-  if (!authUser) {
+  if (checkingAuth || !authUser) {
     return (
       <AuthCard title="Loading..." subtitle="">
         <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-          Preparing school registration...
+          {error ? error : 'Preparing school registration...'}
         </div>
       </AuthCard>
     )

@@ -35,7 +35,7 @@ export type Profile = {
   id: string
   full_name: string | null
   avatar_url: string | null
-  role: UserRole
+  role: UserRole | null
   goals: string[]
   subjects: string[]
   onboarding_complete: boolean

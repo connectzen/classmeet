@@ -23,6 +23,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
   const [checkError, setCheckError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   // Check if user is already onboarded, if so redirect them
   useEffect(() => {
@@ -98,71 +99,47 @@ export default function OnboardingPage() {
   async function handleFinish() {
     if (!role) return
     setLoading(true)
+    setSubmitError(null)
+
     const supabase = createClient()
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) {
       setLoading(false)
+      setSubmitError('Your session expired. Please sign in again.')
       router.replace('/sign-in')
       return
     }
-
-    // Check if user is the designated super admin
-    let finalRole = role
-    let isSuperAdmin = false
 
     try {
-      const { data: settings } = await (supabase as any)
-        .from('system_settings')
-        .select('setting_value')
-        .eq('setting_key', 'super_admin_email')
-        .single()
+      const response = await fetch('/api/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      })
 
-      const superAdminEmail = settings?.setting_value?.email
-      if (superAdminEmail && authUser.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
-        finalRole = 'super_admin'
-        isSuperAdmin = true
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Could not save your role.')
       }
-    } catch {
-      // If settings lookup fails, just use the selected role
-    }
 
-    // Save profile for ALL roles (including admin) before redirecting
-    const { error: upsertError } = await supabase.from('profiles').upsert({
-      id: authUser.id,
-      role: finalRole,
-      is_super_admin: isSuperAdmin,
-      goals: [],
-      subjects: [],
-      onboarding_complete: true,
-      updated_at: new Date().toISOString(),
-    })
+      setUser({
+        id: authUser.id,
+        email: authUser.email ?? '',
+        fullName: authUser.user_metadata?.full_name ?? '',
+        avatarUrl: null,
+        role: payload.data.role,
+        onboardingComplete: true,
+        schoolId: payload.data.schoolId ?? null,
+        schoolSlug: null,
+        isSuperAdmin: payload.data.isSuperAdmin ?? false,
+      })
 
-    if (upsertError) {
+      router.replace(payload.data.destination)
+      router.refresh()
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Could not save your role.')
       setLoading(false)
-      router.replace('/sign-in')
-      return
     }
-
-    setUser({
-      id: authUser.id,
-      email: authUser.email ?? '',
-      fullName: authUser.user_metadata?.full_name ?? '',
-      avatarUrl: null,
-      role: finalRole,
-      onboardingComplete: true,
-      schoolId: null,
-      schoolSlug: null,
-      isSuperAdmin,
-    })
-
-    // Route based on role
-    const destination = resolveUserDestination({
-      role: finalRole,
-      school_id: null,
-      is_super_admin: isSuperAdmin,
-    }, null)
-
-    router.replace(destination)
   }
 
   return (
@@ -183,6 +160,9 @@ export default function OnboardingPage() {
         <div className="onboard-card animate-slide-up">
           {checkError && (
             <p style={{ color: 'var(--error-400)', marginBottom: '12px', fontSize: '0.85rem' }}>{checkError}</p>
+          )}
+          {submitError && (
+            <p style={{ color: 'var(--error-400)', marginBottom: '12px', fontSize: '0.85rem' }}>{submitError}</p>
           )}
           <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '8px' }}>Who are you?</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.9rem' }}>Choose your role to get started.</p>
