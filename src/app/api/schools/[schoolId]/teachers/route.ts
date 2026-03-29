@@ -110,7 +110,10 @@ export async function POST(
     } else {
       userId = inviteData.user.id
       // Set the password and confirm email so they can log in immediately
-      await admin.auth.admin.updateUserById(userId, { password: finalPassword, email_confirm: true })
+      const { error: updateError } = await admin.auth.admin.updateUserById(userId, { password: finalPassword, email_confirm: true })
+      if (updateError) {
+        throw new ApiError(`Failed to set teacher password: ${updateError.message}`, 500)
+      }
     }
 
     // Upsert profile with teacher role
