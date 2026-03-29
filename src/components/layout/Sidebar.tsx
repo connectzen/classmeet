@@ -56,12 +56,7 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
   const systemLinks: NavLink[] = [
     { href: `${basePath}/dashboard/settings`, label: 'Settings', icon: Settings },
   ]
-  if (schoolSlug && role === 'admin') {
-    // Admin gets Dashboard as first nav item
-    sections.unshift({ section: '', links: [
-      { href: `/${schoolSlug}/admin`, label: 'Dashboard', icon: LayoutDashboard },
-    ] })
-  }
+
   if (isTeacher && canManageBranding(role, useAppStore.getState().user?.teacherType)) {
     systemLinks.push({ href: `${basePath}/dashboard/settings/branding`, label: 'Branding', icon: Palette })
   }
@@ -322,9 +317,16 @@ function AdminOverview() {
     )
   }
 
+  const dashboardHref = `/${slug}/admin`
+  const isDashboardActive = pathname === dashboardHref
+
   return (
     <>
       <div style={{ padding: '4px 0' }}>
+        <Link href={dashboardHref} className={cn('sidebar-link', isDashboardActive && 'active')}>
+          <LayoutDashboard size={17} className="link-icon" />
+          Dashboard
+        </Link>
         {adminLink(`/${slug}/admin/teachers`, <GraduationCap size={17} className="link-icon" />, 'Teachers', counts.teachers)}
         {adminLink(`/${slug}/admin/students`, <Users size={17} className="link-icon" />, 'Students', counts.students)}
         {adminLink(`/${slug}/admin/classes`, <BookOpen size={17} className="link-icon" />, 'Classes', counts.classes)}
