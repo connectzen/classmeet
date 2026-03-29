@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/layout/Sidebar'
 import TopBar from '@/components/layout/TopBar'
 import AppStoreHydrator from '@/components/layout/AppStoreHydrator'
+import { SchoolHydrator } from '@/components/layout/SchoolHydrator'
 import { roleSegment } from '@/lib/routing/user-destination'
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -72,17 +73,28 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     isSuperAdmin: profile?.is_super_admin ?? false,
   }
 
+  const schoolContext = {
+    schoolId: profile?.school_id ?? '',
+    schoolSlug: schoolSlug ?? '',
+    schoolName: 'ClassMeet',
+    schoolLogo: null,
+    primaryColor: '#6366f1',
+    secondaryColor: '#818cf8',
+  }
+
   return (
     <AppStoreHydrator user={appUser}>
-      <div className="app-layout">
-        <Sidebar />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <TopBar />
-          <main className="main-content">
-            {children}
-          </main>
+      <SchoolHydrator value={schoolContext}>
+        <div className="app-layout">
+          <Sidebar />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <TopBar />
+            <main className="main-content">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+      </SchoolHydrator>
     </AppStoreHydrator>
   )
 }
