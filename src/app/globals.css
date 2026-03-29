@@ -872,6 +872,27 @@ select option {
 .sidebar-link.active .link-icon { opacity: 1; }
 .sidebar-link:hover .link-icon { opacity: 0.9; }
 
+.sidebar-badge {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgba(99,102,241,0.15);
+  color: var(--primary-300);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.sidebar-link.active .sidebar-badge {
+  background: rgba(99,102,241,0.25);
+  color: var(--primary-200);
+}
+
 .sidebar-footer {
   padding: var(--space-4) var(--space-3);
   border-top: 1px solid var(--border-subtle);

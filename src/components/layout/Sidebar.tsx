@@ -10,8 +10,9 @@ import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
 import { canInviteMembers, canCreateGroups, canCreateCourses, canCreateSessions, canManageQuizzes, canManageBranding, isOwnerTier } from '@/lib/permissions'
 import Avatar from '@/components/ui/Avatar'
-import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen, FolderOpen, HelpCircle, MessageSquare, BarChart2, UserPlus, Palette } from 'lucide-react'
+import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen, FolderOpen, HelpCircle, MessageSquare, BarChart2, UserPlus, Palette, LayoutDashboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useUnreadMessageCount } from '@/hooks/useUnreadMessageCount'
 import Image from 'next/image'
 
 type NavLink = { href: string; label: string; icon: React.ElementType; roles?: UserRole[]; badgeKey?: string; permissionCheck?: (perms: string[]) => boolean }
@@ -29,20 +30,21 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
   // Teacher/Student dashboard links
   if (isTeacher || role === 'student') {
     const dashLinks: NavLink[] = [
-      { href: `${basePath}/dashboard/rooms`, label: 'Live Rooms', icon: Video, permissionCheck: (p) => role === 'student' || canCreateSessions(p as any) },
-      { href: `${basePath}/dashboard/courses`, label: 'Courses', icon: BookOpen, permissionCheck: (p) => role === 'student' || canCreateCourses(p as any) },
-      { href: `${basePath}/dashboard/messages`, label: 'Messages', icon: MessageSquare },
+      { href: `${basePath}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
+      { href: `${basePath}/dashboard/rooms`, label: 'Live Rooms', icon: Video, badgeKey: 'rooms', permissionCheck: (p) => role === 'student' || canCreateSessions(p as any) },
+      { href: `${basePath}/dashboard/courses`, label: 'Courses', icon: BookOpen, badgeKey: 'courses', permissionCheck: (p) => role === 'student' || canCreateCourses(p as any) },
+      { href: `${basePath}/dashboard/messages`, label: 'Messages', icon: MessageSquare, badgeKey: 'messages' },
     ]
 
     if (isTeacher) {
       if (canInviteMembers(permissions as any)) {
-        dashLinks.push({ href: `${basePath}/dashboard/members`, label: 'Members', icon: Users })
+        dashLinks.push({ href: `${basePath}/dashboard/members`, label: 'Members', icon: Users, badgeKey: 'members' })
       }
       if (canCreateGroups(permissions as any)) {
-        dashLinks.push({ href: `${basePath}/dashboard/groups`, label: 'Groups', icon: FolderOpen })
+        dashLinks.push({ href: `${basePath}/dashboard/groups`, label: 'Groups', icon: FolderOpen, badgeKey: 'groups' })
       }
       if (canManageQuizzes(permissions as any)) {
-        dashLinks.push({ href: `${basePath}/dashboard/quizzes`, label: 'Quizzes', icon: HelpCircle })
+        dashLinks.push({ href: `${basePath}/dashboard/quizzes`, label: 'Quizzes', icon: HelpCircle, badgeKey: 'quizzes' })
       }
       dashLinks.push({ href: `${basePath}/dashboard/analytics`, label: 'Analytics', icon: BarChart2 })
     }
@@ -55,6 +57,10 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
     { href: `${basePath}/dashboard/settings`, label: 'Settings', icon: Settings },
   ]
   if (schoolSlug && role === 'admin') {
+    // Admin also gets a Dashboard link + Admin Panel
+    sections.unshift({ section: 'Dashboard', links: [
+      { href: `/${schoolSlug}/admin`, label: 'Dashboard', icon: LayoutDashboard },
+    ] })
     systemLinks.push({ href: `/${schoolSlug}/admin`, label: 'Admin Panel', icon: ShieldCheck, roles: ['admin'] as UserRole[] })
   }
   if (isTeacher && canManageBranding(role, useAppStore.getState().user?.teacherType)) {
@@ -346,6 +352,65 @@ function AdminOverview() {
   )
 }
 
+// ── Sidebar nav counts ────────────────────────────────────────────────────────
+function useSidebarCounts(userId: string | undefined, role: UserRole | undefined) {
+  const [counts, setCounts] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (!userId || !role) return
+    const supabase = createClient()
+
+    const load = async () => {
+      try {
+        if (role === 'teacher') {
+          const [rooms, courses, quizzes, members, groups] = await Promise.all([
+            supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('teacher_id', userId),
+            supabase.from('courses').select('id', { count: 'exact', head: true }).eq('teacher_id', userId),
+            supabase.from('quizzes').select('id', { count: 'exact', head: true }).eq('teacher_id', userId),
+            supabase.from('teacher_students').select('id', { count: 'exact', head: true }).eq('teacher_id', userId),
+            supabase.from('groups').select('id', { count: 'exact', head: true }).eq('teacher_id', userId),
+          ])
+          setCounts({
+            rooms: rooms.count ?? 0,
+            courses: courses.count ?? 0,
+            quizzes: quizzes.count ?? 0,
+            members: members.count ?? 0,
+            groups: groups.count ?? 0,
+          })
+        } else if (role === 'student') {
+          const [sessions, courses] = await Promise.all([
+            supabase.from('session_targets').select('session_id', { count: 'exact', head: true }).eq('target_type', 'student').eq('target_id', userId),
+            supabase.from('course_targets').select('course_id', { count: 'exact', head: true }).eq('target_type', 'student').eq('target_id', userId),
+          ])
+          setCounts({
+            rooms: sessions.count ?? 0,
+            courses: courses.count ?? 0,
+          })
+        }
+      } catch {
+        // Silently fail for sidebar counts
+      }
+    }
+
+    load()
+
+    // Refresh counts on relevant table changes
+    const tables = role === 'teacher'
+      ? ['sessions', 'courses', 'quizzes', 'teacher_students', 'groups']
+      : ['session_targets', 'course_targets']
+    const channel = supabase
+      .channel('sidebar-nav-counts')
+    for (const table of tables) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => load())
+    }
+    channel.subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [userId, role])
+
+  return counts
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen, user } = useAppStore()
@@ -355,6 +420,8 @@ export default function Sidebar() {
   const isCreator = role === 'teacher' || role === 'admin'
   const permissions = user?.permissions ?? []
   const NAV = getNavLinks(schoolSlug, role, permissions)
+  const navCounts = useSidebarCounts(user?.id, role)
+  const unreadCount = useUnreadMessageCount(user?.id)
 
   return (
     <>
@@ -431,7 +498,11 @@ export default function Sidebar() {
                 <div className="sidebar-section-label">{section.section}</div>
                 {visibleLinks.map((link) => {
                   const Icon = link.icon
-                  const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+                  const isDashboardLink = link.label === 'Dashboard'
+                  const isActive = isDashboardLink
+                    ? pathname === link.href
+                    : pathname === link.href || pathname.startsWith(link.href + '/')
+                  const count = link.badgeKey === 'messages' ? unreadCount : (link.badgeKey ? navCounts[link.badgeKey] : undefined)
                   return (
                     <Link
                       key={link.href}
@@ -441,6 +512,9 @@ export default function Sidebar() {
                     >
                       <Icon size={17} className="link-icon" />
                       {link.label}
+                      {count !== undefined && count > 0 && (
+                        <span className="sidebar-badge">{count}</span>
+                      )}
                     </Link>
                   )
                 })}
