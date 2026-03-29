@@ -109,8 +109,8 @@ export async function POST(
       }
     } else {
       userId = inviteData.user.id
-      // Set the password on the invited user so they can log in immediately
-      await admin.auth.admin.updateUserById(userId, { password: finalPassword })
+      // Set the password and confirm email so they can log in immediately
+      await admin.auth.admin.updateUserById(userId, { password: finalPassword, email_confirm: true })
     }
 
     // Upsert profile with student role
