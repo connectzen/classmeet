@@ -309,43 +309,25 @@ function AdminOverview() {
   }, [school?.schoolId])
 
   const slug = school?.schoolSlug
+  const pathname = usePathname()
 
-  const statLink = (href: string, icon: React.ReactNode, label: string, value: number, color: string) => (
-    <Link
-      href={href}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px',
-        textDecoration: 'none', borderRadius: 'var(--radius-sm)',
-        transition: 'background 0.2s ease, transform 0.2s ease',
-      }}
-      onMouseOver={(e) => {
-        const el = e.currentTarget as HTMLElement
-        el.style.background = 'var(--bg-hover)'
-        el.style.transform = 'scale(1.03)'
-      }}
-      onMouseOut={(e) => {
-        const el = e.currentTarget as HTMLElement
-        el.style.background = 'transparent'
-        el.style.transform = 'scale(1)'
-      }}
-    >
-      <div style={{ width: 28, height: 28, borderRadius: '6px', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
+  const adminLink = (href: string, icon: React.ReactNode, label: string, count: number) => {
+    const isActive = pathname === href || pathname.startsWith(href + '/')
+    return (
+      <Link href={href} className={cn('sidebar-link', isActive && 'active')}>
         {icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500 }}>{label}</div>
-      </div>
-      <div style={{ fontSize: '0.85rem', fontWeight: 700, color }}>{value}</div>
-    </Link>
-  )
+        {label}
+        {count > 0 && <span className="sidebar-badge">{count}</span>}
+      </Link>
+    )
+  }
 
   return (
     <>
-      <div className="sidebar-section">
-        <div className="sidebar-section-label">Overview</div>
-        {statLink(`/${slug}/admin/teachers`, <GraduationCap size={14} />, 'Teachers', counts.teachers, '#3b82f6')}
-        {statLink(`/${slug}/admin/students`, <Users size={14} />, 'Students', counts.students, '#22c55e')}
-        {statLink(`/${slug}/admin/classes`, <BookOpen size={14} />, 'Classes', counts.classes, '#a855f7')}
+      <div style={{ padding: '4px 0' }}>
+        {adminLink(`/${slug}/admin/teachers`, <GraduationCap size={17} className="link-icon" />, 'Teachers', counts.teachers)}
+        {adminLink(`/${slug}/admin/students`, <Users size={17} className="link-icon" />, 'Students', counts.students)}
+        {adminLink(`/${slug}/admin/classes`, <BookOpen size={17} className="link-icon" />, 'Classes', counts.classes)}
       </div>
     </>
   )
