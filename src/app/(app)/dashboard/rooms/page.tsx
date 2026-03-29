@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import { Video, Plus, LogIn, Users, Clock, X, Wifi, WifiOff, CalendarClock, Check, Search, FolderOpen, Trash2, StopCircle, Pencil, BookOpen, HelpCircle } from 'lucide-react'
+import PermissionGate from '@/components/layout/PermissionGate'
 import { useToast } from '@/hooks/useToast'
 import { useCountdown } from '@/hooks/useCountdown'
 
@@ -727,7 +728,7 @@ function SessionCard({ session, isOwner, onEnter, onGoLive, onEnd, onDelete, onE
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function RoomsPage() {
+function RoomsPageInner() {
   const router = useRouter()
   const user   = useAppStore(s => s.user)
   const { toast, show: showToast } = useToast()
@@ -1040,6 +1041,14 @@ export default function RoomsPage() {
       {/* Toast */}
       {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
     </div>
+  )
+}
+
+export default function RoomsPage() {
+  return (
+    <PermissionGate permission="create_sessions">
+      <RoomsPageInner />
+    </PermissionGate>
   )
 }
 

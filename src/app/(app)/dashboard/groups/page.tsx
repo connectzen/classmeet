@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import { FolderOpen, Plus, X, Trash2, Pencil, Users, Search, Check } from 'lucide-react'
+import PermissionGate from '@/components/layout/PermissionGate'
 import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ function GroupCard({ group, onEdit, onDelete }: {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function GroupsPage() {
+function GroupsPageInner() {
   const user = useAppStore(s => s.user)
   const { toast, show: showToast } = useToast()
   const [groups, setGroups] = useState<GroupRow[]>([])
@@ -348,8 +349,15 @@ export default function GroupsPage() {
         />
       )}
 
-      {/* Toast */}
       {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
     </div>
+  )
+}
+
+export default function GroupsPage() {
+  return (
+    <PermissionGate permission="create_groups">
+      <GroupsPageInner />
+    </PermissionGate>
   )
 }

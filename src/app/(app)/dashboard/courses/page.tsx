@@ -12,6 +12,7 @@ import {
   ChevronDown, ChevronRight, Trash2, FileText,
   Video, Save, ArrowLeft, Eye, EyeOff, FolderOpen, Check,
 } from 'lucide-react'
+import PermissionGate from '@/components/layout/PermissionGate'
 import {
   DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -295,7 +296,7 @@ function CourseCard({ course, onClick, onDelete, readOnly }: { course: CourseLoc
 }
 
 // ── Main Page ───────────────────────────────────────────────────────────────
-export default function CoursesPage() {
+function CoursesPageInner() {
   const user = useAppStore(s => s.user)
   const { toast, show: showToast } = useToast()
   const [courses, setCourses] = useState<CourseLocal[]>([])
@@ -966,5 +967,13 @@ export default function CoursesPage() {
 
       {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
     </div>
+  )
+}
+
+export default function CoursesPage() {
+  return (
+    <PermissionGate permission="create_courses">
+      <CoursesPageInner />
+    </PermissionGate>
   )
 }

@@ -9,6 +9,7 @@ import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import type { UserRole } from '@/lib/supabase/types'
 import { UserPlus, Users, Search, X, Mail, Copy, Check, Filter, Calendar, UserMinus } from 'lucide-react'
+import PermissionGate from '@/components/layout/PermissionGate'
 import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function MembersPage() {
+function MembersPageInner() {
   const user = useAppStore(s => s.user)
   const { toast, show: showToast } = useToast()
   const [showInvite, setShowInvite] = useState(false)
@@ -317,6 +318,14 @@ export default function MembersPage() {
       {/* Toast */}
       {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
     </div>
+  )
+}
+
+export default function MembersPage() {
+  return (
+    <PermissionGate permission={['invite_students', 'invite_teachers']}>
+      <MembersPageInner />
+    </PermissionGate>
   )
 }
 

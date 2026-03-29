@@ -11,6 +11,7 @@ import {
   ChevronDown, ChevronRight, Check, X, Type, ToggleLeft, PenLine, FileText,
   Users, Search, FolderOpen, Star,
 } from 'lucide-react'
+import PermissionGate from '@/components/layout/PermissionGate'
 import {
   DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -352,7 +353,7 @@ function QuizCard({ quiz, onClick, onDelete, readOnly }: { quiz: QuizLocal; onCl
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function QuizzesPage() {
+function QuizzesPageInner() {
   const user = useAppStore(s => s.user)
   const { toast, show: showToast } = useToast()
   const [quizzes, setQuizzes] = useState<QuizLocal[]>([])
@@ -951,8 +952,15 @@ export default function QuizzesPage() {
         </div>
       )}
 
-      {/* Toast */}
       {toast && <div className="toast toast-success" role="status" aria-live="polite">{toast}</div>}
     </div>
+  )
+}
+
+export default function QuizzesPage() {
+  return (
+    <PermissionGate permission="manage_quizzes">
+      <QuizzesPageInner />
+    </PermissionGate>
   )
 }
