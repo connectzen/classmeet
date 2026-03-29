@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Users, Activity, TrendingUp, ArrowRight, Plus, Shield } from 'lucide-react'
+import { Building2, Users, Activity, TrendingUp, ArrowRight, Plus, Shield, Clock } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
+import { createClient } from '@/lib/supabase/client'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -15,7 +16,20 @@ interface Stats {
   recentAuditCount: number
 }
 
-async function fetchDashboardData(): Promise<Stats> {
+interface AuditLog {
+  id: string
+  action: string
+  details: any
+  created_at: string
+  admin_id: string
+}
+
+interface DashboardData {
+  stats: Stats
+  recentAudits: AuditLog[]
+}
+
+async function fetchDashboardData(): Promise<DashboardData> {
   const res = await fetch('/api/superadmin/dashboard-data')
   if (!res.ok) throw new Error('Failed to fetch dashboard data')
   const { data } = await res.json()
@@ -57,20 +71,53 @@ function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType
   )
 }
 
+function formatTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+function formatAuditAction(action: string): string {
+  return action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 export default function SuperAdminDashboard() {
   const router = useRouter()
   const user = useAppStore((s) => s.user)
   const [stats, setStats] = useState<Stats | null>(null)
+  const [recentAudits, setRecentAudits] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const loadDashboard = useCallback(() => {
     fetchDashboardData()
-      .then(setStats)
+      .then((data) => {
+        setStats(data.stats)
+        setRecentAudits(data.recentAudits || [])
+      })
       .catch(() => {
         setStats({ totalSchools: 0, totalUsers: 0, totalProfiles: 0, recentAuditCount: 0 })
       })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    loadDashboard()
+
+    // Subscribe to real-time changes on schools and profiles
+    const supabase = createClient()
+    const channel = supabase
+      .channel('superadmin-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, () => loadDashboard())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadDashboard())
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [loadDashboard])
 
   const greeting = useMemo(() => {
     const h = new Date().getHours()
@@ -179,6 +226,52 @@ export default function SuperAdminDashboard() {
           )
         })}
       </div>
+
+      {/* Recent Activity */}
+      {recentAudits.length > 0 && (
+        <>
+          <h3 style={{
+            margin: '0 0 14px', fontSize: '0.85rem', fontWeight: 600,
+            textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)',
+            display: 'flex', alignItems: 'center', gap: '8px',
+          }}>
+            <Clock size={15} /> Recent Activity
+          </h3>
+
+          <div className="card" style={{ overflow: 'hidden' }}>
+            {recentAudits.map((audit, i) => (
+              <div
+                key={audit.id}
+                style={{
+                  padding: '14px 20px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                  borderBottom: i < recentAudits.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                    background: audit.action.includes('create') ? '#10b981'
+                      : audit.action.includes('delete') ? '#ef4444'
+                      : '#3b82f6',
+                  }} />
+                  <span style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                    {formatAuditAction(audit.action)}
+                  </span>
+                  {audit.details?.school_name && (
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      — {audit.details.school_name}
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', flexShrink: 0 }}>
+                  {formatTimeAgo(audit.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
     </div>
   )

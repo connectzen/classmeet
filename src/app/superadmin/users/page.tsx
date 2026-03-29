@@ -2,170 +2,373 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Search } from 'lucide-react'
+import {
+  Search, ChevronDown, ChevronRight, Building2, Shield,
+  GraduationCap, BookOpen, Users, UserX, Crown,
+} from 'lucide-react'
+import Avatar from '@/components/ui/Avatar'
+import Badge from '@/components/ui/Badge'
 
-interface User {
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Profile {
   id: string
   full_name: string | null
+  avatar_url: string | null
   role: string
-  onboarding_complete: boolean
-  school_id: string | null
   is_super_admin: boolean
-  schools: Array<{ id: string; name: string; slug: string }> | null
+  onboarding_complete: boolean
+  created_at: string
 }
 
-async function fetchUsers(search?: string, role?: string): Promise<User[]> {
-  const params = new URLSearchParams()
-  if (search) params.set('search', search)
-  if (role) params.set('role', role)
-
-  const res = await fetch(`/api/superadmin/users?${params}`)
-  if (!res.ok) throw new Error('Failed to fetch users')
-  const { data } = await res.json()
-  return data
+interface TeacherNode extends Profile {
+  students: Profile[]
 }
 
-export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [role, setRole] = useState('')
+interface SchoolNode {
+  id: string
+  name: string
+  slug: string
+  admin_id: string
+  created_at: string
+  admin: Profile | null
+  teachers: TeacherNode[]
+  unlinkedStudents: Profile[]
+  totalMembers: number
+}
 
-  useEffect(() => {
-    setLoading(true)
-    fetchUsers(search || undefined, role || undefined)
-      .then(setUsers)
-      .catch((err) => {
-        console.error('Error loading users:', err)
-      })
-      .finally(() => setLoading(false))
-  }, [search, role])
+interface HierarchyData {
+  schools: SchoolNode[]
+  unaffiliated: Profile[]
+  superAdmins: Profile[]
+  totals: { schools: number; users: number }
+}
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function roleColor(role: string, isSuperAdmin?: boolean): string {
+  if (isSuperAdmin) return '#8b5cf6'
+  switch (role) {
+    case 'admin': return '#3b82f6'
+    case 'teacher': return '#10b981'
+    case 'student': return '#f59e0b'
+    default: return '#6b7280'
+  }
+}
+
+function roleIcon(role: string, isSuperAdmin?: boolean) {
+  if (isSuperAdmin) return <Crown size={14} />
+  switch (role) {
+    case 'admin': return <Shield size={14} />
+    case 'teacher': return <BookOpen size={14} />
+    case 'student': return <GraduationCap size={14} />
+    default: return <Users size={14} />
+  }
+}
+
+// ── User Row ──────────────────────────────────────────────────────────────────
+function UserRow({ user, indent = 0, expandable, expanded, onToggle, childCount }: {
+  user: Profile
+  indent?: number
+  expandable?: boolean
+  expanded?: boolean
+  onToggle?: () => void
+  childCount?: number
+}) {
   return (
-    <div style={{ padding: '32px' }}>
-      <h1 style={{ margin: '0 0 32px', fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-        All Users
-      </h1>
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: '12px',
+        padding: '10px 16px', paddingLeft: `${16 + indent * 28}px`,
+        borderBottom: '1px solid var(--border-subtle)',
+        transition: 'background var(--transition-fast)',
+        cursor: expandable ? 'pointer' : 'default',
+      }}
+      onClick={expandable ? onToggle : undefined}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
+    >
+      {/* Expand toggle or spacer */}
+      <div style={{ width: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {expandable ? (
+          expanded ? <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />
+            : <ChevronRight size={16} style={{ color: 'var(--text-muted)' }} />
+        ) : (
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: roleColor(user.role, user.is_super_admin), opacity: 0.6 }} />
+        )}
+      </div>
 
-      {/* Filters */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px',
-          marginBottom: '24px',
-        }}
-      >
-        <div>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-            Search
-          </label>
-          <div style={{ position: 'relative' }}>
-            <input
-              type="text"
-              placeholder="Name or ID..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px 8px 36px',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '6px',
-                fontSize: '0.9rem',
-              }}
-            />
-            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          </div>
-        </div>
+      {/* Avatar */}
+      <Avatar src={user.avatar_url} name={user.full_name} size="sm" />
 
-        <div>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-            Role
-          </label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
+      {/* Name + role */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Link
+            href={`/superadmin/users/${user.id}`}
             style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '6px',
-              fontSize: '0.9rem',
+              fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)',
+              textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}
+            onClick={e => e.stopPropagation()}
           >
-            <option value="">All Roles</option>
-            <option value="super_admin">Super Admin</option>
-            <option value="admin">School Admin</option>
-            <option value="teacher">Teacher</option>
-            <option value="student">Student</option>
-          </select>
+            {user.full_name || 'Unnamed'}
+          </Link>
+          <Badge role={user.is_super_admin ? 'super_admin' : user.role as any} />
         </div>
       </div>
 
+      {/* Count badge for expandable rows */}
+      {expandable && childCount !== undefined && childCount > 0 && (
+        <span style={{
+          fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px',
+          borderRadius: '9999px', background: 'var(--bg-tertiary)',
+          color: 'var(--text-muted)', letterSpacing: '0.02em',
+        }}>
+          {childCount}
+        </span>
+      )}
+
+      {/* Status */}
+      <span style={{ fontSize: '0.78rem', color: user.onboarding_complete ? 'var(--success-400)' : 'var(--warning-400)', flexShrink: 0 }}>
+        {user.onboarding_complete ? '✓ Active' : '⏳ Pending'}
+      </span>
+    </div>
+  )
+}
+
+// ── School Section ────────────────────────────────────────────────────────────
+function SchoolSection({ school, searchFilter }: { school: SchoolNode; searchFilter: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set())
+
+  const matchesSearch = (p: Profile | null) => {
+    if (!searchFilter || !p) return true
+    return p.full_name?.toLowerCase().includes(searchFilter) || p.id.includes(searchFilter)
+  }
+
+  const filteredTeachers = school.teachers.filter(t =>
+    matchesSearch(t) || t.students.some(s => matchesSearch(s))
+  )
+  const filteredUnlinked = school.unlinkedStudents.filter(matchesSearch)
+  const adminMatches = matchesSearch(school.admin)
+
+  // If search is active and nothing matches, hide this school
+  if (searchFilter && !adminMatches && filteredTeachers.length === 0 && filteredUnlinked.length === 0) {
+    return null
+  }
+
+  // Auto-expand when searching
+  const isExpanded = searchFilter ? true : expanded
+
+  function toggleTeacher(id: string) {
+    setExpandedTeachers(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  return (
+    <div className="card" style={{ overflow: 'hidden', marginBottom: '16px' }}>
+      {/* School header */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: '12px',
+          padding: '14px 16px', cursor: 'pointer',
+          background: 'var(--bg-elevated)',
+          borderBottom: isExpanded ? '1px solid var(--border-subtle)' : 'none',
+        }}
+        onClick={() => setExpanded(e => !e)}
+      >
+        {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+        <div style={{
+          width: 36, height: 36, borderRadius: 'var(--radius-md)',
+          background: 'rgba(59,130,246,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Building2 size={18} style={{ color: '#3b82f6' }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            {school.name}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            /{school.slug} · {school.totalMembers} member{school.totalMembers !== 1 ? 's' : ''}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          <span style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: '9999px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontWeight: 600 }}>
+            {school.teachers.length} teacher{school.teachers.length !== 1 ? 's' : ''}
+          </span>
+          <span style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: '9999px', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontWeight: 600 }}>
+            {school.unlinkedStudents.length + school.teachers.reduce((s, t) => s + t.students.length, 0)} student{school.unlinkedStudents.length + school.teachers.reduce((s, t) => s + t.students.length, 0) !== 1 ? 's' : ''}
+          </span>
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div>
+          {/* Admin */}
+          {school.admin && adminMatches && (
+            <UserRow user={school.admin} indent={1} />
+          )}
+
+          {/* Teachers → Students */}
+          {filteredTeachers.map(teacher => {
+            const teacherExpanded = searchFilter ? true : expandedTeachers.has(teacher.id)
+            const filteredStudents = teacher.students.filter(matchesSearch)
+            return (
+              <div key={teacher.id}>
+                <UserRow
+                  user={teacher}
+                  indent={1}
+                  expandable={teacher.students.length > 0}
+                  expanded={teacherExpanded}
+                  onToggle={() => toggleTeacher(teacher.id)}
+                  childCount={teacher.students.length}
+                />
+                {teacherExpanded && filteredStudents.map(student => (
+                  <UserRow key={student.id} user={student} indent={2} />
+                ))}
+              </div>
+            )
+          })}
+
+          {/* Unlinked students */}
+          {filteredUnlinked.length > 0 && (
+            <>
+              <div style={{
+                padding: '8px 16px 8px 72px', fontSize: '0.72rem', fontWeight: 600,
+                textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-disabled)',
+                borderTop: '1px solid var(--border-subtle)',
+              }}>
+                Unassigned students
+              </div>
+              {filteredUnlinked.map(s => (
+                <UserRow key={s.id} user={s} indent={2} />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function UsersPage() {
+  const [data, setData] = useState<HierarchyData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    fetch('/api/superadmin/users/hierarchy')
+      .then(r => r.json())
+      .then(r => setData(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const searchLower = search.toLowerCase().trim()
+
+  const matchesSearch = (p: Profile | null) => {
+    if (!searchLower || !p) return true
+    return p.full_name?.toLowerCase().includes(searchLower) || p.id.includes(searchLower)
+  }
+
+  const filteredSuperAdmins = data?.superAdmins.filter(matchesSearch) || []
+  const filteredUnaffiliated = data?.unaffiliated.filter(matchesSearch) || []
+
+  return (
+    <div style={{ maxWidth: '960px' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            Users & Schools
+          </h1>
+          {data && (
+            <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              {data.totals.users} users across {data.totals.schools} school{data.totals.schools !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Search */}
+      <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '400px' }}>
+        <input
+          className="input"
+          type="text"
+          placeholder="Search by name or ID…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ paddingLeft: '38px' }}
+        />
+        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+      </div>
+
       {loading ? (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Loading users...</div>
-      ) : users.length === 0 ? (
-        <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-muted)', margin: 0 }}>No users found.</p>
+        <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Loading users…</div>
+        </div>
+      ) : !data ? (
+        <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+          <div style={{ color: 'var(--text-muted)' }}>Failed to load user data.</div>
         </div>
       ) : (
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <table
-            style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: '0.9rem',
-            }}
-          >
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'var(--bg-secondary)' }}>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>
-                  Name
-                </th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>
-                  Role
-                </th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>
-                  School
-                </th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)' }}>
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <Link key={user.id} href={`/superadmin/users/${user.id}`} style={{ textDecoration: 'none' }}>
-                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}>
-                    <td style={{ padding: '12px 16px', color: 'var(--text-primary)', fontWeight: 500 }}>
-                      {user.full_name || 'No name'}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.8rem',
-                          fontWeight: 600,
-                          background: user.is_super_admin ? '#8b5cf6' : user.role === 'admin' ? '#3b82f6' : '#10b981',
-                          color: '#fff',
-                        }}
-                      >
-                        {user.is_super_admin ? 'Super Admin' : user.role}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
-                      {user.schools?.[0]?.name || 'No school'}
-                    </td>
-                    <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>
-                      {user.onboarding_complete ? '✓ Complete' : '⏳ Pending'}
-                    </td>
-                  </tr>
-                </Link>
+        <>
+          {/* Super Admins */}
+          {filteredSuperAdmins.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{
+                margin: '0 0 10px', fontSize: '0.78rem', fontWeight: 600,
+                textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', gap: '8px',
+              }}>
+                <Crown size={14} /> Super Admins
+              </h3>
+              <div className="card" style={{ overflow: 'hidden' }}>
+                {filteredSuperAdmins.map(sa => (
+                  <UserRow key={sa.id} user={sa} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Schools hierarchy */}
+          {data.schools.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{
+                margin: '0 0 10px', fontSize: '0.78rem', fontWeight: 600,
+                textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', gap: '8px',
+              }}>
+                <Building2 size={14} /> Schools
+              </h3>
+              {data.schools.map(school => (
+                <SchoolSection key={school.id} school={school} searchFilter={searchLower} />
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          )}
+
+          {/* Unaffiliated users */}
+          {filteredUnaffiliated.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{
+                margin: '0 0 10px', fontSize: '0.78rem', fontWeight: 600,
+                textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', gap: '8px',
+              }}>
+                <UserX size={14} /> Unaffiliated Users
+              </h3>
+              <div className="card" style={{ overflow: 'hidden' }}>
+                {filteredUnaffiliated.map(u => (
+                  <UserRow key={u.id} user={u} />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
