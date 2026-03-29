@@ -50,7 +50,7 @@ export async function POST(
     // Verify caller is admin of this school
     const { data: school } = await supabase
       .from('schools')
-      .select('id, admin_id, default_student_password, name, slug')
+      .select('id, admin_id, default_student_password, name, slug, logo_url')
       .eq('id', schoolId)
       .single()
 
@@ -80,6 +80,7 @@ export async function POST(
       data: {
         full_name: fullName,
         school_name: school.name,
+        school_logo: school.logo_url || '',
         role: 'student',
       },
     })
