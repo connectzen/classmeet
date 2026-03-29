@@ -6,10 +6,10 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Building2, Users, BarChart3, Settings,
-  Shield, Menu, X, LogOut
+  Shield, Menu, X
 } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
-import Avatar from '@/components/ui/Avatar'
+import UserMenu from '@/components/layout/UserMenu'
 
 const NAV_ITEMS = [
   { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },
@@ -27,8 +27,17 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="app-layout">
+      {/* Mobile Backdrop — rendered before sidebar so sidebar paints on top */}
+      {sidebarOpen && (
+        <div
+          className="backdrop"
+          style={{ zIndex: 'var(--z-drawer)' }}
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className={cn('sidebar', sidebarOpen && 'open')}>
+      <aside className={cn('sidebar', sidebarOpen && 'open')} style={{ zIndex: 'var(--z-drawer)' }}>
         <div className="sidebar-logo">
           <div className="logo-icon" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
             <Shield size={20} color="#fff" />
@@ -37,6 +46,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
           <button
             className="btn btn-ghost btn-icon btn-sm"
             style={{ marginLeft: 'auto', display: 'none' }}
+            id="sidebar-close-btn"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
           >
@@ -47,7 +57,9 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
         <nav style={{ paddingTop: '10px', flex: 1, overflowY: 'auto' }}>
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            const isActive = item.href === '/superadmin'
+              ? pathname === '/superadmin'
+              : pathname.startsWith(item.href)
             return (
               <Link
                 key={item.href}
@@ -75,53 +87,26 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
         <header className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
+              id="sidebar-toggle"
               className="btn btn-ghost btn-icon btn-sm"
               onClick={() => setSidebarOpen(!sidebarOpen)}
               aria-label="Toggle sidebar"
             >
               <Menu size={20} />
             </button>
-            <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
               Super Admin Panel
             </h1>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {user && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Avatar src={user.avatarUrl} name={user.fullName} size="sm" online />
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-                    {user.fullName}
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Super Admin</div>
-                </div>
-              </div>
-            )}
-            <button
-              className="btn btn-ghost btn-icon btn-sm"
-              onClick={() => {
-                // TODO: Implement logout
-              }}
-              title="Logout"
-            >
-              <LogOut size={18} />
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <UserMenu />
           </div>
         </header>
 
         {/* Page Content */}
         <main className="main-content">{children}</main>
       </div>
-
-      {/* Mobile Backdrop */}
-      {sidebarOpen && (
-        <div
-          className="backdrop"
-          style={{ zIndex: 'var(--z-drawer)' }}
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
     </div>
   )
 }
