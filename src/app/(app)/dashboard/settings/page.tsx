@@ -1,14 +1,17 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useAppStore } from '@/store/app-store'
+import { useSchool } from '@/lib/school-context'
 import { createClient } from '@/lib/supabase/client'
+import { canManageBranding } from '@/lib/permissions'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
-import { Save, User, Shield, Trash2, Camera, Lock, AlertCircle, CheckCircle2, Eye, EyeOff, ImageIcon } from 'lucide-react'
+import { Save, User, Shield, Trash2, Camera, Lock, AlertCircle, CheckCircle2, Eye, EyeOff, Palette } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 
 function SectionHeading({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {
@@ -86,6 +89,54 @@ export default function SettingsPage() {
     showToast('Photo updated!')
   }
 
+  // ── Workspace name (independent teachers) ─────────────────────────────
+  const school = useSchool()
+  const showWorkspace = canManageBranding(user?.role, user?.teacherType)
+  const [wsName, setWsName]           = useState('')
+  const [wsLoaded, setWsLoaded]       = useState(false)
+  const [savingWs, setSavingWs]       = useState(false)
+  const [wsError, setWsError]         = useState<string | null>(null)
+  const [wsOk, setWsOk]              = useState(false)
+
+  useEffect(() => {
+    if (!showWorkspace || !user?.id) return
+    const supabase = createClient()
+    supabase
+      .from('teacher_workspaces')
+      .select('name')
+      .eq('teacher_id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (data) setWsName(data.name)
+        setWsLoaded(true)
+      })
+  }, [showWorkspace, user?.id])
+
+  async function handleSaveWorkspace(e: React.FormEvent) {
+    e.preventDefault()
+    if (!wsName.trim() || !user?.id || savingWs) return
+    setSavingWs(true)
+    setWsError(null)
+    setWsOk(false)
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('teacher_workspaces')
+      .update({ name: wsName.trim(), updated_at: new Date().toISOString() })
+      .eq('teacher_id', user.id)
+
+    setSavingWs(false)
+    if (error) { setWsError(error.message); return }
+    setWsOk(true)
+    showToast('Workspace name updated! Reload to see changes in the sidebar.')
+    setTimeout(() => setWsOk(false), 3000)
+  }
+
+  // Resolve branding page path
+  const brandingHref = school?.schoolSlug
+    ? `/${school.schoolSlug}/teacher/dashboard/settings/branding`
+    : '/dashboard/settings/branding'
+
   // ── Change password ───────────────────────────────────────────────────────
   const [showPwForm, setShowPwForm]   = useState(false)
   const [newPw,      setNewPw]        = useState('')
@@ -142,7 +193,7 @@ export default function SettingsPage() {
     <div style={{ maxWidth: '680px' }}>
       <div style={{ marginBottom: '28px' }}>
         <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>Settings</h1>
-        <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>Manage your profile, photo, and account</p>
+        <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>Manage your profile, workspace, and account</p>
       </div>
 
       {/* ── Profile ────────────────────────────────────────────────────────── */}
@@ -207,26 +258,42 @@ export default function SettingsPage() {
         </form>
       </div>
 
-      {/* ── Photo ──────────────────────────────────────────────────────────── */}
-      <div className="card" style={{ marginBottom: '16px', padding: '28px' }}>
-        <SectionHeading icon={Camera} title="Profile Photo" desc="Upload or change your profile picture" />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <Avatar src={user?.avatarUrl} name={user?.fullName} size="xl" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <Button
-              variant="outline"
-              icon={<Camera size={14} />}
-              loading={uploading}
-              onClick={() => fileRef.current?.click()}
-            >
-              {user?.avatarUrl ? 'Change Photo' : 'Upload Photo'}
-            </Button>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              JPG, PNG or WebP. Max 2 MB.
-            </span>
-          </div>
+      {/* ── Workspace (independent teachers only) ────────────────────────── */}
+      {showWorkspace && wsLoaded && (
+        <div className="card" style={{ marginBottom: '16px', padding: '28px' }}>
+          <SectionHeading icon={Palette} title="Workspace" desc="Your classroom name and branding" />
+
+          <form onSubmit={handleSaveWorkspace} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {wsError && (
+              <div className="alert alert-error animate-fade-in">
+                <AlertCircle size={15} style={{ flexShrink: 0 }} /><span>{wsError}</span>
+              </div>
+            )}
+            {wsOk && (
+              <div className="alert alert-success animate-fade-in">
+                <CheckCircle2 size={15} style={{ flexShrink: 0 }} /><span>Workspace updated!</span>
+              </div>
+            )}
+            <Input
+              label="Classroom Name"
+              required
+              value={wsName}
+              onChange={e => setWsName(e.target.value)}
+              placeholder="My Classroom"
+              helper="This is displayed in your sidebar and to your students"
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Link
+                href={brandingHref}
+                style={{ fontSize: '0.82rem', color: 'var(--primary-400)', textDecoration: 'none', fontWeight: 500 }}
+              >
+                Advanced branding (colors, URL, welcome message) &rarr;
+              </Link>
+              <Button type="submit" loading={savingWs} icon={<Save size={14} />}>Save</Button>
+            </div>
+          </form>
         </div>
-      </div>
+      )}
 
       {/* ── Security ───────────────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: '16px', padding: '28px' }}>

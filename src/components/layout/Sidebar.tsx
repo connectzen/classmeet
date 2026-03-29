@@ -8,9 +8,9 @@ import { usePresenceStore } from '@/store/presence-store'
 import { useSchool } from '@/lib/school-context'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
-import { canInviteMembers, canCreateGroups, canCreateCourses, canCreateSessions, canManageQuizzes, isOwnerTier } from '@/lib/permissions'
+import { canInviteMembers, canCreateGroups, canCreateCourses, canCreateSessions, canManageQuizzes, canManageBranding, isOwnerTier } from '@/lib/permissions'
 import Avatar from '@/components/ui/Avatar'
-import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen, FolderOpen, HelpCircle, MessageSquare, BarChart2, UserPlus } from 'lucide-react'
+import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen, FolderOpen, HelpCircle, MessageSquare, BarChart2, UserPlus, Palette } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 
@@ -56,6 +56,9 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
   ]
   if (schoolSlug && role === 'admin') {
     systemLinks.push({ href: `/${schoolSlug}/admin`, label: 'Admin Panel', icon: ShieldCheck, roles: ['admin'] as UserRole[] })
+  }
+  if (isTeacher && canManageBranding(role, useAppStore.getState().user?.teacherType)) {
+    systemLinks.push({ href: `${basePath}/dashboard/settings/branding`, label: 'Branding', icon: Palette })
   }
   if (isTeacher && isOwnerTier(role, useAppStore.getState().user?.teacherType)) {
     systemLinks.push({ href: `${basePath}/dashboard/team`, label: 'Team', icon: UserPlus })
