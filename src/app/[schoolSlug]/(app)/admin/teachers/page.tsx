@@ -84,6 +84,9 @@ export default function AdminTeachersPage() {
   // Students state
   const [teacherStudents, setTeacherStudents] = useState<Map<string, StudentInfo[]>>(new Map())
   const [loadingStudents, setLoadingStudents] = useState(false)
+  const [schoolStudents, setSchoolStudents] = useState<{ id: string; full_name: string | null }[]>([])
+  const [selectedStudentId, setSelectedStudentId] = useState('')
+  const [assigningStudent, setAssigningStudent] = useState(false)
 
   // Form state
   const [formName, setFormName] = useState('')
@@ -299,6 +302,41 @@ export default function AdminTeachersPage() {
     setLoadingStudents(false)
   }, [school.schoolId])
 
+  // Load all school students for the assign dropdown
+  const loadSchoolStudents = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('school_id', school.schoolId)
+      .eq('role', 'student')
+      .order('full_name')
+    setSchoolStudents(data ?? [])
+  }, [school.schoolId])
+
+  // Assign a school student to a teacher
+  async function assignStudentToTeacher(teacherId: string, studentId: string) {
+    setAssigningStudent(true)
+    const supabase = createClient()
+    await supabase.from('teacher_students').upsert(
+      { teacher_id: teacherId, student_id: studentId, school_id: school.schoolId, status: 'active' },
+      { onConflict: 'teacher_id,student_id' }
+    )
+    await loadStudents(teacherId)
+    setSelectedStudentId('')
+    setAssigningStudent(false)
+  }
+
+  // Unassign a student from a teacher
+  async function unassignStudent(teacherId: string, studentId: string) {
+    const supabase = createClient()
+    await supabase.from('teacher_students')
+      .delete()
+      .eq('teacher_id', teacherId)
+      .eq('student_id', studentId)
+    await loadStudents(teacherId)
+  }
+
   // Handle expanding a teacher row
   function handleExpandTeacher(teacherId: string) {
     const isClosing = expandedTeacher === teacherId
@@ -309,6 +347,7 @@ export default function AdminTeachersPage() {
       loadAssignments(teacherId)
       loadAllClasses()
       loadStudents(teacherId)
+      loadSchoolStudents()
     }
   }
 
@@ -852,7 +891,35 @@ export default function AdminTeachersPage() {
                         borderRadius: 8, marginBottom: 14, fontSize: '0.78rem', color: 'var(--text-muted)',
                       }}>
                         <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                        <span>Students enrolled under this teacher via the teacher-student enrollment system. These are students this teacher can manage, create sessions for, and assign to groups.</span>
+                        <span>Assign school students to this teacher. Assigned students can be managed, invited to sessions, and organized into groups by this teacher.</span>
+                      </div>
+
+                      {/* Assign student dropdown */}
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+                        <select
+                          value={selectedStudentId}
+                          onChange={(e) => setSelectedStudentId(e.target.value)}
+                          style={{
+                            flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: '0.82rem',
+                            background: 'var(--input-bg, var(--card-bg))', color: 'var(--text-primary)',
+                            border: '1px solid var(--border-default)', outline: 'none',
+                          }}
+                        >
+                          <option value="">Select a student to assign...</option>
+                          {schoolStudents
+                            .filter(s => !(teacherStudents.get(teacher.id) ?? []).some(ts => ts.id === s.id))
+                            .map(s => (
+                              <option key={s.id} value={s.id}>{s.full_name || 'Unnamed Student'}</option>
+                            ))}
+                        </select>
+                        <Button
+                          size="sm"
+                          onClick={() => selectedStudentId && assignStudentToTeacher(teacher.id, selectedStudentId)}
+                          disabled={!selectedStudentId || assigningStudent}
+                          loading={assigningStudent}
+                        >
+                          Assign
+                        </Button>
                       </div>
 
                       {loadingStudents ? (
@@ -860,8 +927,8 @@ export default function AdminTeachersPage() {
                       ) : (teacherStudents.get(teacher.id) ?? []).length === 0 ? (
                         <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.82rem', border: '1px dashed var(--border-default)', borderRadius: 8 }}>
                           <GraduationCap size={24} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
-                          <div>No students enrolled under this teacher yet.</div>
-                          <div style={{ fontSize: '0.72rem', marginTop: 4 }}>Students are enrolled when they join via invite link or are assigned by the school admin.</div>
+                          <div>No students assigned to this teacher yet.</div>
+                          <div style={{ fontSize: '0.72rem', marginTop: 4 }}>Use the dropdown above to assign school students to this teacher.</div>
                         </div>
                       ) : (
                         <div>
@@ -910,6 +977,13 @@ export default function AdminTeachersPage() {
                                       {student.status}
                                     </div>
                                   </div>
+                                  <button
+                                    onClick={() => unassignStudent(teacher.id, student.id)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, display: 'flex', borderRadius: 4 }}
+                                    title="Unassign student"
+                                  >
+                                    <X size={14} />
+                                  </button>
                                 </div>
                               )
                             })}
