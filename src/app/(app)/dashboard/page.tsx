@@ -1,15 +1,14 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
-import Badge from '@/components/ui/Badge'
 import Avatar from '@/components/ui/Avatar'
 import Button from '@/components/ui/Button'
 import AdminDashboard from '@/components/dashboard/AdminDashboard'
 import {
-  Video, BookOpen, Users, Plus, ArrowRight,
+  Video, BookOpen, Users, ArrowRight,
   Clock, Sparkles, CalendarDays, Zap, MessageSquare,
   Radio, Circle, Wifi, WifiOff, GraduationCap,
 } from 'lucide-react'
@@ -389,17 +388,6 @@ export default function DashboardPage() {
   const allActions = creator ? TEACHER_ACTIONS : STUDENT_ACTIONS
   const actions = allActions.filter(a => !a.permissionCheck || a.permissionCheck(userPerms))
 
-  const greeting = useMemo(() => {
-    const h = new Date().getHours()
-    if (h < 12) return 'Good morning'
-    if (h < 17) return 'Good afternoon'
-    return 'Good evening'
-  }, [])
-
-  const bannerSubtitle = creator
-    ? 'Manage your rooms, courses, and students all in one place.'
-    : 'Join live sessions, take quizzes, and learn at your own pace.'
-
   function handleAction(action: Action) {
     if (action.comingSoon) {
       showToast(`✨ ${action.label} — coming soon!`)
@@ -408,40 +396,8 @@ export default function DashboardPage() {
     }
   }
 
-  function handleNewSession() {
-    router.push('/dashboard/rooms')
-  }
-
   return (
     <div style={{ maxWidth: '960px' }}>
-
-      {/* ── Welcome banner ────────────────────────────────────────────────── */}
-      <div
-        className="card card-elevated stagger-item"
-        style={{
-          marginBottom: '24px', padding: '28px 32px',
-          background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 100%)',
-          borderColor: 'var(--border-primary)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <Avatar src={user?.avatarUrl} name={user?.fullName} size="lg" />
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                {greeting}, {user?.fullName?.split(' ')[0] ?? 'there'}! 👋
-              </h2>
-              {user?.role && <Badge role={user.role} />}
-            </div>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>{bannerSubtitle}</p>
-          </div>
-          {(!creator || canCreateSessions(userPerms)) && (
-          <Button icon={<Plus size={16} />} size="sm" onClick={handleNewSession}>
-            {creator ? 'New Session' : 'Join Room'}
-          </Button>
-          )}
-        </div>
-      </div>
 
       {/* ── My Teachers (students only) ───────────────────────────────── */}
       {!creator && teachers.length > 0 && (

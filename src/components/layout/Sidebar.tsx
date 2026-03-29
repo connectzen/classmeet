@@ -29,7 +29,7 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
   // Teacher/Student dashboard links
   if (isTeacher || role === 'student') {
     const dashLinks: NavLink[] = [
-      { href: `${basePath}/dashboard/rooms`, label: 'Rooms', icon: Video, permissionCheck: (p) => role === 'student' || canCreateSessions(p as any) },
+      { href: `${basePath}/dashboard/rooms`, label: 'Live Rooms', icon: Video, permissionCheck: (p) => role === 'student' || canCreateSessions(p as any) },
       { href: `${basePath}/dashboard/courses`, label: 'Courses', icon: BookOpen, permissionCheck: (p) => role === 'student' || canCreateCourses(p as any) },
       { href: `${basePath}/dashboard/messages`, label: 'Messages', icon: MessageSquare },
     ]
