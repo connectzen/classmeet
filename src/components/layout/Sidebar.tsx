@@ -93,13 +93,24 @@ interface SidebarPerson {
 // ── Sidebar person row (shared between Students and Collaboration) ──
 function PersonRow({ p, fallbackName, isOnline }: { p: SidebarPerson & { role?: string }; fallbackName: string; isOnline: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px', opacity: isOnline ? 1 : 0.7 }}>
-      <Avatar src={p.avatar_url} name={p.full_name} size="xs" online={isOnline} />
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '10px',
+      padding: '8px 12px', margin: '2px 8px', borderRadius: '8px',
+      background: 'var(--bg-elevated)', transition: 'background 0.15s',
+    }}>
+      <Avatar src={p.avatar_url} name={p.full_name} size="sm" online={isOnline} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '0.8rem', color: isOnline ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: isOnline ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{
+          fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
           {p.full_name || fallbackName}
         </div>
-        <div style={{ fontSize: '0.65rem', color: isOnline ? 'var(--success-400)' : 'var(--text-disabled)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{
+          fontSize: '0.68rem',
+          color: isOnline ? 'var(--success-400)' : 'var(--text-muted)',
+          display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px',
+        }}>
           <Circle size={6} fill={isOnline ? 'var(--success-400)' : 'var(--text-disabled)'} color={isOnline ? 'var(--success-400)' : 'var(--text-disabled)'} />
           {isOnline ? 'Online' : formatLastSeen(p.last_seen)}
         </div>
@@ -161,21 +172,41 @@ function StudentList({ teacherId }: { teacherId: string }) {
 
   return (
     <>
-      {/* Collaboration teachers */}
-      <div className="sidebar-section">
-        <div className="sidebar-section-label">Collaboration</div>
-        {collabs.length === 0
-          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px' }}>No co-teachers yet</p>
-          : collabs.map(c => <PersonRow key={c.id} p={c} fallbackName="Teacher" isOnline={onlineUsers.has(c.id)} />)
+      {/* Students */}
+      <div className="sidebar-section" style={{ marginBottom: '4px' }}>
+        <div className="sidebar-section-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <GraduationCap size={12} />
+          My Students
+          {students.length > 0 && (
+            <span style={{
+              fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
+              borderRadius: '9999px', background: 'rgba(245,158,11,0.15)',
+              color: '#f59e0b', marginLeft: 'auto',
+            }}>{students.length}</span>
+          )}
+        </div>
+        {students.length === 0
+          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px' }}>No students assigned yet</p>
+          : students.map(s => <PersonRow key={s.id} p={s} fallbackName="Student" isOnline={onlineUsers.has(s.id)} />)
         }
       </div>
 
-      {/* Students */}
-      <div className="sidebar-section">
-        <div className="sidebar-section-label">{students.length > 0 ? `Students — ${students.length}` : 'Students'}</div>
-        {students.length === 0
-          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px' }}>No students yet</p>
-          : students.map(s => <PersonRow key={s.id} p={s} fallbackName="Student" isOnline={onlineUsers.has(s.id)} />)
+      {/* Collaboration teachers */}
+      <div className="sidebar-section" style={{ marginBottom: '4px' }}>
+        <div className="sidebar-section-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Users size={12} />
+          Co-Teachers
+          {collabs.length > 0 && (
+            <span style={{
+              fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
+              borderRadius: '9999px', background: 'rgba(16,185,129,0.15)',
+              color: '#10b981', marginLeft: 'auto',
+            }}>{collabs.length}</span>
+          )}
+        </div>
+        {collabs.length === 0
+          ? <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 16px', fontStyle: 'italic' }}>None yet</p>
+          : collabs.map(c => <PersonRow key={c.id} p={c} fallbackName="Teacher" isOnline={onlineUsers.has(c.id)} />)
         }
       </div>
     </>
@@ -451,7 +482,7 @@ export default function Sidebar() {
 
         {/* People section — admin sees overview, teacher sees students, student sees teacher */}
         {user?.id && (
-          <div style={{ paddingTop: '10px', overflowY: 'auto', flex: '0 1 auto', maxHeight: '40vh' }}>
+          <div style={{ paddingTop: '8px', paddingBottom: '8px', overflowY: 'auto', flex: '0 1 auto', maxHeight: '45vh', borderBottom: '1px solid var(--border-subtle)' }}>
             {role === 'admin' ? (
               <AdminOverview />
             ) : isCreator ? (
