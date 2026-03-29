@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { apiResponse, apiError, requireSuperAdmin } from '@/lib/api-utils'
 
 export async function GET(request: Request) {
@@ -18,8 +19,9 @@ export async function GET(request: Request) {
       .select('id, full_name, avatar_url, role, school_id, is_super_admin, onboarding_complete, created_at')
       .order('created_at', { ascending: false })
 
-    // Fetch teacher-student relationships
-    const { data: teacherStudents } = await supabase
+    // Fetch teacher-student relationships (use admin client to bypass RLS)
+    const adminSupabase = createAdminClient()
+    const { data: teacherStudents } = await adminSupabase
       .from('teacher_students')
       .select('teacher_id, student_id')
 

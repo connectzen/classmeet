@@ -40,3 +40,8 @@ USING (
     AND schools.admin_id = auth.uid()
   )
 );
+
+-- Allow super admins to view all teacher-student relationships
+CREATE POLICY "Super admin can view all enrollments"
+ON teacher_students FOR SELECT
+USING (is_current_user_super_admin());
