@@ -353,7 +353,8 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* ── Danger zone ────────────────────────────────────────────────────── */}
+      {/* ── Danger zone (hidden for school-affiliated students) ─────────── */}
+      {!(user?.role === 'student' && school?.schoolId) && (
       <div className="card" style={{ padding: '28px', borderColor: 'rgba(239,68,68,0.25)' }}>
         <SectionHeading icon={Trash2} title="Danger Zone" desc="Irreversible account actions" />
 
@@ -381,6 +382,7 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+      )}
 
       {toast && <div className="toast toast-info" role="status" aria-live="polite">{toast}</div>}
     </div>
