@@ -22,13 +22,14 @@ export async function GET(
       throw new ApiError('Forbidden', 403)
     }
 
-    // List all students in this school
-    const { data: students, error } = await supabase
+    // List all students in this school (use admin client since authorization is already verified)
+    const adminSupabase = createAdminClient()
+    const { data: students, error } = await adminSupabase
       .from('profiles')
       .select('*')
       .eq('school_id', schoolId)
       .eq('role', 'student')
-      .order('created_at', { ascending: false })
+      .order('full_name')
 
     if (error) throw error
 

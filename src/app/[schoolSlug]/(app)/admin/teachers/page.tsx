@@ -304,14 +304,15 @@ export default function AdminTeachersPage() {
 
   // Load all school students for the assign dropdown
   const loadSchoolStudents = useCallback(async () => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, full_name')
-      .eq('school_id', school.schoolId)
-      .eq('role', 'student')
-      .order('full_name')
-    setSchoolStudents(data ?? [])
+    try {
+      const res = await fetch(`/api/schools/${school.schoolId}/students`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to load students')
+      const list = (json.data || []).map((s: any) => ({ id: s.id, full_name: s.full_name }))
+      setSchoolStudents(list)
+    } catch {
+      setSchoolStudents([])
+    }
   }, [school.schoolId])
 
   // Assign a school student to a teacher
@@ -654,7 +655,10 @@ export default function AdminTeachersPage() {
                   ]).map(tab => (
                     <button
                       key={tab.key}
-                      onClick={() => setActiveTab(tab.key)}
+                      onClick={() => {
+                        setActiveTab(tab.key)
+                        if (tab.key === 'students') loadSchoolStudents()
+                      }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 6,
                         padding: '10px 16px', fontSize: '0.8rem', fontWeight: 600,
