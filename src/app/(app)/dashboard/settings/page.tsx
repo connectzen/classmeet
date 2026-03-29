@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
@@ -8,7 +8,7 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
-import { Save, User, Bell, Shield, Trash2, Camera, Lock, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react'
+import { Save, User, Shield, Trash2, Camera, Lock, AlertCircle, CheckCircle2, Eye, EyeOff, ImageIcon } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 
 function SectionHeading({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {
@@ -56,6 +56,34 @@ export default function SettingsPage() {
     setSavingProfile(false)
     setProfileOk(true)
     setTimeout(() => setProfileOk(false), 3000)
+  }
+
+  // ── Avatar upload ──────────────────────────────────────────────────────
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    setUploading(true)
+    setProfileError(null)
+
+    const form = new FormData()
+    form.append('file', file)
+
+    const res = await fetch('/api/profile/avatar', { method: 'POST', body: form })
+    const json = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      setProfileError(json?.error ?? 'Failed to upload image.')
+      setUploading(false)
+      return
+    }
+
+    const url = json.data?.url
+    updateUser({ avatarUrl: url })
+    setUploading(false)
+    showToast('Photo updated!')
   }
 
   // ── Change password ───────────────────────────────────────────────────────
@@ -114,7 +142,7 @@ export default function SettingsPage() {
     <div style={{ maxWidth: '680px' }}>
       <div style={{ marginBottom: '28px' }}>
         <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>Settings</h1>
-        <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>Manage your profile, notifications, and account</p>
+        <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>Manage your profile, photo, and account</p>
       </div>
 
       {/* ── Profile ────────────────────────────────────────────────────────── */}
@@ -124,11 +152,19 @@ export default function SettingsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
           <div style={{ position: 'relative' }}>
             <Avatar src={user?.avatarUrl} name={user?.fullName} size="lg" />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              style={{ display: 'none' }}
+              onChange={handleAvatarUpload}
+            />
             <button
               className="btn btn-primary btn-icon btn-sm"
               style={{ position: 'absolute', bottom: -4, right: -4, width: 26, height: 26, padding: 0, borderRadius: '50%' }}
-              title="Change avatar"
-              onClick={() => showToast('Open your profile menu at the top-right to change your photo.')}
+              title="Change photo"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
             >
               <Camera size={12} />
             </button>
@@ -171,15 +207,25 @@ export default function SettingsPage() {
         </form>
       </div>
 
-      {/* ── Notifications ──────────────────────────────────────────────────── */}
+      {/* ── Photo ──────────────────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: '16px', padding: '28px' }}>
-        <SectionHeading icon={Bell} title="Notifications" desc="Control what you hear about" />
-        {(['Room starts', 'New messages', 'Quiz results', 'Course updates'] as const).map(label => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{label}</span>
-            <button className="btn btn-outline btn-sm" onClick={() => showToast('🔔 Notification settings — coming soon!')}>Configure</button>
+        <SectionHeading icon={Camera} title="Profile Photo" desc="Upload or change your profile picture" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <Avatar src={user?.avatarUrl} name={user?.fullName} size="xl" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <Button
+              variant="outline"
+              icon={<Camera size={14} />}
+              loading={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              {user?.avatarUrl ? 'Change Photo' : 'Upload Photo'}
+            </Button>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              JPG, PNG or WebP. Max 2 MB.
+            </span>
           </div>
-        ))}
+        </div>
       </div>
 
       {/* ── Security ───────────────────────────────────────────────────────── */}
