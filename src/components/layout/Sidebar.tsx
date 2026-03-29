@@ -9,7 +9,7 @@ import { useSchool } from '@/lib/school-context'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
 import Avatar from '@/components/ui/Avatar'
-import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle } from 'lucide-react'
+import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 
@@ -233,22 +233,25 @@ function TeacherInfo({ studentId }: { studentId: string }) {
 
 // ── Admin Overview (for admins) — clickable links to admin sub-pages ──
 function AdminOverview() {
-  const [counts, setCounts] = useState({ teachers: 0, students: 0, unassigned: 0 })
-  const onlineUsers = usePresenceStore((s) => s.onlineUsers)
+  const [counts, setCounts] = useState({ teachers: 0, students: 0, classes: 0 })
   const school = useSchool()
 
   useEffect(() => {
     const supabase = createClient()
+    const schoolId = school?.schoolId
+    if (!schoolId) return
 
     const load = async () => {
       try {
-        const res = await fetch('/api/admin/dashboard-data')
-        if (!res.ok) return
-        const { data } = await res.json()
+        const [teachersRes, studentsRes, classesRes] = await Promise.all([
+          supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'teacher'),
+          supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'student'),
+          supabase.from('classes').select('id', { count: 'exact', head: true }).eq('school_id', schoolId),
+        ])
         setCounts({
-          teachers: data.stats.totalTeachers,
-          students: data.stats.totalStudents,
-          unassigned: data.stats.unassignedCount,
+          teachers: teachersRes.count ?? 0,
+          students: studentsRes.count ?? 0,
+          classes: classesRes.count ?? 0,
         })
       } catch {
         // Silently fail for sidebar counts
@@ -257,28 +260,35 @@ function AdminOverview() {
 
     load()
 
-    // Subscribe to changes to trigger re-fetch
     const ch1 = supabase
       .channel('sidebar-admin-profiles')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
-      .subscribe()
-    const ch2 = supabase
-      .channel('sidebar-admin-enrollments')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, () => load())
       .subscribe()
 
-    return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2) }
-  }, [])
+    return () => { supabase.removeChannel(ch1) }
+  }, [school?.schoolId])
 
-  const onlineCount = onlineUsers.size
   const slug = school?.schoolSlug
 
   const statLink = (href: string, icon: React.ReactNode, label: string, value: number, color: string) => (
     <Link
       href={href}
-      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px', textDecoration: 'none', borderRadius: 'var(--radius-sm)', transition: 'background var(--transition-fast)' }}
-      onMouseOver={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-      onMouseOut={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px',
+        textDecoration: 'none', borderRadius: 'var(--radius-sm)',
+        transition: 'background 0.2s ease, transform 0.2s ease',
+      }}
+      onMouseOver={(e) => {
+        const el = e.currentTarget as HTMLElement
+        el.style.background = 'var(--bg-hover)'
+        el.style.transform = 'scale(1.03)'
+      }}
+      onMouseOut={(e) => {
+        const el = e.currentTarget as HTMLElement
+        el.style.background = 'transparent'
+        el.style.transform = 'scale(1)'
+      }}
     >
       <div style={{ width: 28, height: 28, borderRadius: '6px', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
         {icon}
@@ -296,8 +306,7 @@ function AdminOverview() {
         <div className="sidebar-section-label">Overview</div>
         {statLink(`/${slug}/admin/teachers`, <GraduationCap size={14} />, 'Teachers', counts.teachers, '#3b82f6')}
         {statLink(`/${slug}/admin/students`, <Users size={14} />, 'Students', counts.students, '#22c55e')}
-        {statLink(`/${slug}/admin/students`, <AlertCircle size={14} />, 'Unassigned', counts.unassigned, counts.unassigned > 0 ? '#f59e0b' : '#22c55e')}
-        {statLink(`/${slug}/admin`, <Circle size={14} fill="#22c55e" />, 'Online Now', onlineCount, '#22c55e')}
+        {statLink(`/${slug}/admin/classes`, <BookOpen size={14} />, 'Classes', counts.classes, '#a855f7')}
       </div>
     </>
   )

@@ -104,9 +104,10 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                 {count !== null && count > 0 && (
                   <span style={{
                     fontSize: '0.72rem', fontWeight: 600,
-                    background: 'var(--bg-elevated)', color: 'var(--text-muted)',
-                    padding: '1px 7px', borderRadius: '10px',
+                    background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e',
+                    padding: '2px 8px', borderRadius: '10px',
                     minWidth: '20px', textAlign: 'center',
+                    animation: 'fadeInScale 0.3s ease forwards',
                   }}>
                     {count}
                   </span>
