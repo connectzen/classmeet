@@ -50,7 +50,7 @@ export async function POST(
     // Verify caller is admin of this school
     const { data: school } = await supabase
       .from('schools')
-      .select('id, admin_id, default_student_password')
+      .select('id, admin_id, default_student_password, name, slug')
       .eq('id', schoolId)
       .single()
 
@@ -66,25 +66,70 @@ export async function POST(
     }
 
     const finalPassword = password || school.default_student_password
+    const origin = request.headers.get('origin') || 'https://classmeet.live'
 
     // Create auth user via service role
     const admin = createAdminClient()
-    const { data: authData, error: authError } = await admin.auth.admin.createUser({
-      email,
-      password: finalPassword,
-      email_confirm: true,
-      user_metadata: { full_name: fullName },
+
+    // Invite user by email — sends a welcome email with a magic link
+    const setPasswordNext = encodeURIComponent(`/${school.slug}/student`)
+    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/set-password?next=${setPasswordNext}`)}`
+
+    const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo,
+      data: {
+        full_name: fullName,
+        school_name: school.name,
+        role: 'student',
+      },
     })
 
-    if (authError || !authData.user) {
-      throw new ApiError(authError?.message || 'Failed to create student user', 400)
+    if (inviteError || !inviteData.user) {
+      // If user already exists, fall back to createUser
+      if (inviteError?.message?.toLowerCase().includes('already') ||
+          inviteError?.message?.toLowerCase().includes('exists')) {
+        const { data: authData, error: authError } = await admin.auth.admin.createUser({
+          email,
+          password: finalPassword,
+          email_confirm: true,
+          user_metadata: { full_name: fullName },
+        })
+
+        if (authError || !authData.user) {
+          throw new ApiError(authError?.message || 'Failed to create student user', 400)
+        }
+
+        // Upsert profile for existing user
+        const { data: profile, error: profileError } = await admin
+          .from('profiles')
+          .upsert({
+            id: authData.user.id,
+            full_name: fullName,
+            role: 'student',
+            school_id: schoolId,
+            onboarding_complete: true,
+            goals: [],
+            subjects: [],
+          })
+          .select()
+          .single()
+
+        if (profileError) {
+          await admin.auth.admin.deleteUser(authData.user.id)
+          throw new ApiError(profileError.message || 'Failed to create student profile', 500)
+        }
+
+        return apiResponse(profile, 201)
+      }
+
+      throw new ApiError(inviteError?.message || 'Failed to invite student', 400)
     }
 
     // Upsert profile with student role
     const { data: profile, error: profileError } = await admin
       .from('profiles')
       .upsert({
-        id: authData.user.id,
+        id: inviteData.user.id,
         full_name: fullName,
         role: 'student',
         school_id: schoolId,
@@ -96,8 +141,7 @@ export async function POST(
       .single()
 
     if (profileError) {
-      // Rollback: delete the auth user we just created
-      await admin.auth.admin.deleteUser(authData.user.id)
+      await admin.auth.admin.deleteUser(inviteData.user.id)
       throw new ApiError(profileError.message || 'Failed to create student profile', 500)
     }
 
