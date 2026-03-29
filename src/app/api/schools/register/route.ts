@@ -13,10 +13,16 @@ export async function POST(request: NextRequest) {
       adminPassword,
       defaultTeacherPassword,
       defaultStudentPassword,
+      existingAdminId,
     } = body
 
-    if (!schoolName || !schoolSlug || !adminName || !adminEmail || !adminPassword) {
+    if (!schoolName || !schoolSlug || !adminName || !adminEmail) {
       throw new ApiError('Missing required fields', 400)
+    }
+
+    // If no existing admin, a password is required to create one
+    if (!existingAdminId && !adminPassword) {
+      throw new ApiError('Password is required for new admin accounts', 400)
     }
 
     // Validate slug format
@@ -25,7 +31,7 @@ export async function POST(request: NextRequest) {
       throw new ApiError('Slug must be lowercase letters, numbers, and hyphens only', 400)
     }
 
-    if (adminPassword.length < 8) {
+    if (!existingAdminId && adminPassword.length < 8) {
       throw new ApiError('Password must be at least 8 characters', 400)
     }
 
@@ -42,19 +48,26 @@ export async function POST(request: NextRequest) {
       throw new ApiError('This school URL is already taken', 409)
     }
 
-    // Create the admin auth user
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: adminEmail,
-      password: adminPassword,
-      email_confirm: true,
-      user_metadata: { full_name: adminName },
-    })
+    let adminId: string
 
-    if (authError || !authData.user) {
-      throw new ApiError(authError?.message || 'Failed to create admin user', 400)
+    if (existingAdminId) {
+      // Use the existing authenticated user
+      adminId = existingAdminId
+    } else {
+      // Create the admin auth user
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: adminEmail,
+        password: adminPassword,
+        email_confirm: true,
+        user_metadata: { full_name: adminName },
+      })
+
+      if (authError || !authData.user) {
+        throw new ApiError(authError?.message || 'Failed to create admin user', 400)
+      }
+
+      adminId = authData.user.id
     }
-
-    const adminId = authData.user.id
 
     // Create the school
     const { data: school, error: schoolError } = await supabase
@@ -70,8 +83,10 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (schoolError || !school) {
-      // Rollback: delete the auth user we just created
-      await supabase.auth.admin.deleteUser(adminId)
+      // Rollback: only delete auth user if we created one
+      if (!existingAdminId) {
+        await supabase.auth.admin.deleteUser(adminId)
+      }
       throw new ApiError(schoolError?.message || 'Failed to create school', 500)
     }
 
@@ -91,7 +106,9 @@ export async function POST(request: NextRequest) {
     if (profileError) {
       // Rollback
       await supabase.from('schools').delete().eq('id', school.id)
-      await supabase.auth.admin.deleteUser(adminId)
+      if (!existingAdminId) {
+        await supabase.auth.admin.deleteUser(adminId)
+      }
       throw new ApiError('Failed to set up admin profile', 500)
     }
 
