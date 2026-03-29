@@ -643,8 +643,8 @@ export default function AdminTeachersPage() {
                       }}>
                         <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
                         <span>
-                          <strong style={{ color: 'var(--primary-500)' }}>Enabled</strong> permissions are highlighted in purple.
-                          Click any permission to toggle it on or off. Hover over a permission to see what it does.
+                          All permissions are <strong style={{ color: 'var(--primary-500)' }}>granted by default</strong> when a teacher joins.
+                          Revoke any permission to restrict what this teacher can do. Changes take effect immediately.
                         </span>
                       </div>
 

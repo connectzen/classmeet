@@ -32,7 +32,7 @@ export default async function SchoolAppLayout({ children, params }: Props) {
     // School slug resolved — load school layout
     const { data: profile } = await supabase
       .from('profiles')
-      .select('full_name, avatar_url, role, onboarding_complete, school_id')
+      .select('full_name, avatar_url, role, onboarding_complete, school_id, teacher_type')
       .eq('id', user.id)
       .single()
 
@@ -49,7 +49,7 @@ export default async function SchoolAppLayout({ children, params }: Props) {
         .eq('teacher_id', user.id)
       grantedPerms = (perms ?? []).map((p: any) => p.permission)
     }
-    const permissions = resolveEffectivePermissions(profile.role, (profile as any).teacher_type, grantedPerms)
+    const permissions = resolveEffectivePermissions(profile.role, profile.teacher_type as TeacherType | null, grantedPerms)
 
     const appUser = {
       id: user.id,
@@ -61,7 +61,7 @@ export default async function SchoolAppLayout({ children, params }: Props) {
       schoolId: school.id,
       schoolSlug: school.slug,
       isSuperAdmin: false,
-      teacherType: ((profile as any).teacher_type as TeacherType | null) ?? null,
+      teacherType: (profile.teacher_type as TeacherType | null) ?? null,
       workspaceSlug: null,
       permissions,
     }

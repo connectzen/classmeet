@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiResponse, apiError } from '@/lib/api-utils'
+import { ALL_PERMISSIONS } from '@/lib/permissions'
 
 /**
  * POST /api/invite/join
@@ -57,6 +58,16 @@ export async function POST(request: Request) {
       )
 
     if (joinError) return apiError(joinError.message, 500)
+
+    // Step 2b — grant all default permissions for teachers joining via invite
+    if (role === 'teacher') {
+      const permInserts = ALL_PERMISSIONS.map(p => ({
+        teacher_id: user.id,
+        granted_by: teacherId,
+        permission: p,
+      }))
+      await admin.from('teacher_permissions').upsert(permInserts, { onConflict: 'teacher_id,permission' })
+    }
 
     // Step 3 — referral tracking for students only
     if (role === 'student') {

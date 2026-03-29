@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { apiResponse, apiError, ApiError, requireAuth } from '@/lib/api-utils'
+import { ALL_PERMISSIONS } from '@/lib/permissions'
 
 export async function GET(
   request: Request,
@@ -116,13 +117,14 @@ export async function POST(
       }
     }
 
-    // Upsert profile with teacher role
+    // Upsert profile with teacher role and teacher_type
     const { data: profile, error: profileError } = await admin
       .from('profiles')
       .upsert({
         id: userId,
         full_name: fullName,
         role: 'teacher',
+        teacher_type: 'school_employed',
         school_id: schoolId,
         onboarding_complete: true,
         goals: [],
@@ -135,6 +137,14 @@ export async function POST(
       await admin.auth.admin.deleteUser(userId)
       throw new ApiError(profileError.message || 'Failed to create teacher profile', 500)
     }
+
+    // Grant ALL permissions by default — admin can revoke specific ones later
+    const permInserts = ALL_PERMISSIONS.map(p => ({
+      teacher_id: userId,
+      granted_by: user.id,
+      permission: p,
+    }))
+    await admin.from('teacher_permissions').upsert(permInserts, { onConflict: 'teacher_id,permission' })
 
     return apiResponse(profile, 201)
   } catch (err) {
