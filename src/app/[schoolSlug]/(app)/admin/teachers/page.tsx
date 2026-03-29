@@ -109,11 +109,23 @@ export default function AdminTeachersPage() {
       const res = await fetch(`/api/schools/${school.schoolId}/teachers`)
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to load teachers')
+      const list: Teacher[] = json.data || []
+      setTeachers(list)
 
-      // Fetch emails via admin client on server — for now use auth metadata
-      // The profiles table doesn't store email, so we'll fetch from supabase auth
-      // But client can't access auth.users. We'll just show what we have.
-      setTeachers(json.data || [])
+      // Eagerly load permissions for all teachers
+      if (list.length > 0) {
+        const supabase = createClient()
+        const { data: allPerms } = await supabase
+          .from('teacher_permissions')
+          .select('teacher_id, permission')
+          .in('teacher_id', list.map(t => t.id))
+        const permMap = new Map<string, TeacherPermissionKey[]>()
+        for (const t of list) permMap.set(t.id, [])
+        for (const row of allPerms ?? []) {
+          permMap.get(row.teacher_id)?.push(row.permission as TeacherPermissionKey)
+        }
+        setTeacherPerms(permMap)
+      }
     } catch (err) {
       showAlert('error', err instanceof Error ? err.message : 'Failed to load teachers')
     } finally {

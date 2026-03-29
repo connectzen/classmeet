@@ -9,7 +9,8 @@ import { useLiveSessionCount } from '@/hooks/useLiveSessionCount'
 import { useUnreadMessageCount } from '@/hooks/useUnreadMessageCount'
 import UserMenu from './UserMenu'
 import { cn } from '@/lib/utils'
-import type { UserRole } from '@/lib/supabase/types'
+import type { UserRole, TeacherPermissionKey } from '@/lib/supabase/types'
+import { canInviteMembers, canCreateGroups, canCreateSessions, canCreateCourses, canManageQuizzes, isOwnerTier } from '@/lib/permissions'
 
 const COMMUNITY_ROLES: UserRole[] = ['teacher', 'admin']
 
@@ -21,6 +22,11 @@ export default function TopBar() {
   const isCreator = role === 'teacher' || role === 'admin'
   const liveCount = useLiveSessionCount(user?.id, isCreator)
   const unreadMsgCount = useUnreadMessageCount(user?.id)
+  const perms = (user?.permissions ?? []) as TeacherPermissionKey[]
+
+  // For teachers who are not owner-tier, check permissions; others see everything
+  const needsGating = role === 'teacher' && !isOwnerTier(role, user?.teacherType)
+  const hasPerm = (check: (p: TeacherPermissionKey[]) => boolean) => !needsGating || check(perms)
 
   // Build school-scoped base path
   const basePath = useMemo(() => {
@@ -35,11 +41,16 @@ export default function TopBar() {
     ? `/${schoolSlug}/${role === 'admin' ? 'admin' : role === 'teacher' ? 'teacher' : 'student'}`
     : '/dashboard'
 
-  const COMMUNITY_LINKS = useMemo(() => [
-    { href: `${basePath}/members`,   label: 'Members',   icon: Users     },
-    { href: `${basePath}/groups`,    label: 'Groups',    icon: FolderOpen },
-    { href: `${basePath}/analytics`, label: 'Analytics', icon: BarChart2  },
-  ], [basePath])
+  const COMMUNITY_LINKS = useMemo(() => {
+    const links: { href: string; label: string; icon: typeof Users }[] = []
+    if (hasPerm(canInviteMembers))
+      links.push({ href: `${basePath}/members`, label: 'Members', icon: Users })
+    if (hasPerm(canCreateGroups))
+      links.push({ href: `${basePath}/groups`, label: 'Groups', icon: FolderOpen })
+    links.push({ href: `${basePath}/analytics`, label: 'Analytics', icon: BarChart2 })
+    return links
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basePath, needsGating, perms.length])
 
   const [communityOpen, setCommunityOpen] = useState(false)
   const communityRef = useRef<HTMLDivElement>(null)
@@ -89,6 +100,7 @@ export default function TopBar() {
           </Link>
 
           {/* Live Rooms */}
+          {hasPerm(canCreateSessions) && (
           <Link
             href={`${basePath}/rooms`}
             className={cn('topbar-nav-link', (pathname === `${basePath}/rooms` || pathname.startsWith(`${basePath}/rooms/`)) && 'active')}
@@ -99,8 +111,10 @@ export default function TopBar() {
               <span className="topbar-badge">{liveCount}</span>
             )}
           </Link>
+          )}
 
           {/* Courses */}
+          {hasPerm(canCreateCourses) && (
           <Link
             href={`${basePath}/courses`}
             className={cn('topbar-nav-link', (pathname === `${basePath}/courses` || pathname.startsWith(`${basePath}/courses/`)) && 'active')}
@@ -108,8 +122,10 @@ export default function TopBar() {
             <BookOpen size={14} />
             Courses
           </Link>
+          )}
 
           {/* Exams */}
+          {hasPerm(canManageQuizzes) && (
           <Link
             href={`${basePath}/quizzes`}
             className={cn('topbar-nav-link', (pathname === `${basePath}/quizzes` || pathname.startsWith(`${basePath}/quizzes/`)) && 'active')}
@@ -117,6 +133,7 @@ export default function TopBar() {
             <HelpCircle size={14} />
             Exams
           </Link>
+          )}
 
           {/* Messages */}
           <Link
@@ -195,6 +212,7 @@ export default function TopBar() {
 
             {mobileMoreOpen && (
               <div className="topbar-dropdown topbar-more-dropdown">
+                {hasPerm(canCreateSessions) && (
                 <Link
                   href={`${basePath}/rooms`}
                   className={cn('topbar-dropdown-item', (pathname === `${basePath}/rooms` || pathname.startsWith(`${basePath}/rooms/`)) && 'active')}
@@ -204,6 +222,8 @@ export default function TopBar() {
                   Live Rooms
                   {liveCount > 0 && <span className="topbar-badge" style={{ marginLeft: 'auto' }}>{liveCount}</span>}
                 </Link>
+                )}
+                {hasPerm(canCreateCourses) && (
                 <Link
                   href={`${basePath}/courses`}
                   className={cn('topbar-dropdown-item', (pathname === `${basePath}/courses` || pathname.startsWith(`${basePath}/courses/`)) && 'active')}
@@ -212,6 +232,8 @@ export default function TopBar() {
                   <BookOpen size={15} />
                   Courses
                 </Link>
+                )}
+                {hasPerm(canManageQuizzes) && (
                 <Link
                   href={`${basePath}/quizzes`}
                   className={cn('topbar-dropdown-item', (pathname === `${basePath}/quizzes` || pathname.startsWith(`${basePath}/quizzes/`)) && 'active')}
@@ -220,6 +242,7 @@ export default function TopBar() {
                   <HelpCircle size={15} />
                   Exams
                 </Link>
+                )}
                 <Link
                   href={`${basePath}/messages`}
                   className={cn('topbar-dropdown-item', (pathname === `${basePath}/messages` || pathname.startsWith(`${basePath}/messages/`)) && 'active')}

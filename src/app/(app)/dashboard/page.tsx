@@ -435,9 +435,11 @@ export default function DashboardPage() {
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>{bannerSubtitle}</p>
           </div>
+          {(!creator || canCreateSessions(userPerms)) && (
           <Button icon={<Plus size={16} />} size="sm" onClick={handleNewSession}>
             {creator ? 'New Session' : 'Join Room'}
           </Button>
+          )}
         </div>
       </div>
 
