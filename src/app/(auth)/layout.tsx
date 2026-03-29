@@ -55,10 +55,11 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             window.location.replace(next)
             return
           }
-          setPhase('expired')
+          // Invited users already have passwords — just show the sign-in form
+          setPhase('ready')
         })
         .catch(() => {
-          window.location.replace('/sign-in')
+          setPhase('ready')
         })
       return
     }
