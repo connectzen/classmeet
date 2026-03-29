@@ -10,10 +10,14 @@ export async function GET(request: Request) {
     const [
       { count: schoolCount },
       { count: profileCount },
+      { count: adminCount },
+      { count: teacherCount },
       { data: auditLogs }
     ] = await Promise.all([
       supabase.from('schools').select('id', { count: 'exact', head: true }),
       supabase.from('profiles').select('id', { count: 'exact', head: true }),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin'),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'teacher'),
       (supabase as any).from('super_admin_audit_log').select('*').order('created_at', { ascending: false }).limit(10),
     ])
 
@@ -22,6 +26,8 @@ export async function GET(request: Request) {
         totalSchools: schoolCount || 0,
         totalUsers: profileCount || 0,
         totalProfiles: profileCount || 0,
+        totalAdmins: adminCount || 0,
+        totalTeachers: teacherCount || 0,
         recentAuditCount: auditLogs?.length || 0,
       },
       recentAudits: auditLogs || [],

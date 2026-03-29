@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Building2, Users, BarChart3, Settings,
-  Shield, Menu, X
+  Shield, Menu, X, Circle,
 } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
+import { createClient } from '@/lib/supabase/client'
 import UserMenu from '@/components/layout/UserMenu'
 
 const NAV_ITEMS = [
@@ -19,6 +20,60 @@ const NAV_ITEMS = [
   { href: '/superadmin/audit-logs', label: 'Audit Logs', icon: Shield },
   { href: '/superadmin/settings', label: 'Settings', icon: Settings },
 ]
+
+function OverviewStats() {
+  const [counts, setCounts] = useState({ schools: 0, users: 0, admins: 0, teachers: 0 })
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    const load = async () => {
+      try {
+        const res = await fetch('/api/superadmin/dashboard-data')
+        if (!res.ok) return
+        const { data } = await res.json()
+        setCounts({
+          schools: data.stats.totalSchools ?? 0,
+          users: data.stats.totalProfiles ?? 0,
+          admins: data.stats.totalAdmins ?? 0,
+          teachers: data.stats.totalTeachers ?? 0,
+        })
+      } catch { /* sidebar stats can silently fail */ }
+    }
+
+    load()
+
+    const ch = supabase
+      .channel('sa-sidebar-overview')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
+
+  const statRow = (icon: React.ReactNode, label: string, value: number, color: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px' }}>
+      <div style={{
+        width: 28, height: 28, borderRadius: '6px',
+        background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500 }}>{label}</div>
+      <div style={{ fontSize: '0.85rem', fontWeight: 700, color }}>{value}</div>
+    </div>
+  )
+
+  return (
+    <div className="sidebar-section" style={{ paddingTop: '10px' }}>
+      <div className="sidebar-section-label">Overview</div>
+      {statRow(<Building2 size={14} />, 'Schools', counts.schools, '#3b82f6')}
+      {statRow(<Users size={14} />, 'Total Users', counts.users, '#22c55e')}
+      {statRow(<Shield size={14} />, 'Admins', counts.admins, '#a855f7')}
+      {statRow(<Circle size={14} fill="#f59e0b" />, 'Teachers', counts.teachers, '#f59e0b')}
+    </div>
+  )
+}
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -53,6 +108,8 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             <X size={18} />
           </button>
         </div>
+
+        <OverviewStats />
 
         <nav style={{ paddingTop: '10px', flex: 1, overflowY: 'auto' }}>
           {NAV_ITEMS.map((item) => {
