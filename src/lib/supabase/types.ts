@@ -3,8 +3,7 @@ export type UserRole = 'super_admin' | 'admin' | 'member' | 'teacher' | 'student
 export type TeacherType = 'independent' | 'school_employed' | 'collaborator'
 
 export type TeacherPermissionKey =
-  | 'invite_students'
-  | 'invite_teachers'
+  | 'invite_members'
   | 'create_groups'
   | 'create_courses'
   | 'create_sessions'

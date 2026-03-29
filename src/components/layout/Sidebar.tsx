@@ -8,7 +8,7 @@ import { usePresenceStore } from '@/store/presence-store'
 import { useSchool } from '@/lib/school-context'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/supabase/types'
-import { canInviteStudents, canInviteTeachers, canCreateGroups, canCreateCourses, canCreateSessions, canManageQuizzes, isOwnerTier } from '@/lib/permissions'
+import { canInviteMembers, canCreateGroups, canCreateCourses, canCreateSessions, canManageQuizzes, isOwnerTier } from '@/lib/permissions'
 import Avatar from '@/components/ui/Avatar'
 import { Video, Settings, ShieldCheck, X, Circle, GraduationCap, Users, AlertCircle, BookOpen, FolderOpen, HelpCircle, MessageSquare, BarChart2, UserPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -29,13 +29,13 @@ function getNavLinks(schoolSlug: string | null, role: UserRole | undefined, perm
   // Teacher/Student dashboard links
   if (isTeacher || role === 'student') {
     const dashLinks: NavLink[] = [
-      { href: `${basePath}/dashboard/rooms`, label: 'Rooms', icon: Video },
+      { href: `${basePath}/dashboard/rooms`, label: 'Rooms', icon: Video, permissionCheck: (p) => role === 'student' || canCreateSessions(p as any) },
       { href: `${basePath}/dashboard/courses`, label: 'Courses', icon: BookOpen, permissionCheck: (p) => role === 'student' || canCreateCourses(p as any) },
       { href: `${basePath}/dashboard/messages`, label: 'Messages', icon: MessageSquare },
     ]
 
     if (isTeacher) {
-      if (canInviteStudents(permissions as any) || canInviteTeachers(permissions as any)) {
+      if (canInviteMembers(permissions as any)) {
         dashLinks.push({ href: `${basePath}/dashboard/members`, label: 'Members', icon: Users })
       }
       if (canCreateGroups(permissions as any)) {

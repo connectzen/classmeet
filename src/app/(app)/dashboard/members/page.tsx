@@ -323,7 +323,7 @@ function MembersPageInner() {
 
 export default function MembersPage() {
   return (
-    <PermissionGate permission={['invite_students', 'invite_teachers']}>
+    <PermissionGate permission="invite_members">
       <MembersPageInner />
     </PermissionGate>
   )

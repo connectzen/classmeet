@@ -4,7 +4,7 @@ import { apiResponse, apiError, requirePermission } from '@/lib/api-utils'
 
 export async function POST(request: Request) {
   try {
-    const { userId, profile } = await requirePermission(request, 'invite_students')
+    const { userId, profile } = await requirePermission(request, 'invite_members')
     const supabase = await createClient()
 
     // Fetch full name for invite email

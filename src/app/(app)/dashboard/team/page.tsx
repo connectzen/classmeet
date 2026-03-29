@@ -19,8 +19,7 @@ interface Collaborator {
 }
 
 const PERMISSION_LABELS: Record<TeacherPermissionKey, { label: string; desc: string }> = {
-  invite_students: { label: 'Invite Students', desc: 'Can invite and manage students' },
-  invite_teachers: { label: 'Invite Teachers', desc: 'Can invite other collaborators' },
+  invite_members: { label: 'Invite Members', desc: 'Can invite students and teachers' },
   create_groups: { label: 'Create Groups', desc: 'Can create and manage student groups' },
   create_courses: { label: 'Create Courses', desc: 'Can create and manage course content' },
   create_sessions: { label: 'Create Sessions', desc: 'Can host live video sessions' },

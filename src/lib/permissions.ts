@@ -2,8 +2,7 @@ import type { TeacherPermissionKey, TeacherType, UserRole } from '@/lib/supabase
 
 /** All available teacher permissions */
 export const ALL_PERMISSIONS: TeacherPermissionKey[] = [
-  'invite_students',
-  'invite_teachers',
+  'invite_members',
   'create_groups',
   'create_courses',
   'create_sessions',
@@ -39,12 +38,8 @@ export function resolveEffectivePermissions(
   return grantedPermissions
 }
 
-export function canInviteStudents(perms: TeacherPermissionKey[]): boolean {
-  return perms.includes('invite_students')
-}
-
-export function canInviteTeachers(perms: TeacherPermissionKey[]): boolean {
-  return perms.includes('invite_teachers')
+export function canInviteMembers(perms: TeacherPermissionKey[]): boolean {
+  return perms.includes('invite_members')
 }
 
 export function canCreateGroups(perms: TeacherPermissionKey[]): boolean {

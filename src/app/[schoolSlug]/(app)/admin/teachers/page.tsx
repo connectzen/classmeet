@@ -14,8 +14,7 @@ import type { TeacherPermissionKey } from '@/lib/supabase/types'
 type ExpandTab = 'permissions' | 'assignments' | 'students'
 
 const PERMISSION_LABELS: Record<TeacherPermissionKey, string> = {
-  invite_students: 'Invite Students',
-  invite_teachers: 'Invite Teachers',
+  invite_members: 'Invite Members',
   create_groups: 'Create Groups',
   create_courses: 'Create Courses',
   create_sessions: 'Create Sessions',
@@ -24,8 +23,7 @@ const PERMISSION_LABELS: Record<TeacherPermissionKey, string> = {
 }
 
 const PERMISSION_DESCRIPTIONS: Record<TeacherPermissionKey, string> = {
-  invite_students: 'Allow this teacher to invite new students to the school via email or link.',
-  invite_teachers: 'Allow this teacher to invite other teachers to join the school.',
+  invite_members: 'Allow this teacher to invite new students and teachers to the school via email or link.',
   create_groups: 'Allow this teacher to create and manage student groups for organized teaching.',
   create_courses: 'Allow this teacher to create courses, add topics, and publish learning materials.',
   create_sessions: 'Allow this teacher to start and schedule live classroom sessions (rooms).',

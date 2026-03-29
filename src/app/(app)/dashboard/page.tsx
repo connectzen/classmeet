@@ -16,7 +16,7 @@ import {
 import { useToast } from '@/hooks/useToast'
 import { isCreatorRole } from '@/lib/utils'
 import { useCountdown } from '@/hooks/useCountdown'
-import { canInviteStudents, canInviteTeachers, canCreateCourses, canCreateSessions, canManageQuizzes } from '@/lib/permissions'
+import { canInviteMembers, canCreateCourses, canCreateSessions, canManageQuizzes } from '@/lib/permissions'
 import type { TeacherPermissionKey } from '@/lib/supabase/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin:
 const TEACHER_ACTIONS: Action[] = [
   { label: 'Start Live Room',  desc: 'Host a video session',  icon: Video,    color: 'var(--primary-500)', href: '/dashboard/rooms',   statKey: 'sessionCount', permissionCheck: (p) => canCreateSessions(p) },
   { label: 'Create Course',    desc: 'Build course content',   icon: BookOpen,     color: 'var(--accent-500)',   href: '/dashboard/courses', statKey: 'courseCount', permissionCheck: (p) => canCreateCourses(p)   },
-  { label: 'Invite Members',   desc: 'Manage your students',       icon: Users,        color: 'var(--success-400)',  href: '/dashboard/members',   statKey: 'studentCount', permissionCheck: (p) => canInviteStudents(p) || canInviteTeachers(p) },
+  { label: 'Invite Members',   desc: 'Manage your students',       icon: Users,        color: 'var(--success-400)',  href: '/dashboard/members',   statKey: 'studentCount', permissionCheck: (p) => canInviteMembers(p) },
   { label: 'Messages',         desc: 'Chat with students',   icon: MessageSquare,color: 'var(--warning-400)',  href: '/dashboard/messages'  },
 ]
 
