@@ -52,24 +52,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   { label: 'Audit Logs',      desc: 'Review system activity',   icon: TrendingUp, color: 'var(--warning-400)', href: '/superadmin/audit-logs',  statKey: 'recentAuditCount' },
 ]
 
-function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: number; color: string }) {
-  return (
-    <div className="card card-interactive" style={{ padding: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 'var(--radius-md)',
-          background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color,
-        }}>
-          <Icon size={22} />
-        </div>
-        <div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '2px' }}>{label}</div>
-          <div style={{ fontSize: '1.7rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>{value.toLocaleString()}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
+
 
 function formatTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -165,17 +148,6 @@ export default function SuperAdminDashboard() {
             New School
           </Button>
         </div>
-      </div>
-
-      {/* Stats grid */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px', marginBottom: '24px',
-      }}>
-        <StatCard icon={Building2}  label="Total Schools"   value={stats?.totalSchools ?? 0}    color="#3b82f6" />
-        <StatCard icon={Users}      label="Total Users"     value={stats?.totalUsers ?? 0}      color="#10b981" />
-        <StatCard icon={Activity}   label="Active Profiles" value={stats?.totalProfiles ?? 0}   color="#f59e0b" />
-        <StatCard icon={TrendingUp} label="Recent Audits"   value={stats?.recentAuditCount ?? 0} color="#8b5cf6" />
       </div>
 
       {/* Quick actions */}

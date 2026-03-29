@@ -6,23 +6,28 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Building2, Users, BarChart3, Settings,
-  Shield, Menu, X, Circle,
+  Shield, Menu, X,
 } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
 import UserMenu from '@/components/layout/UserMenu'
 
 const NAV_ITEMS = [
-  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/superadmin/schools', label: 'Schools', icon: Building2 },
-  { href: '/superadmin/users', label: 'Users', icon: Users },
-  { href: '/superadmin/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/superadmin/audit-logs', label: 'Audit Logs', icon: Shield },
-  { href: '/superadmin/settings', label: 'Settings', icon: Settings },
+  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard, countKey: null },
+  { href: '/superadmin/schools', label: 'Schools', icon: Building2, countKey: 'totalSchools' as const },
+  { href: '/superadmin/users', label: 'Users', icon: Users, countKey: 'totalUsers' as const },
+  { href: '/superadmin/analytics', label: 'Analytics', icon: BarChart3, countKey: null },
+  { href: '/superadmin/audit-logs', label: 'Audit Logs', icon: Shield, countKey: 'recentAuditCount' as const },
+  { href: '/superadmin/settings', label: 'Settings', icon: Settings, countKey: null },
 ]
 
-function OverviewStats() {
-  const [counts, setCounts] = useState({ schools: 0, users: 0, admins: 0, teachers: 0 })
+type CountKeys = 'totalSchools' | 'totalUsers' | 'recentAuditCount'
+
+export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const { user } = useAppStore()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [counts, setCounts] = useState<Record<CountKeys, number>>({ totalSchools: 0, totalUsers: 0, recentAuditCount: 0 })
 
   useEffect(() => {
     const supabase = createClient()
@@ -33,52 +38,22 @@ function OverviewStats() {
         if (!res.ok) return
         const { data } = await res.json()
         setCounts({
-          schools: data.stats.totalSchools ?? 0,
-          users: data.stats.totalProfiles ?? 0,
-          admins: data.stats.totalAdmins ?? 0,
-          teachers: data.stats.totalTeachers ?? 0,
+          totalSchools: data.stats.totalSchools ?? 0,
+          totalUsers: data.stats.totalProfiles ?? 0,
+          recentAuditCount: data.stats.recentAuditCount ?? 0,
         })
-      } catch { /* sidebar stats can silently fail */ }
+      } catch { /* sidebar counts can silently fail */ }
     }
 
     load()
 
     const ch = supabase
-      .channel('sa-sidebar-overview')
+      .channel('sa-sidebar-counts')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [])
-
-  const statRow = (icon: React.ReactNode, label: string, value: number, color: string) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px' }}>
-      <div style={{
-        width: 28, height: 28, borderRadius: '6px',
-        background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0,
-      }}>
-        {icon}
-      </div>
-      <div style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500 }}>{label}</div>
-      <div style={{ fontSize: '0.85rem', fontWeight: 700, color }}>{value}</div>
-    </div>
-  )
-
-  return (
-    <div className="sidebar-section" style={{ paddingTop: '10px' }}>
-      <div className="sidebar-section-label">Overview</div>
-      {statRow(<Building2 size={14} />, 'Schools', counts.schools, '#3b82f6')}
-      {statRow(<Users size={14} />, 'Total Users', counts.users, '#22c55e')}
-      {statRow(<Shield size={14} />, 'Admins', counts.admins, '#a855f7')}
-      {statRow(<Circle size={14} fill="#f59e0b" />, 'Teachers', counts.teachers, '#f59e0b')}
-    </div>
-  )
-}
-
-export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
-  const { user } = useAppStore()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
     <div className="app-layout">
@@ -109,23 +84,33 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
           </button>
         </div>
 
-        <OverviewStats />
-
         <nav style={{ paddingTop: '10px', flex: 1, overflowY: 'auto' }}>
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const isActive = item.href === '/superadmin'
               ? pathname === '/superadmin'
               : pathname.startsWith(item.href)
+            const count = item.countKey ? counts[item.countKey] : null
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn('sidebar-link', isActive && 'active')}
                 onClick={() => setSidebarOpen(false)}
+                style={{ justifyContent: 'flex-start' }}
               >
                 <Icon size={17} className="link-icon" />
-                {item.label}
+                <span style={{ flex: 1 }}>{item.label}</span>
+                {count !== null && count > 0 && (
+                  <span style={{
+                    fontSize: '0.72rem', fontWeight: 600,
+                    background: 'var(--bg-elevated)', color: 'var(--text-muted)',
+                    padding: '1px 7px', borderRadius: '10px',
+                    minWidth: '20px', textAlign: 'center',
+                  }}>
+                    {count}
+                  </span>
+                )}
               </Link>
             )
           })}

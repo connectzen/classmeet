@@ -231,10 +231,11 @@ function TeacherInfo({ studentId }: { studentId: string }) {
   )
 }
 
-// ── Admin Overview (for admins) — shows system-wide counts ──
+// ── Admin Overview (for admins) — clickable links to admin sub-pages ──
 function AdminOverview() {
   const [counts, setCounts] = useState({ teachers: 0, students: 0, unassigned: 0 })
   const onlineUsers = usePresenceStore((s) => s.onlineUsers)
+  const school = useSchool()
 
   useEffect(() => {
     const supabase = createClient()
@@ -270,9 +271,15 @@ function AdminOverview() {
   }, [])
 
   const onlineCount = onlineUsers.size
+  const slug = school?.schoolSlug
 
-  const statRow = (icon: React.ReactNode, label: string, value: number, color: string) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px' }}>
+  const statLink = (href: string, icon: React.ReactNode, label: string, value: number, color: string) => (
+    <Link
+      href={href}
+      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 16px', textDecoration: 'none', borderRadius: 'var(--radius-sm)', transition: 'background var(--transition-fast)' }}
+      onMouseOver={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
+      onMouseOut={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+    >
       <div style={{ width: 28, height: 28, borderRadius: '6px', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
         {icon}
       </div>
@@ -280,17 +287,17 @@ function AdminOverview() {
         <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 500 }}>{label}</div>
       </div>
       <div style={{ fontSize: '0.85rem', fontWeight: 700, color }}>{value}</div>
-    </div>
+    </Link>
   )
 
   return (
     <>
       <div className="sidebar-section">
         <div className="sidebar-section-label">Overview</div>
-        {statRow(<GraduationCap size={14} />, 'Teachers', counts.teachers, '#3b82f6')}
-        {statRow(<Users size={14} />, 'Students', counts.students, '#22c55e')}
-        {statRow(<AlertCircle size={14} />, 'Unassigned', counts.unassigned, counts.unassigned > 0 ? '#f59e0b' : '#22c55e')}
-        {statRow(<Circle size={14} fill="#22c55e" />, 'Online Now', onlineCount, '#22c55e')}
+        {statLink(`/${slug}/admin/teachers`, <GraduationCap size={14} />, 'Teachers', counts.teachers, '#3b82f6')}
+        {statLink(`/${slug}/admin/students`, <Users size={14} />, 'Students', counts.students, '#22c55e')}
+        {statLink(`/${slug}/admin/students`, <AlertCircle size={14} />, 'Unassigned', counts.unassigned, counts.unassigned > 0 ? '#f59e0b' : '#22c55e')}
+        {statLink(`/${slug}/admin`, <Circle size={14} fill="#22c55e" />, 'Online Now', onlineCount, '#22c55e')}
       </div>
     </>
   )

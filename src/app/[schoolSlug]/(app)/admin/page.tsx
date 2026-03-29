@@ -5,8 +5,8 @@ import { useSchool } from '@/lib/school-context'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Users, GraduationCap, BookOpen, UserPlus, Settings,
-  ArrowRight, School, AlertCircle,
+  Users, GraduationCap, BookOpen, Settings,
+  ArrowRight, School,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -14,31 +14,6 @@ interface Stats {
   teacherCount: number
   studentCount: number
   classCount: number
-  unassignedCount: number
-}
-
-function StatCard({ icon: Icon, label, value, color, href }: {
-  icon: React.ElementType; label: string; value: number | string; color: string; href: string
-}) {
-  return (
-    <Link href={href} style={{ textDecoration: 'none' }}>
-      <div className="card card-interactive" style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 'var(--radius-md)',
-            background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Icon size={22} color={color} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-primary)' }}>{value}</div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{label}</div>
-          </div>
-          <ArrowRight size={16} color="var(--text-disabled)" />
-        </div>
-      </div>
-    </Link>
-  )
 }
 
 interface QuickAction {
@@ -52,24 +27,22 @@ interface QuickAction {
 export default function AdminDashboardPage() {
   const school = useSchool()
   const user = useAppStore((s) => s.user)
-  const [stats, setStats] = useState<Stats>({ teacherCount: 0, studentCount: 0, classCount: 0, unassignedCount: 0 })
+  const [stats, setStats] = useState<Stats>({ teacherCount: 0, studentCount: 0, classCount: 0 })
   const [loading, setLoading] = useState(true)
 
   const loadStats = useCallback(async () => {
     const supabase = createClient()
 
-    const [teachers, students, classes, unassigned] = await Promise.all([
+    const [teachers, students, classes] = await Promise.all([
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('school_id', school.schoolId).eq('role', 'teacher'),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('school_id', school.schoolId).eq('role', 'student'),
       supabase.from('classes').select('id', { count: 'exact', head: true }).eq('school_id', school.schoolId),
-      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('school_id', school.schoolId).eq('role', 'student').is('teacher_id' as any, null),
     ])
 
     setStats({
       teacherCount: teachers.count ?? 0,
       studentCount: students.count ?? 0,
       classCount: classes.count ?? 0,
-      unassignedCount: unassigned.count ?? 0,
     })
     setLoading(false)
   }, [school.schoolId])
@@ -142,19 +115,6 @@ export default function AdminDashboardPage() {
         >
           <Settings size={14} /> Settings
         </Link>
-      </div>
-
-      {/* Stats Cards */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-        gap: '14px',
-        marginBottom: '32px',
-      }}>
-        <StatCard icon={Users} label="Teachers" value={loading ? '...' : stats.teacherCount} color="#3b82f6" href={`/${slug}/admin/teachers`} />
-        <StatCard icon={GraduationCap} label="Students" value={loading ? '...' : stats.studentCount} color="#22c55e" href={`/${slug}/admin/students`} />
-        <StatCard icon={BookOpen} label="Classes" value={loading ? '...' : stats.classCount} color="#a855f7" href={`/${slug}/admin/classes`} />
-        <StatCard icon={AlertCircle} label="Unassigned" value={loading ? '...' : stats.unassignedCount} color={stats.unassignedCount > 0 ? '#f59e0b' : '#22c55e'} href={`/${slug}/admin/students`} />
       </div>
 
       {/* Quick Actions */}
