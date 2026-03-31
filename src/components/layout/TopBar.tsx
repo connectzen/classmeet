@@ -103,9 +103,10 @@ export default function TopBar() {
               onClick={() => setNavOpen(o => !o)}
               aria-expanded={navOpen}
               aria-haspopup="true"
+              aria-label="Navigate"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <Menu size={16} />
+              <Menu size={16} className="topbar-nav-icon" />
               <span className="topbar-nav-label">Navigate</span>
               <ChevronDown size={14} style={{ transition: 'transform 0.15s', transform: navOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
             </button>

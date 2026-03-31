@@ -232,6 +232,8 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [submittedStudents, setSubmittedStudents] = useState<Record<string, string>>({})
   // Mobile detection – null means "not yet determined"
   const [isMobile, setIsMobile] = useState<boolean>(initialIsMobile)
+  // Copy ID feedback
+  const [idCopied, setIdCopied] = useState(false)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -1122,23 +1124,24 @@ function RoomInner({ roomName }: { roomName: string }) {
               </button>
             )}
             <div className="room-live-dot" />
-            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{roomName}</span>
-            <button 
-              className="room-icon-btn" 
+            <button
+              className="room-icon-btn"
               onClick={() => {
                 navigator.clipboard.writeText(roomName)
                   .then(() => {
-                    alert('Room name copied to clipboard!')
+                    setIdCopied(true)
+                    setTimeout(() => setIdCopied(false), 2000)
                   })
                   .catch(() => {
-                    console.log('Copy failed, room name is: ' + roomName)
+                    // Fallback: prompt so user can copy manually
+                    window.prompt('Copy this Room ID:', roomName)
                   })
-              }} 
-              title="Click to copy room name"
-              style={{ opacity: 0.7, fontSize: '0.85rem', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              }}
+              title={roomName}
+              style={{ fontSize: '0.82rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '5px' }}
             >
-              <Copy size={16} />
-              Copy
+              {idCopied ? <Check size={14} /> : <Copy size={14} />}
+              {idCopied ? 'Copied!' : 'Copy ID'}
             </button>
             <span className="room-live-badge">LIVE</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>

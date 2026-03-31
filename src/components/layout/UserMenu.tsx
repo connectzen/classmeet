@@ -54,13 +54,13 @@ export default function UserMenu() {
     <>
       <div style={{ position: 'relative' }} ref={ref}>
         <button
-          className="btn btn-ghost"
+          className="btn btn-ghost user-menu-btn"
           style={{ padding: '6px 10px', gap: '8px', borderRadius: 'var(--radius-lg)' }}
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="true"
           aria-expanded={open}
         >
-          <Avatar src={user.avatarUrl} name={user.fullName} size="sm" />
+          <Avatar src={user.avatarUrl} name={user.fullName} size="sm" className="user-menu-avatar" />
           <span className="user-menu-name truncate" style={{ fontSize: '0.875rem', fontWeight: 500, maxWidth: '120px' }}>
             {user.fullName || user.email}
           </span>
