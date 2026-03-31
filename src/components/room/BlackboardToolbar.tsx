@@ -26,6 +26,7 @@ interface BlackboardToolbarProps {
   toolbarVisible: boolean
   onToggleToolbar: () => void
   hasSelection: boolean
+  dismissSignal?: number
 }
 
 const COLORS = [
@@ -81,6 +82,7 @@ export default function BlackboardToolbar({
   toolbarVisible,
   onToggleToolbar,
   hasSelection,
+  dismissSignal,
 }: BlackboardToolbarProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showSizePicker, setShowSizePicker] = useState(false)
@@ -107,6 +109,15 @@ export default function BlackboardToolbar({
       setShowTextPanel(false)
     }
   }, [activeTool, isMobileView])
+
+  // Dismiss all popups when the canvas is clicked
+  useEffect(() => {
+    if (dismissSignal) {
+      setShowTextPanel(false)
+      setShowColorPicker(false)
+      setShowSizePicker(false)
+    }
+  }, [dismissSignal])
 
   // T button: toggle text tool on/off (clicking active T switches back to pen)
   const handleTextToolClick = () => {

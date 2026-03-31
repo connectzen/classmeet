@@ -90,6 +90,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const [toolbarVisible, setToolbarVisible] = useState(true)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
+  const [dismissSignal, setDismissSignal] = useState(0)
   const [textOptions, setTextOptions] = useState<TextOptions>({
     fontSize: 24,
     fontFamily: 'Courier New, monospace',
@@ -360,6 +361,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
 
     fabricRef.current = canvas
+
+    // Dismiss toolbar popups when canvas is clicked
+    canvas.on('mouse:down', () => setDismissSignal(s => s + 1))
 
     // Track selection for smart delete
     if (canDrawOverall) {
@@ -1183,6 +1187,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           toolbarVisible={toolbarVisible}
           onToggleToolbar={() => setToolbarVisible(v => !v)}
           hasSelection={hasSelection}
+          dismissSignal={dismissSignal}
         />
       )}
     </div>
