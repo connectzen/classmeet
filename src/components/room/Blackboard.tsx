@@ -22,6 +22,9 @@ export type BlackboardEvent = (
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
   | { type: 'allow-drawing'; allowed: boolean }
   | { type: 'tool-change'; tool: DrawingTool }
+  | { type: 'color-change'; color: string }
+  | { type: 'stroke-change'; width: number }
+  | { type: 'text-options-change'; options: TextOptions }
   | { type: 'toolbar-state'; colorPicker: boolean; sizePicker: boolean; textPanel: boolean }
 ) & { senderId?: string }
 
@@ -41,11 +44,14 @@ export interface BlackboardHandle {
   applyRemoteTool: (tool: DrawingTool) => void
   getActiveTool: () => DrawingTool
   applyRemoteToolbarState: (state: { colorPicker: boolean; sizePicker: boolean; textPanel: boolean }) => void
+  applyRemoteColor: (color: string) => void
+  applyRemoteStrokeWidth: (width: number) => void
+  applyRemoteTextOptions: (options: TextOptions) => void
+  getToolbarSettings: () => { color: string; strokeWidth: number; textOptions: TextOptions }
 }
 
 interface BlackboardProps {
   isHost: boolean
-  canDraw?: boolean  // Permission to draw (for students when allowed by teacher)
   onCanvasEvent?: (event: BlackboardEvent) => void
   incomingEvent?: BlackboardEvent | null
 }
@@ -74,7 +80,7 @@ function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T {
 
 // ── Component ────────────────────────────────────────────────────────────────
 const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackboard(
-  { isHost, canDraw = false, onCanvasEvent, incomingEvent },
+  { isHost, onCanvasEvent, incomingEvent },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -84,8 +90,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const cursorDivRef = useRef<HTMLDivElement>(null)
   const caretDivRef = useRef<HTMLDivElement>(null)
   
-  // Determine if this user can draw (host or student with permission)
-  const canDrawOverall = isHost || canDraw
+  // Everyone can always draw on the shared board
+  const canDrawOverall = true
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('rect')
@@ -101,7 +107,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const [showSizePicker, setShowSizePicker] = useState(false)
   const [showTextPanel, setShowTextPanel] = useState(false)
   const [textOptions, setTextOptions] = useState<TextOptions>({
-    fontSize: 24,
+    fontSize: 56,
     fontFamily: 'Courier New, monospace',
     bold: false,
     italic: false,
@@ -162,6 +168,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // Suppress toolbar-state broadcast when applying remote state (prevents echo)
   const suppressToolbarBroadcastRef = useRef(false)
 
+  // Suppress setting broadcasts when applying remote settings (prevents echo)
+  const suppressSettingsBroadcastRef = useRef(false)
+
   // ── Handle live drawing events imperatively (bypasses React state batching) ──
   const handleLiveEvent = useCallback((event: BlackboardEvent) => {
     const canvas = fabricRef.current
@@ -195,9 +204,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           // Hide the cursor dot while the text caret is visible
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
 
-          // If this user can draw and is in text mode, activate the IText at the
-          // cursor position so they can immediately type without clicking again.
-          if (canvas && activeToolRef.current === 'text') {
+          // Auto-activate the nearest IText so any participant can type
+          // without needing to click on it — the board is shared.
+          if (canvas) {
             const objs = canvas.getObjects()
             // Find the IText closest to the cursor position (within tolerance)
             let bestText: fabric.IText | null = null
@@ -224,6 +233,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
               bestText.setSelectionStart(bestText.text?.length || 0)
               bestText.setSelectionEnd(bestText.text?.length || 0)
               editingTextRef.current = bestText
+              // Hide remote caret indicator to avoid dual-cursor visual
+              if (el) el.style.display = 'none'
               canvas.renderAll()
             }
           }
@@ -362,6 +373,37 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       setShowTextPanel(state.textPanel)
       suppressToolbarBroadcastRef.current = false
     },
+    applyRemoteColor: (color: string) => {
+      suppressSettingsBroadcastRef.current = true
+      setStrokeColor(color)
+      // Update the active brush if in drawing mode
+      const canvas = fabricRef.current
+      if (canvas?.freeDrawingBrush) {
+        canvas.freeDrawingBrush.color = color
+      }
+      suppressSettingsBroadcastRef.current = false
+    },
+    applyRemoteStrokeWidth: (width: number) => {
+      suppressSettingsBroadcastRef.current = true
+      setStrokeWidth(width)
+      const canvas = fabricRef.current
+      if (canvas?.freeDrawingBrush) {
+        const tool = activeToolRef.current
+        const multiplier = (tool === 'highlighter' || tool === 'eraser') ? 5 : 1
+        canvas.freeDrawingBrush.width = width * multiplier
+      }
+      suppressSettingsBroadcastRef.current = false
+    },
+    applyRemoteTextOptions: (options: TextOptions) => {
+      suppressSettingsBroadcastRef.current = true
+      setTextOptions(options)
+      suppressSettingsBroadcastRef.current = false
+    },
+    getToolbarSettings: () => ({
+      color: strokeColorRef.current,
+      strokeWidth: strokeWidthRef.current,
+      textOptions: textOptionsRef.current,
+    }),
   }))
 
   // ── Undo state capture: captureUndo saves pre-mutation state, commitUndo pushes it ──
@@ -612,7 +654,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const canvas = fabricRef.current
     if (!canvas || !incomingEvent) return
 
-    // Live drawing / cursor / shape-preview / permission events are handled outside — skip here
+    // Live drawing / cursor / shape-preview events are handled outside — skip here
     if (
       incomingEvent.type === 'drawing-live' ||
       incomingEvent.type === 'drawing-live-end' ||
@@ -649,8 +691,11 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           const obj = objects[0] as fabric.FabricObject | undefined
           if (obj) {
             ;(obj as any).id = incomingEvent.id
-            obj.selectable = false
-            obj.evented = false
+            // Shared board: all participants can interact with all objects
+            const isText = obj.type === 'i-text' || obj.type === 'IText'
+            obj.selectable = true
+            obj.evented = true
+            if (isText) (obj as any).editable = true
             canvas.add(obj)
             canvas.renderAll()
             // Clear shape-preview from contextTop now that committed object is on canvas
@@ -1127,6 +1172,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         canvas.freeDrawingBrush.color = color
       }
     }
+    // Broadcast color change to all participants
+    if (!suppressSettingsBroadcastRef.current) {
+      onCanvasEventRef.current?.({ type: 'color-change', color })
+    }
   }, [activeTool])
 
   // ── Stroke width change: update active brush ───────────────────────────
@@ -1137,6 +1186,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (canvas.freeDrawingBrush) {
       const multiplier = (activeTool === 'highlighter' || activeTool === 'eraser') ? 5 : 1
       canvas.freeDrawingBrush.width = width * multiplier
+    }
+    // Broadcast stroke width change to all participants
+    if (!suppressSettingsBroadcastRef.current) {
+      onCanvasEventRef.current?.({ type: 'stroke-change', width })
     }
   }, [activeTool])
 
@@ -1239,6 +1292,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     onCanvasEventRef.current?.({ type: 'toolbar-state', colorPicker: showColorPicker, sizePicker: showSizePicker, textPanel: showTextPanel })
   }, [showColorPicker, showSizePicker, showTextPanel])
 
+  // ── Text options change wrapper: broadcasts to all participants ──────────
+  const handleTextOptionsChange = useCallback((opts: TextOptions) => {
+    setTextOptions(opts)
+    if (!suppressSettingsBroadcastRef.current) {
+      onCanvasEventRef.current?.({ type: 'text-options-change', options: opts })
+    }
+  }, [])
+
   return (
     <div className="room-blackboard" ref={containerRef}>
       <canvas ref={canvasRef} />
@@ -1254,7 +1315,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           strokeWidth={strokeWidth}
           onStrokeWidthChange={handleStrokeWidthChange}
           textOptions={textOptions}
-          onTextOptionsChange={setTextOptions}
+          onTextOptionsChange={handleTextOptionsChange}
           onUndo={handleUndo}
           onRedo={handleRedo}
           onClear={handleClear}

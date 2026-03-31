@@ -192,8 +192,6 @@ function RoomInner({ roomName }: { roomName: string }) {
   const [showSettings, setShowSettings] = useState(false)
   // Blackboard
   const [blackboardActive, setBlackboardActive] = useState(false)
-  const [allowStudentDrawing, setAllowStudentDrawing] = useState(false)  // Permission for students to draw
-  const allowStudentDrawingRef = useRef(false)
   const [blackboardEvent, setBlackboardEvent] = useState<BlackboardEvent | null>(null)
   const blackboardRef = useRef<BlackboardHandle>(null)
   const prevParticipantCount = useRef(0)
@@ -410,9 +408,12 @@ function RoomInner({ roomName }: { roomName: string }) {
     } else if (event.type === 'deactivate') {
       setBlackboardActive(false)
       removeLayerFromOrder('blackboard')
-    } else if (event.type === 'allow-drawing') {
-      setAllowStudentDrawing(event.allowed)
-      allowStudentDrawingRef.current = event.allowed
+    } else if (event.type === 'color-change') {
+      blackboardRef.current?.applyRemoteColor(event.color)
+    } else if (event.type === 'stroke-change') {
+      blackboardRef.current?.applyRemoteStrokeWidth(event.width)
+    } else if (event.type === 'text-options-change') {
+      blackboardRef.current?.applyRemoteTextOptions(event.options)
     } else if (event.type === 'tool-change') {
       // Sync the active drawing tool across all participants
       blackboardRef.current?.applyRemoteTool(event.tool)
@@ -576,9 +577,6 @@ function RoomInner({ roomName }: { roomName: string }) {
       }
     } else {
       removeLayerFromOrder('blackboard')
-      // Reset drawing permission when board is deactivated
-      setAllowStudentDrawing(false)
-      allowStudentDrawingRef.current = false
     }
     updateLayerOrder('blackboard', next)
 
@@ -955,16 +953,18 @@ function RoomInner({ roomName }: { roomName: string }) {
           const payload = encoder.encode(JSON.stringify({ type: 'snapshot', data: snapshot }))
           sendBlackboardData(payload, { reliable: true })
         }
-        // Send current drawing permission so late-joiners know if they can draw
-        if (allowStudentDrawingRef.current) {
-          const drawPayload = encoder.encode(JSON.stringify({ type: 'allow-drawing', allowed: true }))
-          sendBlackboardData(drawPayload, { reliable: true })
-        }
         // Send current active tool so late-joiners start with the same tool
         const currentTool = blackboardRef.current?.getActiveTool()
         if (currentTool) {
           const toolPayload = encoder.encode(JSON.stringify({ type: 'tool-change', tool: currentTool, senderId: localParticipant.identity }))
           sendBlackboardData(toolPayload, { reliable: true })
+        }
+        // Send current toolbar settings (color, stroke, text options) so late-joiners sync
+        const settings = blackboardRef.current?.getToolbarSettings()
+        if (settings) {
+          sendBlackboardData(encoder.encode(JSON.stringify({ type: 'color-change', color: settings.color, senderId: localParticipant.identity })), { reliable: true })
+          sendBlackboardData(encoder.encode(JSON.stringify({ type: 'stroke-change', width: settings.strokeWidth, senderId: localParticipant.identity })), { reliable: true })
+          sendBlackboardData(encoder.encode(JSON.stringify({ type: 'text-options-change', options: settings.textOptions, senderId: localParticipant.identity })), { reliable: true })
         }
       }, 500)
     }
@@ -1226,7 +1226,6 @@ function RoomInner({ roomName }: { roomName: string }) {
           onRevealResults={revealResults}
           onRefreshSubmissions={refreshSubmissions}
           quizResultRevealed={quizResultRevealed}
-          allowStudentDrawing={allowStudentDrawing}
         />
 
         {/* Quiz result reveal overlay */}
@@ -1268,15 +1267,6 @@ function RoomInner({ roomName }: { roomName: string }) {
           onSelectQuiz={activateQuiz}
           isCameraLayerActive={layerOrder.includes('camera')}
           onToggleCameraLayer={toggleCameraLayer}
-          allowStudentDrawing={allowStudentDrawing}
-          onToggleAllowStudentDrawing={() => {
-            const next = !allowStudentDrawing
-            setAllowStudentDrawing(next)
-            allowStudentDrawingRef.current = next
-            // Broadcast permission change to all participants
-            const payload = encoder.encode(JSON.stringify({ type: 'allow-drawing', allowed: next, senderId: localParticipant.identity }))
-            sendBlackboardData(payload, { reliable: true })
-          }}
         />
       </div>
 
@@ -1441,7 +1431,6 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   quizSubmitted, submitError, quizSubmissions, quizProgress, onBroadcastProgress,
   submittedStudents,
   onGradeSubmission, onRevealResults, onRefreshSubmissions, quizResultRevealed,
-  allowStudentDrawing,
 }: {
   participant: LKParticipant | undefined
   screenShare: TrackReferenceOrPlaceholder | null
@@ -1481,7 +1470,6 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
   onRevealResults: (submission: QuizSubmission) => Promise<void>
   onRefreshSubmissions: () => Promise<void>
   quizResultRevealed: QuizSubmission | null
-  allowStudentDrawing: boolean
 }) {
   const speakerParticipant = participant
   const isSpeaking = useIsSpeaking(speakerParticipant)
@@ -1546,7 +1534,6 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
         <Blackboard
           ref={blackboardRef}
           isHost={isHost}
-          canDraw={allowStudentDrawing}
           onCanvasEvent={onCanvasEvent}
           incomingEvent={incomingEvent}
         />
@@ -2997,8 +2984,6 @@ interface ControlBarProps {
   onSelectQuiz: (quizId: string) => void
   isCameraLayerActive: boolean
   onToggleCameraLayer: () => void
-  allowStudentDrawing?: boolean
-  onToggleAllowStudentDrawing?: () => void
 }
 
 function ControlBarCustom({
@@ -3007,7 +2992,6 @@ function ControlBarCustom({
   isBlackboardActive, isCourseActive, isQuizActive, activeCourseId, activeQuizId,
   onToggleBlackboard, linkedCourses, linkedQuizzes,
   onToggleCourse, onToggleQuiz, onSelectCourse, onSelectQuiz, isCameraLayerActive, onToggleCameraLayer,
-  allowStudentDrawing = false, onToggleAllowStudentDrawing,
 }: ControlBarProps) {
   const [showCourseMenu, setShowCourseMenu] = useState(false)
   const [showQuizMenu, setShowQuizMenu] = useState(false)
@@ -3316,17 +3300,6 @@ function ControlBarCustom({
               <PenTool size={20} />
               <span className="room-control-label">Board</span>
             </button>
-
-            {isTeacher && isBlackboardActive && (
-              <button
-                className={`room-control-btn ${allowStudentDrawing ? 'room-control-btn-active' : ''}`}
-                onClick={onToggleAllowStudentDrawing}
-                title={allowStudentDrawing ? 'Lock drawing' : 'Allow students to draw'}
-              >
-                <PenTool size={20} />
-                <span className="room-control-label">{allowStudentDrawing ? 'Drawing ON' : 'Drawing OFF'}</span>
-              </button>
-            )}
 
             <button
               className={`room-control-btn ${isCameraLayerActive ? 'room-control-btn-active' : ''}`}
