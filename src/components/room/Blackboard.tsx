@@ -52,6 +52,7 @@ export interface BlackboardHandle {
 
 interface BlackboardProps {
   isHost: boolean
+  canDraw?: boolean  // Permission to draw (for students when allowed by teacher)
   onCanvasEvent?: (event: BlackboardEvent) => void
   incomingEvent?: BlackboardEvent | null
 }
@@ -80,7 +81,7 @@ function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T {
 
 // ── Component ────────────────────────────────────────────────────────────────
 const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackboard(
-  { isHost, onCanvasEvent, incomingEvent },
+  { isHost, canDraw = false, onCanvasEvent, incomingEvent },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -90,8 +91,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const cursorDivRef = useRef<HTMLDivElement>(null)
   const caretDivRef = useRef<HTMLDivElement>(null)
   
-  // Everyone can always draw on the shared board
-  const canDrawOverall = true
+  // Host can always draw; students only when teacher allows
+  const canDrawOverall = isHost || canDraw
+  const canDrawOverallRef = useRef(canDrawOverall)
+  useEffect(() => { canDrawOverallRef.current = canDrawOverall }, [canDrawOverall])
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('rect')
@@ -197,26 +200,31 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       if (el) {
         if (event.visible) {
           const z = fabricRef.current?.getZoom() ?? 1
-          el.style.left = `${event.x * z}px`
-          el.style.top = `${event.y * z}px`
-          el.style.height = `${event.height * z}px`
-          el.style.display = 'block'
-          // Hide the cursor dot while the text caret is visible
-          if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
 
-          // Auto-activate the nearest IText so any participant can type
-          // without needing to click on it — the board is shared.
-          if (canvas) {
+          // If local user is already editing the same IText near this position,
+          // hide the remote caret entirely to avoid dual-cursor visual
+          if (editingTextRef.current && editingTextRef.current.isEditing) {
+            const dx = (editingTextRef.current.left || 0) - event.x
+            const dy = (editingTextRef.current.top || 0) - event.y
+            if (Math.sqrt(dx * dx + dy * dy) < 30) {
+              el.style.display = 'none'
+              if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
+              return
+            }
+          }
+
+          // Auto-activate the nearest IText so a permitted participant can
+          // type without needing to click on it.
+          if (canvas && canDrawOverallRef.current) {
             const objs = canvas.getObjects()
-            // Find the IText closest to the cursor position (within tolerance)
             let bestText: fabric.IText | null = null
-            let bestDist = 30 // max distance tolerance in logical px
+            let bestDist = 30
             for (let i = objs.length - 1; i >= 0; i--) {
               const o = objs[i]
               if (o.type === 'i-text' || o.type === 'IText') {
-                const dx = (o.left || 0) - event.x
-                const dy = (o.top || 0) - event.y
-                const dist = Math.sqrt(dx * dx + dy * dy)
+                const dx2 = (o.left || 0) - event.x
+                const dy2 = (o.top || 0) - event.y
+                const dist = Math.sqrt(dx2 * dx2 + dy2 * dy2)
                 if (dist < bestDist) {
                   bestDist = dist
                   bestText = o as fabric.IText
@@ -229,18 +237,25 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
               bestText.editable = true
               canvas.setActiveObject(bestText)
               bestText.enterEditing()
-              // Place cursor at end of existing text
               bestText.setSelectionStart(bestText.text?.length || 0)
               bestText.setSelectionEnd(bestText.text?.length || 0)
               editingTextRef.current = bestText
-              // Hide remote caret indicator to avoid dual-cursor visual
-              if (el) el.style.display = 'none'
+              // Hide BOTH indicators — we're now the active editor, no remote caret needed
+              el.style.display = 'none'
+              if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
               canvas.renderAll()
+              return
             }
           }
+
+          // Not auto-entering — show the remote caret indicator (read-only view)
+          el.style.left = `${event.x * z}px`
+          el.style.top = `${event.y * z}px`
+          el.style.height = `${event.height * z}px`
+          el.style.display = 'block'
+          if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
         } else {
           el.style.display = 'none'
-          // Restore cursor dot visibility — next cursor-move will position it
         }
       }
       return
@@ -465,8 +480,17 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     fabricRef.current = canvas
 
-    // Dismiss toolbar popups when canvas is clicked
-    canvas.on('mouse:down', () => setDismissSignal(s => s + 1))
+    // Dismiss toolbar popups when canvas is clicked and broadcast the closed state
+    canvas.on('mouse:down', () => {
+      setDismissSignal(s => s + 1)
+      // Force-close and broadcast popup state so remote participants' popups also close.
+      // The useEffect on showColorPicker etc. won't fire if they're already false,
+      // so we explicitly broadcast the all-closed state here.
+      setShowColorPicker(false)
+      setShowSizePicker(false)
+      setShowTextPanel(false)
+      onCanvasEventRef.current?.({ type: 'toolbar-state', colorPicker: false, sizePicker: false, textPanel: false })
+    })
 
     // Track selection for smart delete
     if (canDrawOverall) {
@@ -505,6 +529,15 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (canDrawOverall) {
       // Apply the current tool — this properly sets isDrawingMode, cursors, etc.
       applyToolRef.current(activeToolRef.current)
+      // Re-enable interaction on existing objects
+      canvas.forEachObject((o: fabric.FabricObject) => {
+        o.selectable = true
+        o.evented = true
+        const isText = o.type === 'i-text' || o.type === 'IText'
+        if (isText) (o as any).editable = true
+      })
+      canvas.selection = true
+      canvas.renderAll()
     } else {
       canvas.isDrawingMode = false
       canvas.selection = false
@@ -691,11 +724,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           const obj = objects[0] as fabric.FabricObject | undefined
           if (obj) {
             ;(obj as any).id = incomingEvent.id
-            // Shared board: all participants can interact with all objects
+            // Only allow interaction if the local user has draw permission
+            const canInteract = canDrawOverallRef.current
             const isText = obj.type === 'i-text' || obj.type === 'IText'
-            obj.selectable = true
-            obj.evented = true
-            if (isText) (obj as any).editable = true
+            obj.selectable = canInteract
+            obj.evented = canInteract
+            if (isText) (obj as any).editable = canInteract
             canvas.add(obj)
             canvas.renderAll()
             // Clear shape-preview from contextTop now that committed object is on canvas
@@ -710,6 +744,15 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       case 'object-modified': {
         const existing = canvas.getObjects().find((o: any) => o.id === incomingEvent.id)
         if (existing) {
+          // Skip if local user is actively editing this same IText — avoids
+          // overwriting their keystrokes with the remote state (race condition).
+          const isLocalEditing = editingTextRef.current &&
+            (editingTextRef.current as any).id === incomingEvent.id &&
+            editingTextRef.current.isEditing
+          if (isLocalEditing) {
+            suppressEventsRef.current = false
+            return
+          }
           const json = JSON.parse(incomingEvent.data)
           // Remove read-only properties that are getters in fabric v7
           delete json.type
