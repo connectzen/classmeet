@@ -25,9 +25,51 @@ type CountKeys = 'totalSchools' | 'totalUsers' | 'recentAuditCount'
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const { user } = useAppStore()
+  const { user, setUser } = useAppStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [counts, setCounts] = useState<Record<CountKeys, number>>({ totalSchools: 0, totalUsers: 0, recentAuditCount: 0 })
+
+  // Hydrate the store with fresh profile data from DB on mount.
+  // The superadmin layout is client-only (no AppStoreHydrator), so without
+  // this the store relies on stale localStorage — causing wrong name/role.
+  useEffect(() => {
+    const supabase = createClient()
+    ;(async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (!authUser) return
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, avatar_url, role, onboarding_complete, school_id, is_super_admin, teacher_type')
+        .eq('id', authUser.id)
+        .single()
+
+      if (!profile) return
+
+      const p = profile as any
+
+      // Sync profile name to Auth metadata if out of date
+      const authName = authUser.user_metadata?.full_name as string | undefined
+      if (p.full_name && p.full_name !== authName) {
+        await supabase.auth.updateUser({ data: { full_name: p.full_name, avatar_url: p.avatar_url } })
+      }
+
+      setUser({
+        id: authUser.id,
+        email: authUser.email ?? '',
+        fullName: p.full_name ?? '',
+        avatarUrl: p.avatar_url ?? null,
+        role: p.is_super_admin ? 'super_admin' : (p.role ?? 'student'),
+        onboardingComplete: p.onboarding_complete ?? false,
+        schoolId: p.school_id ?? null,
+        schoolSlug: null,
+        isSuperAdmin: p.is_super_admin ?? false,
+        teacherType: p.teacher_type ?? null,
+        workspaceSlug: null,
+        permissions: [],
+      })
+    })()
+  }, [setUser])
 
   useEffect(() => {
     const supabase = createClient()

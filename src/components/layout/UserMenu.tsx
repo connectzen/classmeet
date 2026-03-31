@@ -77,7 +77,7 @@ export default function UserMenu() {
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }} className="truncate">
                 {user.email}
               </div>
-              <Badge role={user.role} />
+              <Badge role={user.isSuperAdmin ? 'super_admin' : user.role} />
             </div>
 
             <button className="dropdown-item" onClick={() => { setProfileOpen(true); setOpen(false) }}>

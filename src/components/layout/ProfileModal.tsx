@@ -67,6 +67,11 @@ export default function ProfileModal({ onClose }: ProfileModalProps) {
       return
     }
 
+    // Sync name to Supabase Auth user metadata so it stays in sync
+    await supabase.auth.updateUser({
+      data: { full_name: fullName, avatar_url: avatarUrl },
+    })
+
     updateUser({ fullName, avatarUrl })
     setSuccess(true)
     setTimeout(onClose, 1200)
@@ -137,7 +142,7 @@ export default function ProfileModal({ onClose }: ProfileModalProps) {
             )}
             {user?.role && (
               <div style={{ marginTop: '4px' }}>
-                <Badge role={user.role} />
+                <Badge role={user.isSuperAdmin ? 'super_admin' : user.role} />
               </div>
             )}
           </div>

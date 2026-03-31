@@ -32,6 +32,7 @@ export function getAvatarGradient(name: string | null | undefined): string {
 
 export function getRoleBadgeClass(role: string): string {
   const map: Record<string, string> = {
+    super_admin: 'badge-purple',
     admin: 'badge-admin',
     teacher: 'badge-teacher',
     student: 'badge-student',
@@ -40,7 +41,7 @@ export function getRoleBadgeClass(role: string): string {
 }
 
 export function formatRole(role: string): string {
-  return role.charAt(0).toUpperCase() + role.slice(1)
+  return role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 export function sleep(ms: number) {
