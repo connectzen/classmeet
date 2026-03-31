@@ -981,12 +981,10 @@ select option {
 .topbar-greeting {
   display: flex;
   align-items: center;
-}
-
-@media (max-width: 480px) {
-  .topbar-greeting {
-    display: none;
-  }
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Topbar navigation links (kept for potential future use) */
@@ -1108,6 +1106,15 @@ select option {
 /* Hide nav label on small screens */
 @media (max-width: 480px) {
   .topbar-nav-label { display: none; }
+}
+
+/* Compact topbar on small screens */
+@media (max-width: 600px) {
+  .topbar { padding: 0 var(--space-3); gap: 4px; }
+  .topbar-live-indicator { padding: 4px 8px 4px 6px; gap: 4px; }
+  .topbar-live-text { display: none; }
+  .topbar-greeting { font-size: 0.8rem; }
+  .user-menu-name { display: none; }
 }
 
 /* Mobile nav: hide desktop nav, show Dashboard + More */

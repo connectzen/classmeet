@@ -65,7 +65,7 @@ export default function TopBar() {
   return (
     <header className="topbar">
       {/* Left: hamburger + live indicator + greeting */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
         <button
           className="btn btn-ghost btn-icon btn-sm"
           id="sidebar-toggle"
@@ -87,14 +87,14 @@ export default function TopBar() {
 
         {/* Greeting */}
         <div className="topbar-greeting">
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', fontWeight: 500 }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', fontWeight: 500, whiteSpace: 'nowrap' }}>
             {greeting}, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{firstName}</span>
           </span>
         </div>
       </div>
 
       {/* Right: nav dropdown + user menu */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
         {/* Navigation dropdown */}
         {navLinks.length > 0 && (
           <div ref={navRef} style={{ position: 'relative' }}>

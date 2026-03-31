@@ -61,7 +61,7 @@ export default function UserMenu() {
           aria-expanded={open}
         >
           <Avatar src={user.avatarUrl} name={user.fullName} size="sm" />
-          <span style={{ fontSize: '0.875rem', fontWeight: 500, maxWidth: '120px' }} className="truncate">
+          <span className="user-menu-name truncate" style={{ fontSize: '0.875rem', fontWeight: 500, maxWidth: '120px' }}>
             {user.fullName || user.email}
           </span>
           <ChevronDown size={14} style={{ color: 'var(--text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
