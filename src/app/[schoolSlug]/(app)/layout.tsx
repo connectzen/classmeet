@@ -29,25 +29,27 @@ export default async function SchoolAppLayout({ children, params }: Props) {
     .single()
 
   if (school) {
-    // School slug resolved — load school layout
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, avatar_url, role, onboarding_complete, school_id, teacher_type')
-      .eq('id', user.id)
-      .single()
+    // School slug resolved — load profile and permissions in parallel
+    const [profileResult, permsResult] = await Promise.all([
+      supabase.from('profiles')
+        .select('full_name, avatar_url, role, onboarding_complete, school_id, teacher_type')
+        .eq('id', user.id)
+        .single(),
+      (supabase as any).from('teacher_permissions')
+        .select('permission')
+        .eq('teacher_id', user.id),
+    ])
+
+    const profile = profileResult.data as any
 
     if (!profile || profile.school_id !== school.id) {
       redirect('/dashboard')
     }
 
-    // Load permissions for school teachers
+    // Filter permissions only for teachers
     let grantedPerms: TeacherPermissionKey[] = []
     if (profile.role === 'teacher') {
-      const { data: perms } = await (supabase as any)
-        .from('teacher_permissions')
-        .select('permission')
-        .eq('teacher_id', user.id)
-      grantedPerms = (perms ?? []).map((p: any) => p.permission)
+      grantedPerms = (permsResult.data ?? []).map((p: any) => p.permission)
     }
     const permissions = resolveEffectivePermissions(profile.role, profile.teacher_type as TeacherType | null, grantedPerms)
 
@@ -104,12 +106,18 @@ export default async function SchoolAppLayout({ children, params }: Props) {
 
   if (!workspace) notFound()
 
-  // Load profile
-  const { data: profile } = await (supabase as any)
-    .from('profiles')
-    .select('full_name, avatar_url, role, onboarding_complete, school_id, teacher_type, invited_by')
-    .eq('id', user.id)
-    .single()
+  // Load profile and permissions in parallel
+  const [wsProfileResult, wsPermsResult] = await Promise.all([
+    (supabase as any).from('profiles')
+      .select('full_name, avatar_url, role, onboarding_complete, school_id, teacher_type, invited_by')
+      .eq('id', user.id)
+      .single(),
+    (supabase as any).from('teacher_permissions')
+      .select('permission')
+      .eq('teacher_id', user.id),
+  ])
+
+  const profile = wsProfileResult.data as any
 
   if (!profile) redirect('/onboarding')
 
@@ -131,14 +139,10 @@ export default async function SchoolAppLayout({ children, params }: Props) {
     redirect('/dashboard')
   }
 
-  // Load permissions for workspace teachers
+  // Load permissions for workspace teachers (already fetched in parallel)
   let wsGrantedPerms: TeacherPermissionKey[] = []
   if (profile.role === 'teacher') {
-    const { data: perms } = await (supabase as any)
-      .from('teacher_permissions')
-      .select('permission')
-      .eq('teacher_id', user.id)
-    wsGrantedPerms = (perms ?? []).map((p: any) => p.permission)
+    wsGrantedPerms = (wsPermsResult.data ?? []).map((p: any) => p.permission)
   }
   const wsPermissions = resolveEffectivePermissions(profile.role, profile.teacher_type, wsGrantedPerms)
 

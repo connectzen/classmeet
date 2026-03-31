@@ -15,10 +15,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) redirect('/sign-in')
 
-  // Load profile with all needed fields including is_super_admin
+  // Load profile with only needed fields
   const { data: profileData } = await supabase
     .from('profiles')
-    .select('*')
+    .select('full_name, avatar_url, role, onboarding_complete, school_id, is_super_admin, teacher_type')
     .eq('id', user.id)
     .single()
 
@@ -39,50 +39,28 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect('/register-school')
   }
 
+  // Resolve school slug, workspace slug, and permissions in parallel
+  const [schoolResult, workspaceResult, permsResult] = await Promise.all([
+    profile?.school_id
+      ? supabase.from('schools').select('slug').eq('id', profile.school_id).single()
+      : Promise.resolve({ data: null }),
+    profile?.role === 'teacher' && profile?.teacher_type === 'independent'
+      ? supabase.from('teacher_workspaces').select('slug').eq('teacher_id', user.id).single()
+      : Promise.resolve({ data: null }),
+    profile?.role === 'teacher'
+      ? (supabase as any).from('teacher_permissions').select('permission').eq('teacher_id', user.id)
+      : Promise.resolve({ data: null }),
+  ])
+
+  const schoolSlug = schoolResult.data?.slug ?? null
+  const workspaceSlug = workspaceResult.data?.slug ?? null
+  const grantedPermissions: TeacherPermissionKey[] = (permsResult.data ?? []).map((p: any) => p.permission)
+
   // If user belongs to a school, redirect to school-scoped route
-  if (profile?.school_id) {
-    const { data: school } = await supabase
-      .from('schools')
-      .select('slug')
-      .eq('id', profile.school_id)
-      .single()
-
-    if (school) {
-      redirect(`/${school.slug}/${roleSegment(profile.role)}`)
-    }
+  if (profile?.school_id && schoolSlug) {
+    redirect(`/${schoolSlug}/${roleSegment(profile.role)}`)
   }
 
-  // Load school slug if user belongs to a school
-  let schoolSlug: string | null = null
-  if (profile?.school_id) {
-    const { data: school } = await supabase
-      .from('schools')
-      .select('slug')
-      .eq('id', profile.school_id)
-      .single()
-    schoolSlug = school?.slug ?? null
-  }
-
-  // Load workspace slug for independent teachers
-  let workspaceSlug: string | null = null
-  if (profile?.role === 'teacher' && profile?.teacher_type === 'independent') {
-    const { data: workspace } = await supabase
-      .from('teacher_workspaces')
-      .select('slug')
-      .eq('teacher_id', user.id)
-      .single()
-    workspaceSlug = workspace?.slug ?? null
-  }
-
-  // Load granted permissions for teachers
-  let grantedPermissions: TeacherPermissionKey[] = []
-  if (profile?.role === 'teacher') {
-    const { data: perms } = await (supabase as any)
-      .from('teacher_permissions')
-      .select('permission')
-      .eq('teacher_id', user.id)
-    grantedPermissions = (perms ?? []).map((p: any) => p.permission)
-  }
   const permissions = resolveEffectivePermissions(profile?.role, profile?.teacher_type, grantedPermissions)
 
   const appUser = {

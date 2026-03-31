@@ -56,52 +56,53 @@ async function resolveSuperAdminState(
   return isSuperAdmin
 }
 
-/** Redirect helper - resolve canonical destination from role and school assignment */
-async function getUserSchoolRedirect(
+/**
+ * Fetch the user's profile ONCE and resolve school/workspace slugs in parallel.
+ * Returns a resolved context that all middleware handlers can reuse,
+ * avoiding the previous pattern of 3-5 duplicate profile fetches per request.
+ */
+async function resolveUserContext(
   supabase: ReturnType<typeof createServerClient<Database>>,
   userId: string,
   userEmail: string,
-  request: NextRequest,
-  supabasePassthrough: NextResponse,
 ) {
-  const requestUrl = request.nextUrl
-
   const result = await supabase
     .from('profiles')
-    .select('*')
+    .select('role, school_id, teacher_type, invited_by, is_super_admin, onboarding_complete')
     .eq('id', userId)
     .single()
 
   const profile = result.data as any
   const isSuperAdmin = await resolveSuperAdminState(supabase, profile, userId, userEmail)
 
-  let schoolSlug: string | null = null
-  if (profile?.school_id) {
-    const { data: school } = await supabase
-      .from('schools')
-      .select('slug')
-      .eq('id', profile.school_id)
-      .single()
-    schoolSlug = school?.slug ?? null
-  }
+  // Resolve school slug + workspace slug in parallel
+  const [schoolResult, workspaceResult] = await Promise.all([
+    profile?.school_id
+      ? supabase.from('schools').select('slug').eq('id', profile.school_id).single()
+      : Promise.resolve({ data: null }),
+    profile?.role === 'teacher' && profile?.teacher_type === 'independent'
+      ? (supabase as any).from('teacher_workspaces').select('slug').eq('teacher_id', userId).maybeSingle()
+      : profile?.role === 'teacher' && profile?.teacher_type === 'collaborator' && profile?.invited_by
+        ? (supabase as any).from('teacher_workspaces').select('slug').eq('teacher_id', profile.invited_by).maybeSingle()
+        : Promise.resolve({ data: null }),
+  ])
 
-  // Resolve workspace slug for independent/collaborator teachers
-  let workspaceSlug: string | null = null
-  if (profile?.role === 'teacher' && profile?.teacher_type === 'independent') {
-    const { data: ws } = await (supabase as any)
-      .from('teacher_workspaces')
-      .select('slug')
-      .eq('teacher_id', userId)
-      .maybeSingle()
-    workspaceSlug = ws?.slug ?? null
-  } else if (profile?.role === 'teacher' && profile?.teacher_type === 'collaborator' && profile?.invited_by) {
-    const { data: ws } = await (supabase as any)
-      .from('teacher_workspaces')
-      .select('slug')
-      .eq('teacher_id', profile.invited_by)
-      .maybeSingle()
-    workspaceSlug = ws?.slug ?? null
+  return {
+    profile,
+    isSuperAdmin,
+    schoolSlug: schoolResult.data?.slug ?? null,
+    workspaceSlug: workspaceResult.data?.slug ?? null,
   }
+}
+
+/** Redirect helper - resolve canonical destination from role and school assignment */
+function getUserSchoolRedirectFromContext(
+  ctx: Awaited<ReturnType<typeof resolveUserContext>>,
+  request: NextRequest,
+  supabasePassthrough: NextResponse,
+) {
+  const { profile, isSuperAdmin, schoolSlug, workspaceSlug } = ctx
+  const requestUrl = request.nextUrl
 
   const dest = resolveUserDestination({
     role: profile?.role,
@@ -118,6 +119,18 @@ async function getUserSchoolRedirect(
   const url = requestUrl.clone()
   url.pathname = dest
   return NextResponse.redirect(url)
+}
+
+/** Legacy overload that fetches context itself (used for slug routes where profile is already loaded differently) */
+async function getUserSchoolRedirect(
+  supabase: ReturnType<typeof createServerClient<Database>>,
+  userId: string,
+  userEmail: string,
+  request: NextRequest,
+  supabasePassthrough: NextResponse,
+) {
+  const ctx = await resolveUserContext(supabase, userId, userEmail)
+  return getUserSchoolRedirectFromContext(ctx, request, supabasePassthrough)
 }
 
 export async function updateSession(request: NextRequest) {
@@ -175,52 +188,31 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    const result = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
+    const ctx = await resolveUserContext(supabase, user.id, user.email || '')
 
-    const profile = result.data as any
-    const isSuperAdmin = await resolveSuperAdminState(supabase, profile, user.id, user.email || '')
-
-    if (isSuperAdmin) {
+    if (ctx.isSuperAdmin) {
       const url = request.nextUrl.clone()
       url.pathname = '/superadmin'
       return NextResponse.redirect(url)
     }
 
-    if (profile?.role) {
-      if (profile.role === 'admin' && !profile.school_id) {
+    if (ctx.profile?.role) {
+      if (ctx.profile.role === 'admin' && !ctx.profile.school_id) {
         const url = request.nextUrl.clone()
         url.pathname = '/register-school'
         return NextResponse.redirect(url)
       }
 
-      if (profile.school_id) {
-        const { data: school } = await supabase
-          .from('schools')
-          .select('slug')
-          .eq('id', profile.school_id)
-          .single()
-
-        if (school?.slug) {
-          const url = request.nextUrl.clone()
-          url.pathname = `/${school.slug}/${roleSegment(profile.role)}`
-          return NextResponse.redirect(url)
-        }
+      if (ctx.schoolSlug) {
+        const url = request.nextUrl.clone()
+        url.pathname = `/${ctx.schoolSlug}/${roleSegment(ctx.profile.role)}`
+        return NextResponse.redirect(url)
       }
 
       // Independent teachers without a workspace go to setup
-      if (profile.role === 'teacher' && profile.teacher_type === 'independent') {
-        const { data: ws } = await (supabase as any)
-          .from('teacher_workspaces')
-          .select('slug')
-          .eq('teacher_id', user.id)
-          .maybeSingle()
-
+      if (ctx.profile.role === 'teacher' && ctx.profile.teacher_type === 'independent') {
         const url = request.nextUrl.clone()
-        url.pathname = ws?.slug ? `/${ws.slug}/teacher` : '/setup-workspace'
+        url.pathname = ctx.workspaceSlug ? `/${ctx.workspaceSlug}/teacher` : '/setup-workspace'
         return NextResponse.redirect(url)
       }
 
@@ -245,14 +237,13 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    const result = await supabase.from('profiles').select('*').eq('id', user.id).single()
-    const profile = result.data as any
+    const ctx = await resolveUserContext(supabase, user.id, user.email || '')
 
-    if (profile?.role === 'admin' && !profile?.school_id) {
+    if (ctx.profile?.role === 'admin' && !ctx.profile?.school_id) {
       return supabaseResponse
     }
 
-    return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
+    return getUserSchoolRedirectFromContext(ctx, request, supabaseResponse)
   }
 
   // Setup workspace is only for independent teachers without a workspace.
@@ -263,21 +254,15 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    const { data: profile } = await supabase.from('profiles').select('role, teacher_type').eq('id', user.id).single() as { data: any }
+    const ctx = await resolveUserContext(supabase, user.id, user.email || '')
 
-    if (profile?.role === 'teacher' && profile?.teacher_type === 'independent') {
-      const { data: ws } = await (supabase as any)
-        .from('teacher_workspaces')
-        .select('slug')
-        .eq('teacher_id', user.id)
-        .maybeSingle()
-
-      if (!ws) {
+    if (ctx.profile?.role === 'teacher' && ctx.profile?.teacher_type === 'independent') {
+      if (!ctx.workspaceSlug) {
         return supabaseResponse
       }
     }
 
-    return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
+    return getUserSchoolRedirectFromContext(ctx, request, supabaseResponse)
   }
 
   // Public auth routes.
@@ -307,17 +292,10 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    const result = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
+    const ctx = await resolveUserContext(supabase, user.id, user.email || '')
 
-    const profile = result.data as any
-    const isSuperAdmin = await resolveSuperAdminState(supabase, profile, user.id, user.email || '')
-
-    if (!isSuperAdmin) {
-      return getUserSchoolRedirect(supabase, user.id, user.email || '', request, supabaseResponse)
+    if (!ctx.isSuperAdmin) {
+      return getUserSchoolRedirectFromContext(ctx, request, supabaseResponse)
     }
 
     return supabaseResponse

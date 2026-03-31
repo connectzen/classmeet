@@ -139,21 +139,33 @@ export default function AppStoreHydrator({ user, children }: Props) {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         markOnlineDB()
+        // Restart heartbeat when tab becomes visible
+        if (!dbIntervalRef.active) {
+          dbIntervalRef.id = setInterval(markOnlineDB, DB_HEARTBEAT_INTERVAL)
+          dbIntervalRef.active = true
+        }
+      } else {
+        // Stop heartbeat when tab hidden — saves ~1440 writes/user/day for idle tabs
+        if (dbIntervalRef.active) {
+          clearInterval(dbIntervalRef.id)
+          dbIntervalRef.active = false
+        }
       }
     }
 
     // Mark online in DB immediately
     markOnlineDB()
 
-    // DB heartbeat
-    const dbInterval = setInterval(markOnlineDB, DB_HEARTBEAT_INTERVAL)
+    // DB heartbeat — managed via visibility
+    const dbIntervalRef = { id: setInterval(markOnlineDB, DB_HEARTBEAT_INTERVAL), active: true }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       destroyed = true
-      clearInterval(dbInterval)
+      clearInterval(dbIntervalRef.id)
+      dbIntervalRef.active = false
       window.removeEventListener('beforeunload', handleBeforeUnload)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       channelRef.current = null

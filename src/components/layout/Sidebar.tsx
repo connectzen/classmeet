@@ -154,17 +154,23 @@ function StudentList({ teacherId }: { teacherId: string }) {
 
     load()
 
-    // Subscribe to both sides so any change refreshes immediately
-    const ch1 = supabase
-      .channel('sidebar-enrollments-teacher')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `teacher_id=eq.${teacherId}` }, () => load())
-      .subscribe()
-    const ch2 = supabase
-      .channel('sidebar-enrollments-student')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `student_id=eq.${teacherId}` }, () => load())
+    // Single channel for both sides with debouncing
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedLoad = () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(load, 300)
+    }
+
+    const ch = supabase
+      .channel(`sidebar-enrollments-${teacherId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `teacher_id=eq.${teacherId}` }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `student_id=eq.${teacherId}` }, debouncedLoad)
       .subscribe()
 
-    return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2) }
+    return () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      supabase.removeChannel(ch)
+    }
   }, [teacherId])
 
   const collabs  = contacts.filter(c => c.role === 'teacher' || c.role === 'admin')
@@ -242,12 +248,19 @@ function TeacherInfo({ studentId }: { studentId: string }) {
 
     loadTeachers()
 
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedLoad = () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(loadTeachers, 300)
+    }
+
     const channel = supabase
-      .channel('sidebar-teacher')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `student_id=eq.${studentId}` }, () => loadTeachers())
+      .channel(`sidebar-teacher-${studentId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_students', filter: `student_id=eq.${studentId}` }, debouncedLoad)
       .subscribe()
 
     return () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
       supabase.removeChannel(channel)
     }
   }, [studentId])

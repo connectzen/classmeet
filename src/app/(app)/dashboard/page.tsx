@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/store/app-store'
 import { createClient } from '@/lib/supabase/client'
@@ -166,7 +166,6 @@ export default function DashboardPage() {
   const user    = useAppStore((s) => s.user)
   const basePath = getDashboardBasePath(user)
   const { toast, show: showToast } = useToast()
-  const sessCleanupRef = useRef<(() => void) | null>(null)
   const [studentCount, setStudentCount] = useState(0)
   const [courseCount, setCourseCount] = useState(0)
   const [sessionCount, setSessionCount] = useState(0)
@@ -195,29 +194,32 @@ export default function DashboardPage() {
     if (pendingTeacher && pendingTeacher !== user.id) {
       localStorage.removeItem('classmeet_teacher_id')
       localStorage.removeItem('classmeet_referrer')
-      supabase.from('teacher_students')
-        .upsert({ teacher_id: pendingTeacher, student_id: user.id }, { onConflict: 'teacher_id,student_id' })
-        .then(() => {
-          supabase.from('profiles').update({ referred_by: pendingTeacher }).eq('id', user.id)
-          supabase.from('referrals')
-            .upsert({ referrer_id: pendingTeacher, referred_id: user.id }, { onConflict: 'referred_id' })
-          supabase.from('teacher_students').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
-            .then(({ count }) => { if (count !== null) setStudentCount(count) })
-        })
+      Promise.all([
+        supabase.from('teacher_students')
+          .upsert({ teacher_id: pendingTeacher, student_id: user.id }, { onConflict: 'teacher_id,student_id' }),
+        supabase.from('profiles').update({ referred_by: pendingTeacher }).eq('id', user.id),
+        supabase.from('referrals')
+          .upsert({ referrer_id: pendingTeacher, referred_id: user.id }, { onConflict: 'referred_id' }),
+      ]).catch(() => { /* ignore referral errors */ })
     } else if (pendingRef && pendingRef !== user.id) {
       localStorage.removeItem('classmeet_referrer')
-      supabase.from('profiles').update({ referred_by: pendingRef }).eq('id', user.id)
-      supabase.from('referrals')
-        .upsert({ referrer_id: pendingRef, referred_id: user.id }, { onConflict: 'referred_id' })
+      Promise.all([
+        supabase.from('profiles').update({ referred_by: pendingRef }).eq('id', user.id),
+        supabase.from('referrals')
+          .upsert({ referrer_id: pendingRef, referred_id: user.id }, { onConflict: 'referred_id' }),
+      ]).catch(() => { /* ignore referral errors */ })
     }
 
-    // ── Load counts ──
-    supabase.from('teacher_students').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
-      .then(({ count }) => { if (count !== null) setStudentCount(count) })
-    supabase.from('courses').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
-      .then(({ count }) => { if (count !== null) setCourseCount(count) })
-    supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
-      .then(({ count }) => { if (count !== null) setSessionCount(count) })
+    // ── Load counts in parallel ──
+    Promise.all([
+      supabase.from('teacher_students').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id),
+      supabase.from('courses').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id),
+      supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id),
+    ]).then(([studentsRes, coursesRes, sessionsRes]) => {
+      if (studentsRes.count !== null) setStudentCount(studentsRes.count)
+      if (coursesRes.count !== null) setCourseCount(coursesRes.count)
+      if (sessionsRes.count !== null) setSessionCount(sessionsRes.count)
+    })
 
     const loadTargetedSessions = async () => {
       const { data: directTargets } = await supabase
@@ -328,42 +330,42 @@ export default function DashboardPage() {
       loadEnrolledCourses()
 
       loadTargetedSessions()
-
-      const sessChannel = supabase
-        .channel('dashboard-student-sessions')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => loadTargetedSessions())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, () => loadTargetedSessions())
-        .subscribe()
-
-      sessCleanupRef.current = () => { supabase.removeChannel(sessChannel) }
     } else {
       loadTargetedSessions()
-
-      const sessChannel = supabase
-        .channel('dashboard-assigned-sessions')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => loadTargetedSessions())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, () => loadTargetedSessions())
-        .subscribe()
-
-      sessCleanupRef.current = () => { supabase.removeChannel(sessChannel) }
     }
 
-    // ── Real-time subscription: update counts + teacher list instantly ──
+    // ── Single consolidated real-time channel with debouncing ──
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedSessionReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => loadTargetedSessions(), 500)
+    }
+    const debouncedCountReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => {
+        Promise.all([
+          supabase.from('teacher_students').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id),
+          supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id),
+        ]).then(([studentsRes, sessionsRes]) => {
+          if (studentsRes.count !== null) setStudentCount(studentsRes.count)
+          if (sessionsRes.count !== null) setSessionCount(sessionsRes.count)
+        })
+      }, 500)
+    }
+
     const channel = supabase
-      .channel('dashboard-realtime')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'teacher_students',
-        filter: `teacher_id=eq.${user.id}`,
-      }, () => {
-        supabase.from('teacher_students').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
-          .then(({ count }) => { if (count !== null) setStudentCount(count) })
+      .channel('dashboard-all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
+        debouncedSessionReload()
+        debouncedCountReload()
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'session_targets' }, debouncedSessionReload)
       .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'teacher_students',
+        event: '*', schema: 'public', table: 'teacher_students',
+        filter: `teacher_id=eq.${user.id}`,
+      }, debouncedCountReload)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'teacher_students',
         filter: `student_id=eq.${user.id}`,
       }, async () => {
         const { data: enrollments } = await supabase
@@ -381,21 +383,11 @@ export default function DashboardPage() {
           setTeachers([])
         }
       })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'sessions',
-        filter: `teacher_id=eq.${user.id}`,
-      }, () => {
-        supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('teacher_id', user.id)
-          .then(({ count }) => { if (count !== null) setSessionCount(count) })
-      })
       .subscribe()
 
     return () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
       supabase.removeChannel(channel)
-      sessCleanupRef.current?.()
-      sessCleanupRef.current = null
     }
   }, [user?.id])
 

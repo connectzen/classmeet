@@ -146,6 +146,7 @@ export async function requirePermission(request: Request, permission: TeacherPer
   }
 
   // Check the teacher_permissions table for granted permissions
+  // Uses the composite index idx_teacher_permissions_teacher_permission
   const { data: perm } = await supabase
     .from('teacher_permissions')
     .select('id')
