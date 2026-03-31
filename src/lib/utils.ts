@@ -47,6 +47,12 @@ export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+export function getDashboardBasePath(user: { schoolSlug: string | null; role: string } | null): string {
+  if (!user?.schoolSlug) return '/dashboard'
+  const seg = user.role === 'admin' ? 'admin' : user.role === 'teacher' ? 'teacher' : 'student'
+  return `/${user.schoolSlug}/${seg}/dashboard`
+}
+
 export function isCreatorRole(role: UserRole | null | undefined): boolean {
   return role === 'teacher' || role === 'admin'
 }

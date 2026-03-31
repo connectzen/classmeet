@@ -13,7 +13,7 @@ import {
   Radio, Circle, Wifi, WifiOff, GraduationCap,
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
-import { isCreatorRole } from '@/lib/utils'
+import { isCreatorRole, getDashboardBasePath } from '@/lib/utils'
 import { useCountdown } from '@/hooks/useCountdown'
 import { canInviteMembers, canCreateCourses, canCreateSessions, canManageQuizzes } from '@/lib/permissions'
 import type { TeacherPermissionKey } from '@/lib/supabase/types'
@@ -147,23 +147,24 @@ function DashSessionCard({ session, onJoin }: { session: StudentSession; onJoin:
 
 // ─── Quick actions per role ───────────────────────────────────────────────────
 const TEACHER_ACTIONS: Action[] = [
-  { label: 'Start Live Room',  desc: 'Host a video session',  icon: Video,    color: 'var(--primary-500)', href: '/dashboard/rooms',   statKey: 'sessionCount', permissionCheck: (p) => canCreateSessions(p) },
-  { label: 'Create Course',    desc: 'Build course content',   icon: BookOpen,     color: 'var(--accent-500)',   href: '/dashboard/courses', statKey: 'courseCount', permissionCheck: (p) => canCreateCourses(p)   },
-  { label: 'Invite Members',   desc: 'Manage your students',       icon: Users,        color: 'var(--success-400)',  href: '/dashboard/members',   statKey: 'studentCount', permissionCheck: (p) => canInviteMembers(p) },
-  { label: 'Messages',         desc: 'Chat with students',   icon: MessageSquare,color: 'var(--warning-400)',  href: '/dashboard/messages'  },
+  { label: 'Start Live Room',  desc: 'Host a video session',  icon: Video,    color: 'var(--primary-500)', href: 'rooms',   statKey: 'sessionCount', permissionCheck: (p) => canCreateSessions(p) },
+  { label: 'Create Course',    desc: 'Build course content',   icon: BookOpen,     color: 'var(--accent-500)',   href: 'courses', statKey: 'courseCount', permissionCheck: (p) => canCreateCourses(p)   },
+  { label: 'Invite Members',   desc: 'Manage your students',       icon: Users,        color: 'var(--success-400)',  href: 'members',   statKey: 'studentCount', permissionCheck: (p) => canInviteMembers(p) },
+  { label: 'Messages',         desc: 'Chat with students',   icon: MessageSquare,color: 'var(--warning-400)',  href: 'messages'  },
 ]
 
 const STUDENT_ACTIONS: Action[] = [
-  { label: 'Join a Room',      desc: 'Enter a live class', icon: Video,        color: 'var(--primary-500)', href: '/dashboard/rooms',    statKey: 'sessionsJoined' },
-  { label: 'Browse Courses',   desc: 'Explore courses',  icon: BookOpen,     color: 'var(--accent-500)',  href: '/dashboard/courses', statKey: 'enrolledCourseCount'  },
-  { label: 'Messages',         desc: 'Chat with teachers',    icon: MessageSquare,color: 'var(--success-400)', href: '/dashboard/messages' },
-  { label: 'My Schedule',      desc: 'View sessions',     icon: CalendarDays, color: 'var(--info-400)',    href: '/dashboard/rooms'    },
+  { label: 'Join a Room',      desc: 'Enter a live class', icon: Video,        color: 'var(--primary-500)', href: 'rooms',    statKey: 'sessionsJoined' },
+  { label: 'Browse Courses',   desc: 'Explore courses',  icon: BookOpen,     color: 'var(--accent-500)',  href: 'courses', statKey: 'enrolledCourseCount'  },
+  { label: 'Messages',         desc: 'Chat with teachers',    icon: MessageSquare,color: 'var(--success-400)', href: 'messages' },
+  { label: 'My Schedule',      desc: 'View sessions',     icon: CalendarDays, color: 'var(--info-400)',    href: 'rooms'    },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router  = useRouter()
   const user    = useAppStore((s) => s.user)
+  const basePath = getDashboardBasePath(user)
   const { toast, show: showToast } = useToast()
   const sessCleanupRef = useRef<(() => void) | null>(null)
   const [studentCount, setStudentCount] = useState(0)
@@ -485,7 +486,7 @@ export default function DashboardPage() {
     if (action.comingSoon) {
       showToast(`✨ ${action.label} — coming soon!`)
     } else if (action.href) {
-      router.push(action.href)
+      router.push(`${basePath}/${action.href}`)
     }
   }
 
@@ -536,7 +537,7 @@ export default function DashboardPage() {
                 </span>
               )}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard/rooms')}>
+            <Button variant="ghost" size="sm" onClick={() => router.push(`${basePath}/rooms`)}>
               View all <ArrowRight size={12} />
             </Button>
           </div>
@@ -545,7 +546,7 @@ export default function DashboardPage() {
               <DashSessionCard
                 key={s.id}
                 session={s}
-                onJoin={() => router.push(`/dashboard/rooms/${encodeURIComponent(s.room_name)}`)}
+                onJoin={() => router.push(`${basePath}/rooms/${encodeURIComponent(s.room_name)}`)}
               />
             ))}
           </div>

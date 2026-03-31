@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
+import { getDashboardBasePath } from '@/lib/utils'
 import type { Quiz, QuizQuestion as DBQuizQuestion, Course, Topic, Lesson, QuizSubmission, UserRole } from '@/lib/supabase/types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ export default function RoomPage() {
   const params = useParams()
   const router = useRouter()
   const user = useAppStore(s => s.user)
+  const basePath = getDashboardBasePath(user)
   const roomId = params.roomId as string
 
   const [token, setToken] = useState<string | null>(null)
@@ -127,7 +129,7 @@ export default function RoomPage() {
           <div style={{ fontSize: '3rem', marginBottom: 16 }}>⚠️</div>
           <h2 style={{ margin: '0 0 8px', color: 'var(--text-primary)' }}>Connection Error</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>{error}</p>
-          <button className="btn btn-outline" onClick={() => router.push('/dashboard/rooms')}>← Back to Rooms</button>
+          <button className="btn btn-outline" onClick={() => router.push(`${basePath}/rooms`)}>← Back to Rooms</button>
         </div>
       </div>
     )
@@ -157,7 +159,7 @@ export default function RoomPage() {
         dynacast: true,
         adaptiveStream: true,
       }}
-      onDisconnected={() => router.push('/dashboard/rooms')}
+      onDisconnected={() => router.push(`${basePath}/rooms`)}
       className="room-fullscreen"
     >
       <RoomInner roomName={roomName} />
@@ -170,6 +172,7 @@ export default function RoomPage() {
 function RoomInner({ roomName }: { roomName: string }) {
   const router = useRouter()
   const user = useAppStore(s => s.user)
+  const basePath = getDashboardBasePath(user)
   const participants = useParticipants()
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } = useLocalParticipant()
   const room = useRoomContext()
@@ -1057,8 +1060,8 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Leave room
   const handleLeave = useCallback(async () => {
     await room.disconnect()
-    router.push('/dashboard/rooms')
-  }, [room, router])
+    router.push(`${basePath}/rooms`)
+  }, [room, router, basePath])
 
   return (
     <div className="room-layout">

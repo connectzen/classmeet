@@ -1105,6 +1105,11 @@ select option {
   min-width: 200px;
 }
 
+/* Hide nav label on small screens */
+@media (max-width: 480px) {
+  .topbar-nav-label { display: none; }
+}
+
 /* Mobile nav: hide desktop nav, show Dashboard + More */
 @media (max-width: 768px) {
   .topbar-nav { display: none; }

@@ -6,6 +6,7 @@ import { LogOut, User, Settings, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAppStore } from '@/store/app-store'
 import { usePresenceStore } from '@/store/presence-store'
+import { getDashboardBasePath } from '@/lib/utils'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import ProfileModal from '@/components/layout/ProfileModal'
@@ -13,6 +14,7 @@ import ProfileModal from '@/components/layout/ProfileModal'
 export default function UserMenu() {
   const router = useRouter()
   const { user, setUser } = useAppStore()
+  const basePath = getDashboardBasePath(user)
   const [open, setOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -81,7 +83,7 @@ export default function UserMenu() {
             <button className="dropdown-item" onClick={() => { setProfileOpen(true); setOpen(false) }}>
               <User size={15} /> Edit profile
             </button>
-            <button className="dropdown-item" onClick={() => { router.push('/dashboard/settings'); setOpen(false) }}>
+            <button className="dropdown-item" onClick={() => { router.push(`${basePath}/settings`); setOpen(false) }}>
               <Settings size={15} /> Settings
             </button>
 

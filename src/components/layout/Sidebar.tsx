@@ -434,8 +434,12 @@ export default function Sidebar() {
   const isCreator = role === 'teacher' || role === 'admin'
   const permissions = user?.permissions ?? []
   const NAV = getNavLinks(schoolSlug, role, permissions)
-  const navCounts = useSidebarCounts(user?.id, role)
-  const unreadCount = useUnreadMessageCount(user?.id)
+
+  // Extract only the System section for the sidebar bottom
+  const systemSection = NAV.find(s => s.section === 'System')
+  // Extract the Dashboard link from the main nav section
+  const mainSection = NAV.find(s => s.section === '')
+  const dashboardLink = mainSection?.links.find(l => l.label === 'Dashboard')
 
   return (
     <>
@@ -480,9 +484,23 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* People section — admin sees overview, teacher sees students, student sees teacher */}
+        {/* Dashboard link at top */}
+        {dashboardLink && (
+          <div style={{ padding: '8px 4px 0' }}>
+            <Link
+              href={dashboardLink.href}
+              className={cn('sidebar-link', pathname === dashboardLink.href && 'active')}
+              onClick={() => setSidebarOpen(false)}
+            >
+              <LayoutDashboard size={17} className="link-icon" />
+              Dashboard
+            </Link>
+          </div>
+        )}
+
+        {/* People section — more space now that nav moved to header */}
         {user?.id && (
-          <div style={{ paddingTop: '8px', paddingBottom: '8px', overflowY: 'auto', flex: '0 1 auto', maxHeight: '45vh', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={{ paddingTop: '8px', paddingBottom: '8px', overflowY: 'auto', flex: 1, borderBottom: '1px solid var(--border-subtle)' }}>
             {role === 'admin' ? (
               <AdminOverview />
             ) : isCreator ? (
@@ -493,30 +511,20 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Spacer pushes system nav + footer to bottom */}
-        <div style={{ flex: 1 }} />
-
-        {/* Navigation — pinned to bottom */}
-        <nav aria-label="System navigation" style={{ padding: '4px 0', borderTop: '1px solid var(--border-subtle)' }}>
-          {NAV.map((section) => {
-            const visibleLinks = section.links.filter(
-              (link) => {
-                if (link.roles && !(role && link.roles.includes(role))) return false
-                if (link.permissionCheck && !link.permissionCheck(permissions)) return false
-                return true
-              }
-            )
-            if (visibleLinks.length === 0) return null
-            return (
-              <div key={section.section || 'nav'} className="sidebar-section" style={{ marginBottom: 0, padding: '8px 0 4px' }}>
-                {section.section && <div className="sidebar-section-label">{section.section}</div>}
-                {visibleLinks.map((link) => {
+        {/* System section — pinned to bottom */}
+        {systemSection && (
+          <nav aria-label="System navigation" style={{ padding: '4px 0', borderTop: '1px solid var(--border-subtle)' }}>
+            <div className="sidebar-section" style={{ marginBottom: 0, padding: '8px 0 4px' }}>
+              <div className="sidebar-section-label">{systemSection.section}</div>
+              {systemSection.links
+                .filter(link => {
+                  if (link.roles && !(role && link.roles.includes(role))) return false
+                  if (link.permissionCheck && !link.permissionCheck(permissions)) return false
+                  return true
+                })
+                .map(link => {
                   const Icon = link.icon
-                  const isDashboardLink = link.label === 'Dashboard'
-                  const isActive = isDashboardLink
-                    ? pathname === link.href
-                    : pathname === link.href || pathname.startsWith(link.href + '/')
-                  const count = link.badgeKey === 'messages' ? unreadCount : (link.badgeKey ? navCounts[link.badgeKey] : undefined)
+                  const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
                   return (
                     <Link
                       key={link.href}
@@ -526,16 +534,12 @@ export default function Sidebar() {
                     >
                       <Icon size={17} className="link-icon" />
                       {link.label}
-                      {count !== undefined && count > 0 && (
-                        <span className="sidebar-badge">{count}</span>
-                      )}
                     </Link>
                   )
                 })}
-              </div>
-            )
-          })}
-        </nav>
+            </div>
+          </nav>
+        )}
 
         {/* Footer */}
         <div className="sidebar-footer">
@@ -547,4 +551,3 @@ export default function Sidebar() {
     </>
   )
 }
-

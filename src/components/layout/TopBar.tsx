@@ -1,17 +1,57 @@
 'use client'
 
-import { useMemo } from 'react'
-import { Menu, Radio } from 'lucide-react'
+import { useMemo, useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { Menu, Radio, ChevronDown } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { useLiveSessionCount } from '@/hooks/useLiveSessionCount'
 import { useUnreadMessageCount } from '@/hooks/useUnreadMessageCount'
+import { getDashboardBasePath } from '@/lib/utils'
+import { canInviteMembers, canCreateGroups, canCreateCourses, canCreateSessions, canManageQuizzes } from '@/lib/permissions'
+import { Video, BookOpen, MessageSquare, Users, FolderOpen, HelpCircle, BarChart2 } from 'lucide-react'
+import type { TeacherPermissionKey } from '@/lib/supabase/types'
+import { cn } from '@/lib/utils'
 import UserMenu from './UserMenu'
 
 export default function TopBar() {
   const { toggleSidebar, user } = useAppStore()
+  const pathname = usePathname()
   const isCreator = user?.role === 'teacher' || user?.role === 'admin'
   const liveCount = useLiveSessionCount(user?.id, isCreator)
   const unreadMsgCount = useUnreadMessageCount(user?.id)
+  const [navOpen, setNavOpen] = useState(false)
+  const navRef = useRef<HTMLDivElement>(null)
+
+  const basePath = getDashboardBasePath(user)
+  const permissions = (user?.permissions ?? []) as TeacherPermissionKey[]
+
+  // Build nav links
+  const navLinks = useMemo(() => {
+    if (!user) return []
+    const isTeacher = user.role === 'teacher'
+    const links: { href: string; label: string; icon: React.ElementType; badge?: number }[] = [
+      { href: `${basePath}/rooms`, label: 'Live Rooms', icon: Video },
+      { href: `${basePath}/courses`, label: 'Courses', icon: BookOpen },
+      { href: `${basePath}/messages`, label: 'Messages', icon: MessageSquare, badge: unreadMsgCount },
+    ]
+    if (isTeacher) {
+      if (canInviteMembers(permissions)) links.push({ href: `${basePath}/members`, label: 'Members', icon: Users })
+      if (canCreateGroups(permissions)) links.push({ href: `${basePath}/groups`, label: 'Groups', icon: FolderOpen })
+      if (canManageQuizzes(permissions)) links.push({ href: `${basePath}/quizzes`, label: 'Quizzes', icon: HelpCircle })
+      links.push({ href: `${basePath}/analytics`, label: 'Analytics', icon: BarChart2 })
+    }
+    return links
+  }, [user, basePath, permissions, unreadMsgCount])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) setNavOpen(false)
+    }
+    if (navOpen) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [navOpen])
 
   const greeting = useMemo(() => {
     const h = new Date().getHours()
@@ -50,16 +90,53 @@ export default function TopBar() {
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', fontWeight: 500 }}>
             {greeting}, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{firstName}</span>
           </span>
-          {unreadMsgCount > 0 && (
-            <span className="topbar-badge topbar-badge-msg" style={{ marginLeft: '8px' }}>
-              {unreadMsgCount > 9 ? '9+' : unreadMsgCount} msg
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Right: user menu */}
-      <UserMenu />
+      {/* Right: nav dropdown + user menu */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Navigation dropdown */}
+        {navLinks.length > 0 && (
+          <div ref={navRef} style={{ position: 'relative' }}>
+            <button
+              className={cn('topbar-nav-link', navOpen && 'active')}
+              onClick={() => setNavOpen(o => !o)}
+              aria-expanded={navOpen}
+              aria-haspopup="true"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Menu size={16} />
+              <span className="topbar-nav-label">Navigate</span>
+              <ChevronDown size={14} style={{ transition: 'transform 0.15s', transform: navOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+            </button>
+
+            {navOpen && (
+              <div className="topbar-dropdown topbar-more-dropdown" style={{ right: 0, left: 'auto' }}>
+                {navLinks.map(link => {
+                  const Icon = link.icon
+                  const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className={cn('topbar-dropdown-item', isActive && 'active')}
+                      onClick={() => setNavOpen(false)}
+                    >
+                      <Icon size={15} />
+                      {link.label}
+                      {link.badge !== undefined && link.badge > 0 && (
+                        <span className="topbar-badge" style={{ marginLeft: 'auto' }}>{link.badge > 9 ? '9+' : link.badge}</span>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        <UserMenu />
+      </div>
     </header>
   )
 }

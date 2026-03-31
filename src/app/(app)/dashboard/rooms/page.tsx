@@ -11,6 +11,7 @@ import { Video, Plus, LogIn, Users, Clock, X, Wifi, WifiOff, CalendarClock, Chec
 import PermissionGate from '@/components/layout/PermissionGate'
 import { useToast } from '@/hooks/useToast'
 import { useCountdown } from '@/hooks/useCountdown'
+import { getDashboardBasePath } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface SessionRow {
@@ -731,6 +732,7 @@ function SessionCard({ session, isOwner, onEnter, onGoLive, onEnd, onDelete, onE
 function RoomsPageInner() {
   const router = useRouter()
   const user   = useAppStore(s => s.user)
+  const basePath = getDashboardBasePath(user)
   const { toast, show: showToast } = useToast()
   const [showCreate, setShowCreate] = useState(false)
   const [showJoin, setShowJoin]     = useState(false)
@@ -943,7 +945,7 @@ function RoomsPageInner() {
   }
 
   function handleEnter(session: SessionRow) {
-    router.push(`/dashboard/rooms/${encodeURIComponent(session.room_name)}`)
+    router.push(`${basePath}/rooms/${encodeURIComponent(session.room_name)}`)
   }
 
   async function handleGoLive(session: SessionRow) {
@@ -951,7 +953,7 @@ function RoomsPageInner() {
     await supabase.from('sessions').update({ status: 'live', started_at: now, updated_at: now }).eq('id', session.id)
     setSessions(prev => prev.map(s => s.id === session.id ? { ...s, status: 'live' as const, started_at: now } : s))
     showToast(`🚀 "${session.title}" is now live!`)
-    setTimeout(() => router.push(`/dashboard/rooms/${encodeURIComponent(session.room_name)}`), 600)
+    setTimeout(() => router.push(`${basePath}/rooms/${encodeURIComponent(session.room_name)}`), 600)
   }
 
   async function handleEnd(session: SessionRow) {
@@ -969,7 +971,7 @@ function RoomsPageInner() {
   }
 
   function handleJoin(roomName: string) {
-    router.push(`/dashboard/rooms/${encodeURIComponent(roomName)}`)
+    router.push(`${basePath}/rooms/${encodeURIComponent(roomName)}`)
   }
 
   const activeSessions = sessions.filter(s => s.status !== 'ended')
