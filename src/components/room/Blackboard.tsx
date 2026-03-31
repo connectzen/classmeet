@@ -314,6 +314,25 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     setCanRedo(false)
   }, [])
 
+  // Finalize a pending (no longer editing) IText — remove if empty, or commit if has content
+  const finalizePendingText = useCallback(() => {
+    const pending = editingTextRef.current
+    if (!pending || pending.isEditing) return
+    editingTextRef.current = null
+    const canvas = fabricRef.current
+    if (!canvas) return
+    const id = (pending as any).id
+    if (pending.text?.trim() === '') {
+      suppressEventsRef.current = true
+      canvas.remove(pending)
+      suppressEventsRef.current = false
+      onCanvasEventRef.current?.({ type: 'object-removed', id })
+    } else {
+      commitUndo()
+      onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((pending as any).toObject(['id'])), id })
+    }
+  }, [commitUndo])
+
   // ── Initialize fabric canvas (retina handled by fabric's enableRetinaScaling) ──
   useEffect(() => {
     if (!canvasRef.current || fabricRef.current) return
@@ -626,6 +645,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (!canvas || !canDrawOverall) return
     // Prevent switching tool while mid-drag on a shape
     if (isDrawingShapeRef.current) return
+
+    // Finalize any pending text before switching tools
+    finalizePendingText()
+
     setActiveTool(tool)
 
     // Reset states
@@ -717,7 +740,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canDrawOverall])
+  }, [canDrawOverall, finalizePendingText])
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
@@ -926,6 +949,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const setupTextTool = useCallback((canvas: fabric.Canvas) => {
     const mouseDown = (e: any) => {
       if (e.target && (e.target.type === 'i-text' || e.target.type === 'IText')) return
+
+      // Finalize any previous pending text (e.g. empty IText from prior click)
+      finalizePendingText()
+
       const pointer = canvas.getScenePoint(e.e)
       const id = nextObjId()
       const opts = textOptionsRef.current   // always the latest selection
@@ -986,30 +1013,27 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         // Hide text cursor for students
         onCanvasEventRef.current?.({ type: 'text-cursor', x: 0, y: 0, height: 0, visible: false })
 
-        // Delay cleanup to allow toolbar interactions (select dropdowns, buttons) to
-        // re-enter editing mode via the textOptions useEffect before we remove empty text.
-        setTimeout(() => {
-          // If the text was re-entered for editing, don't clean up
-          if (text.isEditing) return
-
-          editingTextRef.current = null
-
+        // If another text took over (user clicked new area), clean up this one immediately
+        if (editingTextRef.current !== text) {
           if (text.text?.trim() === '') {
             suppressEventsRef.current = true
             canvas.remove(text)
             suppressEventsRef.current = false
             onCanvasEventRef.current?.({ type: 'object-removed', id })
-            return
+          } else {
+            commitUndo()
+            onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
           }
-          commitUndo()
-          // Emit final confirmed state
-          onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
-        }, 150)
+          return
+        }
+        // Otherwise keep editingTextRef alive — toolbar interactions (select dropdowns)
+        // will re-enter editing via the textOptions useEffect. Cleanup happens when
+        // user switches tools (applyTool) or creates a new text (setupTextTool mouseDown).
       })
     }
     ;(canvas as any).__toolMouseDown = mouseDown
     canvas.on('mouse:down', mouseDown)
-  }, [captureUndo, commitUndo])
+  }, [captureUndo, commitUndo, finalizePendingText])
 
   // ── Color change: update active brush ────────────────────────────────────
   const handleColorChange = useCallback((color: string) => {
