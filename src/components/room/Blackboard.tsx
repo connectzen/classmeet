@@ -182,7 +182,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const enableCanvasInteraction = useCallback(() => {
     const canvas = fabricRef.current
     if (!canvas || !canDrawOverallRef.current) return
+    // Suppress broadcasts so recovering from a lock doesn't push our tool to others
+    suppressToolBroadcastRef.current = true
     applyToolRef.current(activeToolRef.current)
+    suppressToolBroadcastRef.current = false
   }, [])
 
   // Drawing state
@@ -328,6 +331,19 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       setIsLockedByOther(otherHoldsLock)
       if (otherHoldsLock) {
         disableCanvasInteraction()
+        // Start force-release safety timer for lock-state (matches lock-acquire behaviour)
+        if (lockForceTimerRef.current) clearTimeout(lockForceTimerRef.current)
+        lockForceTimerRef.current = setTimeout(() => {
+          if (lockedByRef.current === event.lockedBy) {
+            lockedByRef.current = null
+            lockedByIsHostRef.current = false
+            setIsLockedByOther(false)
+            if (canDrawOverallRef.current) enableCanvasInteraction()
+          }
+        }, LOCK_FORCE_RELEASE_MS)
+      } else {
+        // No one holds the lock — make sure canvas is re-enabled (recovery from stale state)
+        if (canDrawOverallRef.current) enableCanvasInteraction()
       }
       return
     }
