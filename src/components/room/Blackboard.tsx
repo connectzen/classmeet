@@ -266,6 +266,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // Track whether a remote user is currently editing text (prevents cursor dot from racing with caret)
   const remoteTextEditingRef = useRef(false)
 
+  // Stable ref for resetLockIdleTimer so setupTextTool closure stays current
+  const resetLockIdleTimerRef = useRef(resetLockIdleTimer)
+  useEffect(() => { resetLockIdleTimerRef.current = resetLockIdleTimer }, [resetLockIdleTimer])
+
   // ── Handle live drawing events imperatively (bypasses React state batching) ──
   const handleLiveEvent = useCallback((event: BlackboardEvent) => {
     const canvas = fabricRef.current
@@ -1314,6 +1318,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       // Stream every keystroke live to participants
       const emitTextLive = throttle(() => {
         if (suppressEventsRef.current) return
+        // Keep the lock alive while the user is typing (no mouse:move fires during text input)
+        resetLockIdleTimerRef.current()
         onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
         // Compute actual cursor pixel position using fabric's internal cursor rendering data
         try {
