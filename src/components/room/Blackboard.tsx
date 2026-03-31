@@ -194,6 +194,39 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           el.style.display = 'block'
           // Hide the cursor dot while the text caret is visible
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
+
+          // If this user can draw and is in text mode, activate the IText at the
+          // cursor position so they can immediately type without clicking again.
+          if (canvas && activeToolRef.current === 'text') {
+            const objs = canvas.getObjects()
+            // Find the IText closest to the cursor position (within tolerance)
+            let bestText: fabric.IText | null = null
+            let bestDist = 30 // max distance tolerance in logical px
+            for (let i = objs.length - 1; i >= 0; i--) {
+              const o = objs[i]
+              if (o.type === 'i-text' || o.type === 'IText') {
+                const dx = (o.left || 0) - event.x
+                const dy = (o.top || 0) - event.y
+                const dist = Math.sqrt(dx * dx + dy * dy)
+                if (dist < bestDist) {
+                  bestDist = dist
+                  bestText = o as fabric.IText
+                }
+              }
+            }
+            if (bestText && !bestText.isEditing) {
+              bestText.selectable = true
+              bestText.evented = true
+              bestText.editable = true
+              canvas.setActiveObject(bestText)
+              bestText.enterEditing()
+              // Place cursor at end of existing text
+              bestText.setSelectionStart(bestText.text?.length || 0)
+              bestText.setSelectionEnd(bestText.text?.length || 0)
+              editingTextRef.current = bestText
+              canvas.renderAll()
+            }
+          }
         } else {
           el.style.display = 'none'
           // Restore cursor dot visibility — next cursor-move will position it
