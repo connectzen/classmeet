@@ -301,16 +301,19 @@ export default function BlackboardToolbar({
                   <button
                     className={`room-bb-tool-btn ${textOptions.bold ? 'room-bb-tool-active' : ''}`}
                     onClick={() => onTextOptionsChange({ ...textOptions, bold: !textOptions.bold })}
+                    onMouseDown={e => e.preventDefault()}
                     title="Bold"
                   ><Bold size={15} /></button>
                   <button
                     className={`room-bb-tool-btn ${textOptions.italic ? 'room-bb-tool-active' : ''}`}
                     onClick={() => onTextOptionsChange({ ...textOptions, italic: !textOptions.italic })}
+                    onMouseDown={e => e.preventDefault()}
                     title="Italic"
                   ><Italic size={15} /></button>
                   <button
                     className={`room-bb-tool-btn ${textOptions.underline ? 'room-bb-tool-active' : ''}`}
                     onClick={() => onTextOptionsChange({ ...textOptions, underline: !textOptions.underline })}
+                    onMouseDown={e => e.preventDefault()}
                     title="Underline"
                   ><UnderlineIcon size={15} /></button>
                 </div>
@@ -397,16 +400,19 @@ export default function BlackboardToolbar({
             <button
               className={`room-bb-tool-btn ${textOptions.bold ? 'room-bb-tool-active' : ''}`}
               onClick={() => onTextOptionsChange({ ...textOptions, bold: !textOptions.bold })}
+              onMouseDown={e => e.preventDefault()}
               title="Bold"
             ><Bold size={16} /></button>
             <button
               className={`room-bb-tool-btn ${textOptions.italic ? 'room-bb-tool-active' : ''}`}
               onClick={() => onTextOptionsChange({ ...textOptions, italic: !textOptions.italic })}
+              onMouseDown={e => e.preventDefault()}
               title="Italic"
             ><Italic size={16} /></button>
             <button
               className={`room-bb-tool-btn ${textOptions.underline ? 'room-bb-tool-active' : ''}`}
               onClick={() => onTextOptionsChange({ ...textOptions, underline: !textOptions.underline })}
+              onMouseDown={e => e.preventDefault()}
               title="Underline"
             ><UnderlineIcon size={16} /></button>
           </div>

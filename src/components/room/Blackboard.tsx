@@ -136,6 +136,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const redoStack = useRef<string[]>([])
   const isUndoRedoRef = useRef(false)
 
+  // Track the IText that is currently being edited (for restoring focus after toolbar interaction)
+  const editingTextRef = useRef<fabric.IText | null>(null)
+
   // ── Handle live drawing events imperatively (bypasses React state batching) ──
   const handleLiveEvent = useCallback((event: BlackboardEvent) => {
     const canvas = fabricRef.current
@@ -953,6 +956,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.renderAll()
       text.enterEditing()
       text.selectAll()
+      editingTextRef.current = text
 
       // Hide the teacher cursor dot while typing
       onCanvasEventRef.current?.({ type: 'cursor-move', x: -100, y: -100 })
@@ -982,16 +986,25 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         // Hide text cursor for students
         onCanvasEventRef.current?.({ type: 'text-cursor', x: 0, y: 0, height: 0, visible: false })
 
-        if (text.text?.trim() === '') {
-          suppressEventsRef.current = true
-          canvas.remove(text)
-          suppressEventsRef.current = false
-          onCanvasEventRef.current?.({ type: 'object-removed', id })
-          return
-        }
-        commitUndo()
-        // Emit final confirmed state
-        onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
+        // Delay cleanup to allow toolbar interactions (select dropdowns, buttons) to
+        // re-enter editing mode via the textOptions useEffect before we remove empty text.
+        setTimeout(() => {
+          // If the text was re-entered for editing, don't clean up
+          if (text.isEditing) return
+
+          editingTextRef.current = null
+
+          if (text.text?.trim() === '') {
+            suppressEventsRef.current = true
+            canvas.remove(text)
+            suppressEventsRef.current = false
+            onCanvasEventRef.current?.({ type: 'object-removed', id })
+            return
+          }
+          commitUndo()
+          // Emit final confirmed state
+          onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
+        }, 150)
       })
     }
     ;(canvas as any).__toolMouseDown = mouseDown
@@ -1095,8 +1108,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const canvas = fabricRef.current
     if (!canvas || !canDrawOverall) return
     const active = canvas.getActiveObject()
-    if (active && active.type === 'i-text' && (active as fabric.IText).isEditing) {
-      const txt = active as fabric.IText
+    // Check if the IText is still editing, or was recently editing (focus lost to toolbar)
+    const txt = (active && active.type === 'i-text') ? active as fabric.IText : editingTextRef.current
+    if (txt && canvas.getObjects().includes(txt)) {
       txt.set({
         fontSize: textOptions.fontSize,
         fontWeight: textOptions.bold ? 'bold' : 'normal',
@@ -1106,8 +1120,17 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         fontFamily: textOptions.fontFamily,
       })
       canvas.renderAll()
+      // Re-enter editing if focus was lost to toolbar interaction
+      if (!txt.isEditing) {
+        canvas.setActiveObject(txt)
+        txt.enterEditing()
+        // Move cursor to end of text
+        txt.setSelectionStart(txt.text?.length || 0)
+        txt.setSelectionEnd(txt.text?.length || 0)
+        editingTextRef.current = txt
+      }
     }
-  }, [textOptions, strokeColor, isHost])
+  }, [textOptions, strokeColor, canDrawOverall])
 
   return (
     <div className="room-blackboard" ref={containerRef}>
