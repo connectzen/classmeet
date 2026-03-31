@@ -788,7 +788,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // ── Tool switching logic ─────────────────────────────────────────────────
   const applyTool = useCallback((tool: DrawingTool) => {
     const canvas = fabricRef.current
-    if (!canvas || !canDrawOverall) return
+    if (!canvas || !canDrawOverallRef.current) return
     // Prevent switching tool while mid-drag on a shape
     if (isDrawingShapeRef.current) return
 
@@ -825,7 +825,11 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     ;(canvas as any).__toolMouseUp = undefined
 
     // Make objects not selectable by default (select tool re-enables)
-    canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
+    // Skip object locking when applying a remote tool change — the local user
+    // should keep their current canvas interaction state.
+    if (!suppressToolBroadcastRef.current) {
+      canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
+    }
 
     switch (tool) {
       case 'select': {
@@ -890,7 +894,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       onCanvasEventRef.current?.({ type: 'tool-change', tool })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canDrawOverall, finalizePendingText])
+  }, [finalizePendingText])
 
   // Keep applyToolRef in sync with the latest applyTool callback
   useEffect(() => { applyToolRef.current = applyTool }, [applyTool])
