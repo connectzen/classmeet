@@ -413,6 +413,9 @@ function RoomInner({ roomName }: { roomName: string }) {
     } else if (event.type === 'allow-drawing') {
       setAllowStudentDrawing(event.allowed)
       allowStudentDrawingRef.current = event.allowed
+    } else if (event.type === 'tool-change') {
+      // Sync the active drawing tool across all participants
+      blackboardRef.current?.applyRemoteTool(event.tool)
     } else if (
       event.type === 'drawing-live' ||
       event.type === 'drawing-live-end' ||
@@ -953,6 +956,12 @@ function RoomInner({ roomName }: { roomName: string }) {
         if (allowStudentDrawingRef.current) {
           const drawPayload = encoder.encode(JSON.stringify({ type: 'allow-drawing', allowed: true }))
           sendBlackboardData(drawPayload, { reliable: true })
+        }
+        // Send current active tool so late-joiners start with the same tool
+        const currentTool = blackboardRef.current?.getActiveTool()
+        if (currentTool) {
+          const toolPayload = encoder.encode(JSON.stringify({ type: 'tool-change', tool: currentTool, senderId: localParticipant.identity }))
+          sendBlackboardData(toolPayload, { reliable: true })
         }
       }, 500)
     }

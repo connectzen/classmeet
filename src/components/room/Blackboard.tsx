@@ -21,6 +21,7 @@ export type BlackboardEvent = (
   | { type: 'shape-preview-end' }
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
   | { type: 'allow-drawing'; allowed: boolean }
+  | { type: 'tool-change'; tool: DrawingTool }
 ) & { senderId?: string }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
@@ -36,6 +37,8 @@ export interface TextOptions {
 export interface BlackboardHandle {
   getSnapshot: () => string | null
   applyLiveEvent: (event: BlackboardEvent) => void
+  applyRemoteTool: (tool: DrawingTool) => void
+  getActiveTool: () => DrawingTool
 }
 
 interface BlackboardProps {
@@ -83,7 +86,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const canDrawOverall = isHost || canDraw
 
   // Drawing state
-  const [activeTool, setActiveTool] = useState<DrawingTool>('pen')
+  const [activeTool, setActiveTool] = useState<DrawingTool>('rect')
   const [hasSelection, setHasSelection] = useState(false)
   const [strokeColor, setStrokeColor] = useState('#ffffff')
   const [strokeWidth, setStrokeWidth] = useState(3)
@@ -139,6 +142,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // Track the IText that is currently being edited (for restoring focus after toolbar interaction)
   const editingTextRef = useRef<fabric.IText | null>(null)
+
+  // Always-current activeTool ref — used in imperative handle and canvas init
+  const activeToolRef = useRef<DrawingTool>('rect')
+  useEffect(() => { activeToolRef.current = activeTool }, [activeTool])
+
+  // Suppress tool-change broadcast when applying a remote tool change (prevents echo)
+  const suppressToolBroadcastRef = useRef(false)
+
+  // Ref to applyTool so imperative handle always sees the latest version
+  const applyToolRef = useRef<(tool: DrawingTool) => void>(() => {})
 
   // ── Handle live drawing events imperatively (bypasses React state batching) ──
   const handleLiveEvent = useCallback((event: BlackboardEvent) => {
@@ -294,6 +307,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       return JSON.stringify(canvas.toObject(['id']))
     },
     applyLiveEvent: handleLiveEvent,
+    applyRemoteTool: (tool: DrawingTool) => {
+      suppressToolBroadcastRef.current = true
+      applyToolRef.current(tool)
+      suppressToolBroadcastRef.current = false
+    },
+    getActiveTool: () => activeToolRef.current,
   }))
 
   // ── Undo state capture: captureUndo saves pre-mutation state, commitUndo pushes it ──
@@ -344,7 +363,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const canvas = new fabric.Canvas(canvasRef.current, {
       backgroundColor: '#1a1a2e',
-      isDrawingMode: canDrawOverall,
+      isDrawingMode: false,
       selection: canDrawOverall,
       width: w,
       height: h,
@@ -352,13 +371,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     // Scale content to fit the container while keeping a consistent logical space
     canvas.setZoom(Math.min(w / LOGICAL_W, h / LOGICAL_H))
-
-    if (canDrawOverall) {
-      const brush = new fabric.PencilBrush(canvas)
-      brush.color = '#ffffff'
-      brush.width = strokeWidthRef.current
-      canvas.freeDrawingBrush = brush
-    }
 
     fabricRef.current = canvas
 
@@ -400,15 +412,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const canvas = fabricRef.current
     if (!canvas) return
     if (canDrawOverall) {
-      // Enable drawing on the canvas
-      canvas.isDrawingMode = true
-      canvas.selection = true
-      if (!canvas.freeDrawingBrush) {
-        const brush = new fabric.PencilBrush(canvas)
-        brush.color = strokeColorRef.current
-        brush.width = strokeWidthRef.current
-        canvas.freeDrawingBrush = brush
-      }
+      // Apply the current tool — this properly sets isDrawingMode, cursors, etc.
+      applyToolRef.current(activeToolRef.current)
     } else {
       canvas.isDrawingMode = false
       canvas.selection = false
@@ -743,8 +748,27 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         break
       }
     }
+    // Broadcast tool change to all participants (unless suppressed by remote apply)
+    if (!suppressToolBroadcastRef.current) {
+      onCanvasEventRef.current?.({ type: 'tool-change', tool })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canDrawOverall, finalizePendingText])
+
+  // Keep applyToolRef in sync with the latest applyTool callback
+  useEffect(() => { applyToolRef.current = applyTool }, [applyTool])
+
+  // ── Apply initial tool once canvas is ready and user can draw ────────────
+  const initialToolAppliedRef = useRef(false)
+  useEffect(() => {
+    if (fabricRef.current && canDrawOverall && !initialToolAppliedRef.current) {
+      initialToolAppliedRef.current = true
+      // Suppress broadcast so the initial default tool doesn't flood the channel
+      suppressToolBroadcastRef.current = true
+      applyToolRef.current(activeToolRef.current)
+      suppressToolBroadcastRef.current = false
+    }
+  }, [canDrawOverall])
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
