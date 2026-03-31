@@ -27,6 +27,12 @@ interface BlackboardToolbarProps {
   onToggleToolbar: () => void
   hasSelection: boolean
   dismissSignal?: number
+  showColorPicker: boolean
+  onShowColorPickerChange: (show: boolean) => void
+  showSizePicker: boolean
+  onShowSizePickerChange: (show: boolean) => void
+  showTextPanel: boolean
+  onShowTextPanelChange: (show: boolean) => void
 }
 
 const COLORS = [
@@ -83,12 +89,14 @@ export default function BlackboardToolbar({
   onToggleToolbar,
   hasSelection,
   dismissSignal,
+  showColorPicker,
+  onShowColorPickerChange,
+  showSizePicker,
+  onShowSizePickerChange,
+  showTextPanel,
+  onShowTextPanelChange,
 }: BlackboardToolbarProps) {
-  const [showColorPicker, setShowColorPicker] = useState(false)
-  const [showSizePicker, setShowSizePicker] = useState(false)
   const [isMobileView, setIsMobileView] = useState(false)
-  // Text panel: open when T is active on mobile; closed by hover-leave or T toggle
-  const [showTextPanel, setShowTextPanel] = useState(false)
   // Track whether cursor has entered the text panel (for hover-to-close)
   const textPanelEnteredRef = useRef(false)
 
@@ -104,20 +112,20 @@ export default function BlackboardToolbar({
   useEffect(() => {
     if (activeTool === 'text' && isMobileView) {
       textPanelEnteredRef.current = false
-      setShowTextPanel(true)
+      onShowTextPanelChange(true)
     } else {
-      setShowTextPanel(false)
+      onShowTextPanelChange(false)
     }
-  }, [activeTool, isMobileView])
+  }, [activeTool, isMobileView, onShowTextPanelChange])
 
   // Dismiss all popups when the canvas is clicked
   useEffect(() => {
     if (dismissSignal) {
-      setShowTextPanel(false)
-      setShowColorPicker(false)
-      setShowSizePicker(false)
+      onShowTextPanelChange(false)
+      onShowColorPickerChange(false)
+      onShowSizePickerChange(false)
     }
-  }, [dismissSignal])
+  }, [dismissSignal, onShowTextPanelChange, onShowColorPickerChange, onShowSizePickerChange])
 
   // T button: toggle text tool on/off (clicking active T switches back to pen)
   const handleTextToolClick = () => {
@@ -137,7 +145,7 @@ export default function BlackboardToolbar({
   const handleTextPanelLeave = () => {
     if (textPanelEnteredRef.current) {
       textPanelEnteredRef.current = false
-      setShowTextPanel(false)
+      onShowTextPanelChange(false)
     }
   }
 
@@ -199,7 +207,7 @@ export default function BlackboardToolbar({
             <div className="room-bb-tool-group" style={{ position: 'relative' }}>
               <button
                 className="room-bb-tool-btn"
-                onClick={() => setShowColorPicker(v => !v)}
+                onClick={() => onShowColorPickerChange(!showColorPicker)}
                 title="Color"
               >
                 <Palette size={15} />
@@ -214,14 +222,14 @@ export default function BlackboardToolbar({
                       key={c}
                       className={`room-bb-color-swatch ${strokeColor === c ? 'room-bb-color-swatch-active' : ''}`}
                       style={{ backgroundColor: c }}
-                      onClick={() => { onColorChange(c); setShowColorPicker(false) }}
+                      onClick={() => { onColorChange(c); onShowColorPickerChange(false) }}
                       title={c}
                     />
                   ))}
                   <input
                     type="color"
                     value={strokeColor}
-                    onChange={e => { onColorChange(e.target.value); setShowColorPicker(false) }}
+                    onChange={e => { onColorChange(e.target.value); onShowColorPickerChange(false) }}
                     className="room-bb-color-input"
                     title="Custom color"
                   />
@@ -234,7 +242,7 @@ export default function BlackboardToolbar({
               <div style={{ position: 'relative' }}>
                 <button
                   className={`room-bb-tool-btn ${showSizePicker ? 'room-bb-tool-active' : ''}`}
-                  onClick={() => setShowSizePicker(v => !v)}
+                  onClick={() => onShowSizePickerChange(!showSizePicker)}
                   title={`Stroke: ${currentSize.label}`}
                 >
                   <span
@@ -250,7 +258,7 @@ export default function BlackboardToolbar({
                       <button
                         key={s.value}
                         className={`room-bb-size-picker-item ${strokeWidth === s.value ? 'room-bb-size-picker-active' : ''}`}
-                        onClick={() => { onStrokeWidthChange(s.value); setShowSizePicker(false) }}
+                        onClick={() => { onStrokeWidthChange(s.value); onShowSizePickerChange(false) }}
                       >
                         <span
                           className="room-bb-size-dot"
@@ -343,14 +351,14 @@ export default function BlackboardToolbar({
               key={c}
               className={`room-bb-color-swatch ${strokeColor === c ? 'room-bb-color-swatch-active' : ''}`}
               style={{ backgroundColor: c }}
-              onClick={() => { onColorChange(c); setShowColorPicker(false) }}
+              onClick={() => { onColorChange(c); onShowColorPickerChange(false) }}
               title={c}
             />
           ))}
           <input
             type="color"
             value={strokeColor}
-            onChange={e => { onColorChange(e.target.value); setShowColorPicker(false) }}
+            onChange={e => { onColorChange(e.target.value); onShowColorPickerChange(false) }}
             className="room-bb-color-input"
             title="Custom color"
           />
@@ -364,7 +372,7 @@ export default function BlackboardToolbar({
             <button
               key={s.value}
               className={`room-bb-size-picker-item ${strokeWidth === s.value ? 'room-bb-size-picker-active' : ''}`}
-              onClick={() => { onStrokeWidthChange(s.value); setShowSizePicker(false) }}
+              onClick={() => { onStrokeWidthChange(s.value); onShowSizePickerChange(false) }}
             >
               <span
                 className="room-bb-size-dot"

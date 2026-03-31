@@ -416,6 +416,9 @@ function RoomInner({ roomName }: { roomName: string }) {
     } else if (event.type === 'tool-change') {
       // Sync the active drawing tool across all participants
       blackboardRef.current?.applyRemoteTool(event.tool)
+    } else if (event.type === 'toolbar-state') {
+      // Sync toolbar popup visibility (color picker, size picker, text panel)
+      blackboardRef.current?.applyRemoteToolbarState({ colorPicker: event.colorPicker, sizePicker: event.sizePicker, textPanel: event.textPanel })
     } else if (
       event.type === 'drawing-live' ||
       event.type === 'drawing-live-end' ||

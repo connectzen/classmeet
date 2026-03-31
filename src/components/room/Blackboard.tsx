@@ -22,6 +22,7 @@ export type BlackboardEvent = (
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
   | { type: 'allow-drawing'; allowed: boolean }
   | { type: 'tool-change'; tool: DrawingTool }
+  | { type: 'toolbar-state'; colorPicker: boolean; sizePicker: boolean; textPanel: boolean }
 ) & { senderId?: string }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
@@ -39,6 +40,7 @@ export interface BlackboardHandle {
   applyLiveEvent: (event: BlackboardEvent) => void
   applyRemoteTool: (tool: DrawingTool) => void
   getActiveTool: () => DrawingTool
+  applyRemoteToolbarState: (state: { colorPicker: boolean; sizePicker: boolean; textPanel: boolean }) => void
 }
 
 interface BlackboardProps {
@@ -94,6 +96,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [dismissSignal, setDismissSignal] = useState(0)
+  // Toolbar popup state (lifted from toolbar for cross-participant sync)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const [showSizePicker, setShowSizePicker] = useState(false)
+  const [showTextPanel, setShowTextPanel] = useState(false)
   const [textOptions, setTextOptions] = useState<TextOptions>({
     fontSize: 24,
     fontFamily: 'Courier New, monospace',
@@ -152,6 +158,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
   // Ref to applyTool so imperative handle always sees the latest version
   const applyToolRef = useRef<(tool: DrawingTool) => void>(() => {})
+
+  // Suppress toolbar-state broadcast when applying remote state (prevents echo)
+  const suppressToolbarBroadcastRef = useRef(false)
 
   // ── Handle live drawing events imperatively (bypasses React state batching) ──
   const handleLiveEvent = useCallback((event: BlackboardEvent) => {
@@ -313,6 +322,13 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       suppressToolBroadcastRef.current = false
     },
     getActiveTool: () => activeToolRef.current,
+    applyRemoteToolbarState: (state: { colorPicker: boolean; sizePicker: boolean; textPanel: boolean }) => {
+      suppressToolbarBroadcastRef.current = true
+      setShowColorPicker(state.colorPicker)
+      setShowSizePicker(state.sizePicker)
+      setShowTextPanel(state.textPanel)
+      suppressToolbarBroadcastRef.current = false
+    },
   }))
 
   // ── Undo state capture: captureUndo saves pre-mutation state, commitUndo pushes it ──
@@ -1184,15 +1200,18 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
   }, [textOptions, strokeColor, canDrawOverall])
 
+  // ── Broadcast toolbar popup state changes to all participants ──────────
+  useEffect(() => {
+    if (suppressToolbarBroadcastRef.current) return
+    onCanvasEventRef.current?.({ type: 'toolbar-state', colorPicker: showColorPicker, sizePicker: showSizePicker, textPanel: showTextPanel })
+  }, [showColorPicker, showSizePicker, showTextPanel])
+
   return (
     <div className="room-blackboard" ref={containerRef}>
       <canvas ref={canvasRef} />
-      {!canDrawOverall && (
-        <>
-          <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
-          <div ref={caretDivRef} className="room-bb-caret" style={{ display: 'none' }} />
-        </>
-      )}
+      {/* Cursor & caret indicators — visible on all participants' boards */}
+      <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
+      <div ref={caretDivRef} className="room-bb-caret" style={{ display: 'none' }} />
       {canDrawOverall && (
         <BlackboardToolbar
           activeTool={activeTool}
@@ -1212,6 +1231,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           onToggleToolbar={() => setToolbarVisible(v => !v)}
           hasSelection={hasSelection}
           dismissSignal={dismissSignal}
+          showColorPicker={showColorPicker}
+          onShowColorPickerChange={setShowColorPicker}
+          showSizePicker={showSizePicker}
+          onShowSizePickerChange={setShowSizePicker}
+          showTextPanel={showTextPanel}
+          onShowTextPanelChange={setShowTextPanel}
         />
       )}
     </div>
