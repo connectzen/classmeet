@@ -21,11 +21,24 @@ export async function GET(request: Request) {
 
     // Fetch teacher-student relationships (use admin client to bypass RLS)
     const adminSupabase = createAdminClient()
+
+    // Fetch auth users to get emails
+    const { data: authUsersData } = await adminSupabase.auth.admin.listUsers({ perPage: 10000 })
+    const emailMap = new Map<string, string>()
+    if (authUsersData?.users) {
+      for (const u of authUsersData.users) {
+        if (u.email) emailMap.set(u.id, u.email)
+      }
+    }
+
     const { data: teacherStudents } = await adminSupabase
       .from('teacher_students')
       .select('teacher_id, student_id')
 
-    const allProfiles = (profilesRaw || []) as any[]
+    const allProfiles = (profilesRaw || []).map((p: any) => ({
+      ...p,
+      email: emailMap.get(p.id) || null,
+    }))
     const allSchools = schools || []
     const tsLinks = teacherStudents || []
 

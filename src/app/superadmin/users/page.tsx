@@ -14,6 +14,7 @@ interface Profile {
   id: string
   full_name: string | null
   avatar_url: string | null
+  email: string | null
   role: string
   is_super_admin: boolean
   onboarding_complete: boolean
@@ -99,7 +100,7 @@ function UserRow({ user, indent = 0, expandable, expanded, onToggle, childCount 
       {/* Avatar */}
       <Avatar src={user.avatar_url} name={user.full_name} size="sm" />
 
-      {/* Name + role */}
+      {/* Name + role + email */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Link
@@ -114,6 +115,11 @@ function UserRow({ user, indent = 0, expandable, expanded, onToggle, childCount 
           </Link>
           <Badge role={user.is_super_admin ? 'super_admin' : user.role as any} />
         </div>
+        {user.email && (
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {user.email}
+          </div>
+        )}
       </div>
 
       {/* Count badge for expandable rows */}
@@ -142,7 +148,7 @@ function SchoolSection({ school, searchFilter }: { school: SchoolNode; searchFil
 
   const matchesSearch = (p: Profile | null) => {
     if (!searchFilter || !p) return true
-    return p.full_name?.toLowerCase().includes(searchFilter) || p.id.includes(searchFilter)
+    return p.full_name?.toLowerCase().includes(searchFilter) || p.email?.toLowerCase().includes(searchFilter) || p.id.includes(searchFilter)
   }
 
   const filteredTeachers = school.teachers.filter(t =>
