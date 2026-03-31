@@ -263,6 +263,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // Suppress setting broadcasts when applying remote settings (prevents echo)
   const suppressSettingsBroadcastRef = useRef(false)
 
+  // Track whether a remote user is currently editing text (prevents cursor dot from racing with caret)
+  const remoteTextEditingRef = useRef(false)
+
   // ── Handle live drawing events imperatively (bypasses React state batching) ──
   const handleLiveEvent = useCallback((event: BlackboardEvent) => {
     const canvas = fabricRef.current
@@ -327,6 +330,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     // ── Cursor: single global cursor ───────────────────────────────────
     if (event.type === 'cursor-move') {
+      // Suppress cursor dot entirely while remote text editing is active
+      if (remoteTextEditingRef.current) return
       const el = cursorDivRef.current
       if (el) {
         if (event.x < 0 || event.y < 0) {
@@ -336,11 +341,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         const z = fabricRef.current?.getZoom() ?? 1
         el.style.left = `${event.x * z}px`
         el.style.top = `${event.y * z}px`
-        // Don't show cursor dot if the text caret is currently visible
-        const caretVisible = caretDivRef.current && caretDivRef.current.style.display === 'block'
-        if (!caretVisible) {
-          el.style.display = 'block'
-        }
+        el.style.display = 'block'
       }
       return
     }
@@ -349,6 +350,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const el = caretDivRef.current
       if (el) {
         if (event.visible) {
+          remoteTextEditingRef.current = true
           const z = fabricRef.current?.getZoom() ?? 1
 
           // If local user is already editing ANY IText, hide the remote caret
@@ -360,17 +362,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           }
 
           // Show the remote caret indicator (read-only view).
-          // We do NOT auto-enter editing — that caused the student to lock onto
-          // the teacher's IText which then blocked object-modified sync in both
-          // directions (the isLocalEditing guard would skip remote updates).
           el.style.left = `${event.x * z}px`
           el.style.top = `${event.y * z}px`
           el.style.height = `${event.height * z}px`
           el.style.display = 'block'
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
         } else {
+          remoteTextEditingRef.current = false
           el.style.display = 'none'
-          // Also hide cursor dot when text editing ends remotely
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
         }
       }
@@ -701,6 +700,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }, 16)
 
     const onCursorMove = (e: any) => {
+      // Don't broadcast cursor-move while locally editing text — the text-cursor event handles it
+      if (editingTextRef.current?.isEditing) return
       const pointer = canvas.getScenePoint(e.e)
       // Only broadcast cursor if we hold the lock or no one holds it
       const holder = lockedByRef.current
