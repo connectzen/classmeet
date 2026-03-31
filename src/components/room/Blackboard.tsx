@@ -182,11 +182,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (event.type === 'cursor-move') {
       const el = cursorDivRef.current
       if (el) {
+        if (event.x < 0 || event.y < 0) {
+          el.style.display = 'none'
+          return
+        }
         const z = fabricRef.current?.getZoom() ?? 1
         el.style.left = `${event.x * z}px`
         el.style.top = `${event.y * z}px`
         // Don't show cursor dot if the text caret is currently visible
-        // (prevents late-arriving cursor-move from re-showing dot at text origin)
         const caretVisible = caretDivRef.current && caretDivRef.current.style.display === 'block'
         if (!caretVisible) {
           el.style.display = 'block'
@@ -201,54 +204,18 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         if (event.visible) {
           const z = fabricRef.current?.getZoom() ?? 1
 
-          // If local user is already editing the same IText near this position,
-          // hide the remote caret entirely to avoid dual-cursor visual
+          // If local user is already editing ANY IText, hide the remote caret
+          // to avoid dual-cursor confusion — the local editing cursor is enough.
           if (editingTextRef.current && editingTextRef.current.isEditing) {
-            const dx = (editingTextRef.current.left || 0) - event.x
-            const dy = (editingTextRef.current.top || 0) - event.y
-            if (Math.sqrt(dx * dx + dy * dy) < 30) {
-              el.style.display = 'none'
-              if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
-              return
-            }
+            el.style.display = 'none'
+            if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
+            return
           }
 
-          // Auto-activate the nearest IText so a permitted participant can
-          // type without needing to click on it.
-          if (canvas && canDrawOverallRef.current) {
-            const objs = canvas.getObjects()
-            let bestText: fabric.IText | null = null
-            let bestDist = 30
-            for (let i = objs.length - 1; i >= 0; i--) {
-              const o = objs[i]
-              if (o.type === 'i-text' || o.type === 'IText') {
-                const dx2 = (o.left || 0) - event.x
-                const dy2 = (o.top || 0) - event.y
-                const dist = Math.sqrt(dx2 * dx2 + dy2 * dy2)
-                if (dist < bestDist) {
-                  bestDist = dist
-                  bestText = o as fabric.IText
-                }
-              }
-            }
-            if (bestText && !bestText.isEditing) {
-              bestText.selectable = true
-              bestText.evented = true
-              bestText.editable = true
-              canvas.setActiveObject(bestText)
-              bestText.enterEditing()
-              bestText.setSelectionStart(bestText.text?.length || 0)
-              bestText.setSelectionEnd(bestText.text?.length || 0)
-              editingTextRef.current = bestText
-              // Hide BOTH indicators — we're now the active editor, no remote caret needed
-              el.style.display = 'none'
-              if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
-              canvas.renderAll()
-              return
-            }
-          }
-
-          // Not auto-entering — show the remote caret indicator (read-only view)
+          // Show the remote caret indicator (read-only view).
+          // We do NOT auto-enter editing — that caused the student to lock onto
+          // the teacher's IText which then blocked object-modified sync in both
+          // directions (the isLocalEditing guard would skip remote updates).
           el.style.left = `${event.x * z}px`
           el.style.top = `${event.y * z}px`
           el.style.height = `${event.height * z}px`
@@ -256,6 +223,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
         } else {
           el.style.display = 'none'
+          // Also hide cursor dot when text editing ends remotely
+          if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
         }
       }
       return
@@ -1162,6 +1131,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
       // Stream every keystroke live to participants
       const emitTextLive = throttle(() => {
+        if (suppressEventsRef.current) return
         onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((text as any).toObject(['id'])), id })
         // Compute actual cursor pixel position using fabric's internal cursor rendering data
         try {
