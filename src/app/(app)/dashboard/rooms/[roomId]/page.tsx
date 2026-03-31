@@ -193,6 +193,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Blackboard
   const [blackboardActive, setBlackboardActive] = useState(false)
   const [allowStudentDrawing, setAllowStudentDrawing] = useState(false)  // Permission for students to draw
+  const allowStudentDrawingRef = useRef(false)
   const [blackboardEvent, setBlackboardEvent] = useState<BlackboardEvent | null>(null)
   const blackboardRef = useRef<BlackboardHandle>(null)
   const prevParticipantCount = useRef(0)
@@ -401,12 +402,17 @@ function RoomInner({ roomName }: { roomName: string }) {
   // Blackboard data channel — host broadcasts canvas events, participants receive
   const { send: sendBlackboardData } = useDataChannel(BLACKBOARD_TOPIC, (msg) => {
     const event = JSON.parse(decoder.decode(msg.payload)) as BlackboardEvent
+    // Filter out events sent by ourselves to prevent echo
+    if (event.senderId && event.senderId === localParticipant.identity) return
     if (event.type === 'activate') {
       setBlackboardActive(true)
       bringLayerToFront('blackboard')
     } else if (event.type === 'deactivate') {
       setBlackboardActive(false)
       removeLayerFromOrder('blackboard')
+    } else if (event.type === 'allow-drawing') {
+      setAllowStudentDrawing(event.allowed)
+      allowStudentDrawingRef.current = event.allowed
     } else if (
       event.type === 'drawing-live' ||
       event.type === 'drawing-live-end' ||
@@ -564,6 +570,9 @@ function RoomInner({ roomName }: { roomName: string }) {
       }
     } else {
       removeLayerFromOrder('blackboard')
+      // Reset drawing permission when board is deactivated
+      setAllowStudentDrawing(false)
+      allowStudentDrawingRef.current = false
     }
     updateLayerOrder('blackboard', next)
 
@@ -940,6 +949,11 @@ function RoomInner({ roomName }: { roomName: string }) {
           const payload = encoder.encode(JSON.stringify({ type: 'snapshot', data: snapshot }))
           sendBlackboardData(payload, { reliable: true })
         }
+        // Send current drawing permission so late-joiners know if they can draw
+        if (allowStudentDrawingRef.current) {
+          const drawPayload = encoder.encode(JSON.stringify({ type: 'allow-drawing', allowed: true }))
+          sendBlackboardData(drawPayload, { reliable: true })
+        }
       }, 500)
     }
     prevParticipantCount.current = participants.length
@@ -1243,7 +1257,14 @@ function RoomInner({ roomName }: { roomName: string }) {
           isCameraLayerActive={layerOrder.includes('camera')}
           onToggleCameraLayer={toggleCameraLayer}
           allowStudentDrawing={allowStudentDrawing}
-          onToggleAllowStudentDrawing={() => setAllowStudentDrawing(v => !v)}
+          onToggleAllowStudentDrawing={() => {
+            const next = !allowStudentDrawing
+            setAllowStudentDrawing(next)
+            allowStudentDrawingRef.current = next
+            // Broadcast permission change to all participants
+            const payload = encoder.encode(JSON.stringify({ type: 'allow-drawing', allowed: next, senderId: localParticipant.identity }))
+            sendBlackboardData(payload, { reliable: true })
+          }}
         />
       </div>
 

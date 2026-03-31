@@ -20,6 +20,7 @@ export type BlackboardEvent = (
   | { type: 'shape-preview'; kind: 'line' | 'rect' | 'circle'; x1: number; y1: number; x2: number; y2: number; color: string; width: number }
   | { type: 'shape-preview-end' }
   | { type: 'text-cursor'; x: number; y: number; height: number; visible: boolean }
+  | { type: 'allow-drawing'; allowed: boolean }
 ) & { senderId?: string }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
@@ -339,7 +340,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     fabricRef.current = canvas
 
     // Track selection for smart delete
-    if (isHost) {
+    if (canDrawOverall) {
       canvas.on('selection:created', () => setHasSelection(true))
       canvas.on('selection:updated', () => setHasSelection(true))
       canvas.on('selection:cleared', () => setHasSelection(false))
@@ -368,10 +369,39 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Host: wire up canvas events to emit changes ──────────────────────────
+  // ── React to canDrawOverall changes at runtime ─────────────────────────────
   useEffect(() => {
     const canvas = fabricRef.current
-    if (!canvas || !isHost) return
+    if (!canvas) return
+    if (canDrawOverall) {
+      // Enable drawing on the canvas
+      canvas.isDrawingMode = true
+      canvas.selection = true
+      if (!canvas.freeDrawingBrush) {
+        const brush = new fabric.PencilBrush(canvas)
+        brush.color = strokeColorRef.current
+        brush.width = strokeWidthRef.current
+        canvas.freeDrawingBrush = brush
+      }
+    } else {
+      canvas.isDrawingMode = false
+      canvas.selection = false
+      // Remove tool-specific handlers to stop any in-progress drawing
+      if ((canvas as any).__toolMouseDown) canvas.off('mouse:down', (canvas as any).__toolMouseDown)
+      if ((canvas as any).__toolMouseMove) canvas.off('mouse:move', (canvas as any).__toolMouseMove)
+      if ((canvas as any).__toolMouseUp) canvas.off('mouse:up', (canvas as any).__toolMouseUp)
+      ;(canvas as any).__toolMouseDown = undefined
+      ;(canvas as any).__toolMouseMove = undefined
+      ;(canvas as any).__toolMouseUp = undefined
+      canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
+      canvas.renderAll()
+    }
+  }, [canDrawOverall])
+
+  // ── Wire up canvas events to emit changes (host or student with drawing permission) ──
+  useEffect(() => {
+    const canvas = fabricRef.current
+    if (!canvas || !canDrawOverall) return
 
     // Throttled live drawing emitter (~60fps)
     const emitLiveDrawing = throttle((points: number[], color: string, width: number) => {
@@ -495,21 +525,22 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('object:removed', onObjectRemoved)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHost, captureUndo, commitUndo])
+  }, [canDrawOverall, captureUndo, commitUndo])
 
   // ── Participant: apply incoming events ────────────────────────────────────
   useEffect(() => {
     const canvas = fabricRef.current
     if (!canvas || !incomingEvent) return
 
-    // Live drawing / cursor / shape-preview events are handled imperatively via applyLiveEvent — skip here
+    // Live drawing / cursor / shape-preview / permission events are handled outside — skip here
     if (
       incomingEvent.type === 'drawing-live' ||
       incomingEvent.type === 'drawing-live-end' ||
       incomingEvent.type === 'cursor-move' ||
       incomingEvent.type === 'shape-preview' ||
       incomingEvent.type === 'shape-preview-end' ||
-      incomingEvent.type === 'text-cursor'
+      incomingEvent.type === 'text-cursor' ||
+      incomingEvent.type === 'allow-drawing'
     ) return
 
     suppressEventsRef.current = true
@@ -589,7 +620,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // ── Tool switching logic ─────────────────────────────────────────────────
   const applyTool = useCallback((tool: DrawingTool) => {
     const canvas = fabricRef.current
-    if (!canvas || !isHost) return
+    if (!canvas || !canDrawOverall) return
     // Prevent switching tool while mid-drag on a shape
     if (isDrawingShapeRef.current) return
     setActiveTool(tool)
@@ -683,7 +714,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHost])
+  }, [canDrawOverall])
 
   // ── Line drawing handlers ────────────────────────────────────────────────
   const setupLineDrawing = useCallback((canvas: fabric.Canvas) => {
@@ -1062,7 +1093,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // ── Apply text option changes to the currently editing IText ─────────────
   useEffect(() => {
     const canvas = fabricRef.current
-    if (!canvas || !isHost) return
+    if (!canvas || !canDrawOverall) return
     const active = canvas.getActiveObject()
     if (active && active.type === 'i-text' && (active as fabric.IText).isEditing) {
       const txt = active as fabric.IText
