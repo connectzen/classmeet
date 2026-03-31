@@ -33,6 +33,7 @@ interface BlackboardToolbarProps {
   onShowSizePickerChange: (show: boolean) => void
   showTextPanel: boolean
   onShowTextPanelChange: (show: boolean) => void
+  isLocked?: boolean
 }
 
 const COLORS = [
@@ -95,6 +96,7 @@ export default function BlackboardToolbar({
   onShowSizePickerChange,
   showTextPanel,
   onShowTextPanelChange,
+  isLocked = false,
 }: BlackboardToolbarProps) {
   const [isMobileView, setIsMobileView] = useState(false)
   // Track whether cursor has entered the text panel (for hover-to-close)
@@ -176,7 +178,7 @@ export default function BlackboardToolbar({
 
         {/* Main toolbar */}
         {toolbarVisible && (
-          <div className="room-bb-toolbar-inner">
+          <div className="room-bb-toolbar-inner" style={isLocked ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
 
             {/* Drawing tools (all except text) */}
             <div className="room-bb-tool-group">

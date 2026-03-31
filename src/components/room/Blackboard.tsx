@@ -26,6 +26,9 @@ export type BlackboardEvent = (
   | { type: 'stroke-change'; width: number }
   | { type: 'text-options-change'; options: TextOptions }
   | { type: 'toolbar-state'; colorPicker: boolean; sizePicker: boolean; textPanel: boolean }
+  | { type: 'lock-acquire'; identity: string; isHost: boolean; timestamp: number }
+  | { type: 'lock-release'; identity: string }
+  | { type: 'lock-state'; lockedBy: string | null; isHost: boolean }
 ) & { senderId?: string }
 
 export type DrawingTool = 'pen' | 'line' | 'rect' | 'circle' | 'highlighter' | 'eraser' | 'text' | 'select'
@@ -48,6 +51,8 @@ export interface BlackboardHandle {
   applyRemoteStrokeWidth: (width: number) => void
   applyRemoteTextOptions: (options: TextOptions) => void
   getToolbarSettings: () => { color: string; strokeWidth: number; textOptions: TextOptions }
+  getLockState: () => { lockedBy: string | null; isHost: boolean }
+  forceReleaseLock: (identity: string) => void
 }
 
 interface BlackboardProps {
@@ -55,7 +60,12 @@ interface BlackboardProps {
   canDraw?: boolean  // Permission to draw (for students when allowed by teacher)
   onCanvasEvent?: (event: BlackboardEvent) => void
   incomingEvent?: BlackboardEvent | null
+  localIdentity?: string  // Current user identity for lock system
 }
+
+// Lock system constants
+const LOCK_IDLE_RELEASE_MS = 2000   // Auto-release lock after 2s of no input
+const LOCK_FORCE_RELEASE_MS = 5000  // Force-release if no release received within 5s
 
 // ── Logical canvas size — all objects live in this coordinate space ───────────
 const LOGICAL_W = 1280
@@ -81,7 +91,7 @@ function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T {
 
 // ── Component ────────────────────────────────────────────────────────────────
 const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackboard(
-  { isHost, canDraw = false, onCanvasEvent, incomingEvent },
+  { isHost, canDraw = false, onCanvasEvent, incomingEvent, localIdentity = '' },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -95,6 +105,85 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   const canDrawOverall = isHost || canDraw
   const canDrawOverallRef = useRef(canDrawOverall)
   useEffect(() => { canDrawOverallRef.current = canDrawOverall }, [canDrawOverall])
+
+  // ── Lock system state ──────────────────────────────────────────────────
+  const lockedByRef = useRef<string | null>(null)
+  const lockedByIsHostRef = useRef(false)
+  const [isLockedByOther, setIsLockedByOther] = useState(false)
+  const lockIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lockForceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const localIdentityRef = useRef(localIdentity)
+  useEffect(() => { localIdentityRef.current = localIdentity }, [localIdentity])
+
+  // Acquire the editing lock — returns true if successfully acquired
+  const acquireLock = useCallback(() => {
+    const currentHolder = lockedByRef.current
+    if (currentHolder === localIdentityRef.current) {
+      // Already holding — refresh idle timer
+      resetLockIdleTimer()
+      return true
+    }
+    if (currentHolder && currentHolder !== localIdentityRef.current) {
+      // Someone else holds the lock
+      if (isHost && !lockedByIsHostRef.current) {
+        // Host overrides non-host lock — force release the other user
+        // (the lock-acquire broadcast will inform them)
+      } else if (!isHost) {
+        // Non-host can't override
+        return false
+      }
+    }
+    lockedByRef.current = localIdentityRef.current
+    lockedByIsHostRef.current = isHost
+    setIsLockedByOther(false)
+    onCanvasEventRef.current?.({ type: 'lock-acquire', identity: localIdentityRef.current, isHost, timestamp: Date.now() })
+    resetLockIdleTimer()
+    return true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost])
+
+  // Release the editing lock
+  const releaseLock = useCallback(() => {
+    if (lockedByRef.current !== localIdentityRef.current) return
+    lockedByRef.current = null
+    lockedByIsHostRef.current = false
+    setIsLockedByOther(false)
+    if (lockIdleTimerRef.current) { clearTimeout(lockIdleTimerRef.current); lockIdleTimerRef.current = null }
+    onCanvasEventRef.current?.({ type: 'lock-release', identity: localIdentityRef.current })
+  }, [])
+
+  // Reset the idle auto-release timer (called on each user interaction while lock held)
+  const resetLockIdleTimer = useCallback(() => {
+    if (lockIdleTimerRef.current) clearTimeout(lockIdleTimerRef.current)
+    lockIdleTimerRef.current = setTimeout(() => {
+      if (lockedByRef.current === localIdentityRef.current) {
+        releaseLock()
+      }
+    }, LOCK_IDLE_RELEASE_MS)
+  }, [releaseLock])
+
+  // Disable canvas interaction when locked by another user
+  const disableCanvasInteraction = useCallback(() => {
+    const canvas = fabricRef.current
+    if (!canvas) return
+    canvas.isDrawingMode = false
+    canvas.selection = false
+    if ((canvas as any).__toolMouseDown) canvas.off('mouse:down', (canvas as any).__toolMouseDown)
+    if ((canvas as any).__toolMouseMove) canvas.off('mouse:move', (canvas as any).__toolMouseMove)
+    if ((canvas as any).__toolMouseUp) canvas.off('mouse:up', (canvas as any).__toolMouseUp)
+    ;(canvas as any).__toolMouseDown = undefined
+    ;(canvas as any).__toolMouseMove = undefined
+    ;(canvas as any).__toolMouseUp = undefined
+    canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
+    canvas.renderAll()
+  }, [])
+
+  // Re-enable canvas interaction when lock is released
+  const enableCanvasInteraction = useCallback(() => {
+    const canvas = fabricRef.current
+    if (!canvas || !canDrawOverallRef.current) return
+    applyToolRef.current(activeToolRef.current)
+  }, [])
 
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>('rect')
@@ -179,6 +268,64 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const canvas = fabricRef.current
     if (!canvas) return
 
+    // ── Lock system events ─────────────────────────────────────────────
+    if (event.type === 'lock-acquire') {
+      const incomingIdentity = event.identity
+      const currentHolder = lockedByRef.current
+      // If we currently hold the lock and an incoming host overrides us (non-host)
+      if (currentHolder === localIdentityRef.current && event.isHost && !isHost) {
+        // We are pre-empted — finalize any pending text and release
+        finalizePendingTextRef.current()
+        lockedByRef.current = null
+        if (lockIdleTimerRef.current) { clearTimeout(lockIdleTimerRef.current); lockIdleTimerRef.current = null }
+      }
+      // Conflict: two non-host users — first one wins (ignore later timestamp)
+      if (currentHolder && currentHolder !== incomingIdentity && !event.isHost) {
+        return // ignore — existing holder keeps the lock
+      }
+      lockedByRef.current = incomingIdentity
+      lockedByIsHostRef.current = event.isHost
+      const otherHoldsLock = incomingIdentity !== localIdentityRef.current
+      setIsLockedByOther(otherHoldsLock)
+      if (otherHoldsLock) {
+        disableCanvasInteraction()
+      }
+      // Start force-release safety timer
+      if (lockForceTimerRef.current) clearTimeout(lockForceTimerRef.current)
+      lockForceTimerRef.current = setTimeout(() => {
+        if (lockedByRef.current === incomingIdentity) {
+          lockedByRef.current = null
+          lockedByIsHostRef.current = false
+          setIsLockedByOther(false)
+          if (canDrawOverallRef.current) enableCanvasInteraction()
+        }
+      }, LOCK_FORCE_RELEASE_MS)
+      return
+    }
+
+    if (event.type === 'lock-release') {
+      if (lockedByRef.current === event.identity) {
+        lockedByRef.current = null
+        lockedByIsHostRef.current = false
+        setIsLockedByOther(false)
+        if (lockForceTimerRef.current) { clearTimeout(lockForceTimerRef.current); lockForceTimerRef.current = null }
+        if (canDrawOverallRef.current) enableCanvasInteraction()
+      }
+      return
+    }
+
+    if (event.type === 'lock-state') {
+      lockedByRef.current = event.lockedBy
+      lockedByIsHostRef.current = event.isHost
+      const otherHoldsLock = event.lockedBy !== null && event.lockedBy !== localIdentityRef.current
+      setIsLockedByOther(otherHoldsLock)
+      if (otherHoldsLock) {
+        disableCanvasInteraction()
+      }
+      return
+    }
+
+    // ── Cursor: single global cursor ───────────────────────────────────
     if (event.type === 'cursor-move') {
       const el = cursorDivRef.current
       if (el) {
@@ -334,7 +481,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
       return
     }
-  }, [])
+  }, [isHost, disableCanvasInteraction, enableCanvasInteraction])
 
   // ── Expose methods to parent ─────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
@@ -388,6 +535,19 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       strokeWidth: strokeWidthRef.current,
       textOptions: textOptionsRef.current,
     }),
+    getLockState: () => ({
+      lockedBy: lockedByRef.current,
+      isHost: lockedByIsHostRef.current,
+    }),
+    forceReleaseLock: (identity: string) => {
+      if (lockedByRef.current === identity) {
+        lockedByRef.current = null
+        lockedByIsHostRef.current = false
+        setIsLockedByOther(false)
+        if (lockForceTimerRef.current) { clearTimeout(lockForceTimerRef.current); lockForceTimerRef.current = null }
+        if (canDrawOverallRef.current) enableCanvasInteraction()
+      }
+    },
   }))
 
   // ── Undo state capture: captureUndo saves pre-mutation state, commitUndo pushes it ──
@@ -427,6 +587,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((pending as any).toObject(['id'])), id })
     }
   }, [commitUndo])
+
+  // Always-current ref for finalizePendingText (used by lock system in handleLiveEvent)
+  const finalizePendingTextRef = useRef(finalizePendingText)
+  useEffect(() => { finalizePendingTextRef.current = finalizePendingText }, [finalizePendingText])
 
   // ── Initialize fabric canvas (retina handled by fabric's enableRetinaScaling) ──
   useEffect(() => {
@@ -538,10 +702,16 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const onCursorMove = (e: any) => {
       const pointer = canvas.getScenePoint(e.e)
-      emitCursor(pointer.x, pointer.y)
+      // Only broadcast cursor if we hold the lock or no one holds it
+      const holder = lockedByRef.current
+      if (!holder || holder === localIdentityRef.current) {
+        emitCursor(pointer.x, pointer.y)
+      }
     }
 
     const onMouseDown = (e: any) => {
+      // Try to acquire lock before any drawing action
+      if (!acquireLock()) return // locked by another user — swallow
       if (canvas.isDrawingMode) {
         captureUndo()
         isDrawingRef.current = true
@@ -552,6 +722,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
 
     const onMouseMove = (e: any) => {
+      // Refresh lock idle timer on any mouse movement while holding lock
+      if (lockedByRef.current === localIdentityRef.current) {
+        resetLockIdleTimer()
+      }
       if (!isDrawingRef.current || !canvas.isDrawingMode) return
       const pointer = canvas.getScenePoint(e.e)
       livePointsRef.current.push(pointer.x, pointer.y)
@@ -649,14 +823,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       canvas.off('object:removed', onObjectRemoved)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canDrawOverall, captureUndo, commitUndo])
+  }, [canDrawOverall, captureUndo, commitUndo, acquireLock, resetLockIdleTimer])
 
   // ── Participant: apply incoming events ────────────────────────────────────
   useEffect(() => {
     const canvas = fabricRef.current
     if (!canvas || !incomingEvent) return
 
-    // Live drawing / cursor / shape-preview events are handled outside — skip here
+    // Live drawing / cursor / shape-preview / lock events are handled outside — skip here
     if (
       incomingEvent.type === 'drawing-live' ||
       incomingEvent.type === 'drawing-live-end' ||
@@ -664,7 +838,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       incomingEvent.type === 'shape-preview' ||
       incomingEvent.type === 'shape-preview-end' ||
       incomingEvent.type === 'text-cursor' ||
-      incomingEvent.type === 'allow-drawing'
+      incomingEvent.type === 'allow-drawing' ||
+      incomingEvent.type === 'lock-acquire' ||
+      incomingEvent.type === 'lock-release' ||
+      incomingEvent.type === 'lock-state'
     ) return
 
     suppressEventsRef.current = true
@@ -886,6 +1063,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const mouseDown = (e: any) => {
       if (local.id) return // guard against double-fire
+      if (!acquireLock()) return // locked by another user
       captureUndo()
       local.id = nextObjId()
       local.sx = e.scenePoint.x
@@ -949,7 +1127,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [captureUndo, commitUndo])
+  }, [captureUndo, commitUndo, acquireLock])
 
   // ── Rectangle drawing handlers (live fabric object, sync render) ──
   const setupRectDrawing = useCallback((canvas: fabric.Canvas) => {
@@ -957,6 +1135,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const mouseDown = (e: any) => {
       if (local.drawing) return
+      if (!acquireLock()) return // locked by another user
       captureUndo()
       local.id = nextObjId()
       local.sx = e.scenePoint.x
@@ -1017,7 +1196,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [captureUndo, commitUndo])
+  }, [captureUndo, commitUndo, acquireLock])
 
   // ── Circle/Ellipse drawing handlers (live fabric object, sync render) ──
   const setupCircleDrawing = useCallback((canvas: fabric.Canvas) => {
@@ -1025,6 +1204,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     const mouseDown = (e: any) => {
       if (local.drawing) return
+      if (!acquireLock()) return // locked by another user
       captureUndo()
       local.id = nextObjId()
       local.sx = e.scenePoint.x
@@ -1081,12 +1261,13 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     canvas.on('mouse:down', mouseDown)
     canvas.on('mouse:move', mouseMove)
     canvas.on('mouse:up', mouseUp)
-  }, [captureUndo, commitUndo])
+  }, [captureUndo, commitUndo, acquireLock])
 
   // ── Text tool handler ────────────────────────────────────────────────────
   const setupTextTool = useCallback((canvas: fabric.Canvas) => {
     const mouseDown = (e: any) => {
       if (e.target && (e.target.type === 'i-text' || e.target.type === 'IText')) return
+      if (!acquireLock()) return // locked by another user
 
       // Finalize any previous pending text (e.g. empty IText from prior click)
       finalizePendingText()
@@ -1172,7 +1353,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     }
     ;(canvas as any).__toolMouseDown = mouseDown
     canvas.on('mouse:down', mouseDown)
-  }, [captureUndo, commitUndo, finalizePendingText])
+  }, [captureUndo, commitUndo, finalizePendingText, acquireLock])
 
   // ── Color change: update active brush ────────────────────────────────────
   const handleColorChange = useCallback((color: string) => {
@@ -1320,9 +1501,19 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   return (
     <div className="room-blackboard" ref={containerRef}>
       <canvas ref={canvasRef} />
-      {/* Cursor & caret indicators — visible on all participants' boards */}
+      {/* Single shared cursor indicator */}
       <div ref={cursorDivRef} className="room-bb-cursor" style={{ display: 'none' }} />
+      {/* Single shared text caret indicator */}
       <div ref={caretDivRef} className="room-bb-caret" style={{ display: 'none' }} />
+      {/* "Someone is editing..." overlay when locked by another user */}
+      {isLockedByOther && (
+        <div className="room-bb-locked-overlay">
+          <div className="room-bb-locked-indicator">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            <span>Someone is editing…</span>
+          </div>
+        </div>
+      )}
       {canDrawOverall && (
         <BlackboardToolbar
           activeTool={activeTool}
@@ -1348,6 +1539,7 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           onShowSizePickerChange={setShowSizePicker}
           showTextPanel={showTextPanel}
           onShowTextPanelChange={setShowTextPanel}
+          isLocked={isLockedByOther}
         />
       )}
     </div>

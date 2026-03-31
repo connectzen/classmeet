@@ -2258,7 +2258,7 @@ select option {
   outline: none;
   border-color: var(--primary-500);
 }
-/* Teacher cursor overlay — visible to participants only */
+/* Teacher cursor overlay — single shared cursor visible to all non-editing participants */
 .room-bb-cursor {
   position: absolute;
   width: 14px;
@@ -2271,9 +2271,15 @@ select option {
   z-index: 15;
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3), 0 2px 8px rgba(0, 0, 0, 0.5);
   transition: left 0.03s linear, top 0.03s linear;
+  animation: room-bb-cursor-blink 1.2s ease-in-out infinite;
 }
 
-/* Text caret overlay — visible to participants when teacher is typing */
+@keyframes room-bb-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Text caret overlay — single shared caret visible when someone is typing */
 .room-bb-caret {
   position: absolute;
   width: 3px;
@@ -2288,6 +2294,34 @@ select option {
 @keyframes room-bb-caret-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* "Someone is editing..." overlay */
+.room-bb-locked-overlay {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 18;
+  pointer-events: none;
+}
+.room-bb-locked-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(24, 24, 30, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  animation: room-bb-locked-fade-in 0.3s ease;
+}
+@keyframes room-bb-locked-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Present dropdown menu ─────────────────────────────────────────────────── */

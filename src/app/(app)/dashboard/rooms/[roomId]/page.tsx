@@ -198,6 +198,7 @@ function RoomInner({ roomName }: { roomName: string }) {
   const allowStudentDrawingRef = useRef(false)
   const prevParticipantCount = useRef(0)
   const prevPresentParticipantCount = useRef(0)
+  const prevParticipantIdentitiesRef = useRef<Set<string>>(new Set())
   // Refs for data channel closure (avoid stale values)
   const isTeacherRef = useRef(false)
   const activeQuizIdRef = useRef<string | null>(null)
@@ -432,7 +433,10 @@ function RoomInner({ roomName }: { roomName: string }) {
       event.type === 'shape-preview' ||
       event.type === 'shape-preview-end' ||
       event.type === 'text-cursor' ||
-      event.type === 'object-moving'
+      event.type === 'object-moving' ||
+      event.type === 'lock-acquire' ||
+      event.type === 'lock-release' ||
+      event.type === 'lock-state'
     ) {
       // Live drawing / cursor / shape-preview: call imperatively to bypass React state batching
       // All participants (including co-teachers/admins) receive live draw events
@@ -455,6 +459,7 @@ function RoomInner({ roomName }: { roomName: string }) {
     // Use unreliable transport for ephemeral preview events to avoid head-of-line blocking.
     // text-cursor is kept reliable so the hide event (visible:false) is guaranteed to arrive;
     // otherwise a dropped packet leaves the caret permanently visible on student side.
+    // lock-acquire and lock-release are always reliable — they control editing access.
     const ephemeral = event.type === 'shape-preview' || event.type === 'shape-preview-end' ||
                       event.type === 'drawing-live' || event.type === 'drawing-live-end' ||
                       event.type === 'cursor-move' ||
@@ -976,10 +981,28 @@ function RoomInner({ roomName }: { roomName: string }) {
         }
         // Send current allow-drawing permission so late-joiners get the right state
         sendBlackboardData(encoder.encode(JSON.stringify({ type: 'allow-drawing', allowed: allowStudentDrawingRef.current })), { reliable: true })
+        // Send current lock state so late-joiners know if someone is editing
+        const lockState = blackboardRef.current?.getLockState()
+        if (lockState) {
+          sendBlackboardData(encoder.encode(JSON.stringify({ type: 'lock-state', lockedBy: lockState.lockedBy, isHost: lockState.isHost, senderId: localParticipant.identity })), { reliable: true })
+        }
       }, 500)
     }
     prevParticipantCount.current = participants.length
   }, [participants.length, isTeacher, blackboardActive, sendBlackboardData])
+
+  // Force-release blackboard lock when a participant disconnects
+  useEffect(() => {
+    const currentIdentities = new Set(participants.map(p => p.identity))
+    const prevIdentities = prevParticipantIdentitiesRef.current
+    // Check for participants who left
+    for (const identity of prevIdentities) {
+      if (!currentIdentities.has(identity)) {
+        blackboardRef.current?.forceReleaseLock(identity)
+      }
+    }
+    prevParticipantIdentitiesRef.current = currentIdentities
+  }, [participants])
 
   // Host: re-broadcast presentation state to late-joining participants
   useEffect(() => {
@@ -1557,6 +1580,7 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
           canDraw={allowStudentDrawing}
           onCanvasEvent={onCanvasEvent}
           incomingEvent={incomingEvent}
+          localIdentity={localIdentity}
         />
         <div className="room-stage-overlay">
           <div className="room-stage-label">
