@@ -191,6 +191,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (!canvas) return
     canvas.isDrawingMode = false
     canvas.selection = false
+    // Exit any active IText editing so native blinking cursor disappears
+    if (editingTextRef.current && editingTextRef.current.isEditing) {
+      editingTextRef.current.exitEditing()
+    }
     // Discard active object to prevent stale selection handles from rendering
     canvas.discardActiveObject()
     if ((canvas as any).__toolMouseDown) canvas.off('mouse:down', (canvas as any).__toolMouseDown)
@@ -309,7 +313,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const currentHolder = lockedByRef.current
       // If we currently hold the lock and an incoming host overrides us (non-host)
       if (currentHolder === localIdentityRef.current && event.isHost && !isHost) {
-        // We are pre-empted — finalize any pending text and release
+        // We are pre-empted — exit editing first so finalize can process, then release
+        if (editingTextRef.current && editingTextRef.current.isEditing) {
+          editingTextRef.current.exitEditing()
+        }
         finalizePendingTextRef.current()
         lockedByRef.current = null
         if (lockIdleTimerRef.current) { clearTimeout(lockIdleTimerRef.current); lockIdleTimerRef.current = null }
@@ -406,15 +413,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           remoteTextEditingRef.current = true
           const z = fabricRef.current?.getZoom() ?? 1
 
-          // If local user is already editing ANY IText, hide the remote caret
-          // to avoid dual-cursor confusion — the local editing cursor is enough.
-          if (editingTextRef.current && editingTextRef.current.isEditing) {
-            el.style.display = 'none'
-            if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
-            return
-          }
-
-          // Show the remote caret indicator (read-only view).
+          // Show the remote caret indicator — the lock system
+          // already prevents editing the same object, so both cursors
+          // (local native + remote indicator) can safely coexist.
           el.style.left = `${event.x * z}px`
           el.style.top = `${event.y * z}px`
           el.style.height = `${event.height * z}px`
