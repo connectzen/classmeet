@@ -1624,6 +1624,7 @@ select option {
   position: absolute; bottom: 0; left: 0; right: 0;
   padding: 12px 16px;
   background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  pointer-events: none;
 }
 .room-stage-label {
   display: flex; align-items: center; gap: 8px;
@@ -2006,6 +2007,10 @@ select option {
   height: 100%;
   overflow: hidden;
   background: #1a1a2e;
+  /* Enforce consistent 16:9 aspect ratio so boards look identical on all screens */
+  max-width: calc((100vh - 120px) * 16 / 9);
+  max-height: calc((100vw) * 9 / 16);
+  margin: auto;
 }
 .room-blackboard canvas {
   display: block;

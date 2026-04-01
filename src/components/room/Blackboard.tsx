@@ -512,6 +512,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     applyLiveEvent: handleLiveEvent,
     applyRemoteTool: (tool: DrawingTool) => {
       suppressToolBroadcastRef.current = true
+      // Always update visual state so toolbar shows the same active tool
+      setActiveTool(tool)
       applyToolRef.current(tool)
       suppressToolBroadcastRef.current = false
     },
