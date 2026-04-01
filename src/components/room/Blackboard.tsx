@@ -173,6 +173,13 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (lockIdleTimerRef.current) clearTimeout(lockIdleTimerRef.current)
     lockIdleTimerRef.current = setTimeout(() => {
       if (lockedByRef.current === localIdentityRef.current) {
+        // Don't auto-release while actively editing text — reschedule instead.
+        // Text editing has no continuous mouse:move events to refresh the timer,
+        // and users commonly pause for several seconds while thinking.
+        if (editingTextRef.current?.isEditing) {
+          resetLockIdleTimerRef.current()
+          return
+        }
         releaseLock()
       }
     }, LOCK_IDLE_RELEASE_MS)
