@@ -177,13 +177,17 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         // Text editing has no continuous mouse:move events to refresh the timer,
         // and users commonly pause for several seconds while thinking.
         if (editingTextRef.current?.isEditing) {
+          // Re-broadcast lock-acquire as a heartbeat so remote participants
+          // reset their force-release safety timer (otherwise it expires after
+          // 5s and they re-enable interaction, allowing a second editor).
+          onCanvasEventRef.current?.({ type: 'lock-acquire', identity: localIdentityRef.current, isHost, timestamp: Date.now() })
           resetLockIdleTimerRef.current()
           return
         }
         releaseLock()
       }
     }, LOCK_IDLE_RELEASE_MS)
-  }, [releaseLock])
+  }, [releaseLock, isHost])
 
   // Disable canvas interaction when locked by another user
   const disableCanvasInteraction = useCallback(() => {
@@ -311,6 +315,19 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (event.type === 'lock-acquire') {
       const incomingIdentity = event.identity
       const currentHolder = lockedByRef.current
+      // Same holder re-acquiring (heartbeat) — just reset the force-release timer
+      if (currentHolder === incomingIdentity && incomingIdentity !== localIdentityRef.current) {
+        if (lockForceTimerRef.current) clearTimeout(lockForceTimerRef.current)
+        lockForceTimerRef.current = setTimeout(() => {
+          if (lockedByRef.current === incomingIdentity) {
+            lockedByRef.current = null
+            lockedByIsHostRef.current = false
+            setIsLockedByOther(false)
+            if (canDrawOverallRef.current) enableCanvasInteraction()
+          }
+        }, LOCK_FORCE_RELEASE_MS)
+        return
+      }
       // If we currently hold the lock and an incoming host overrides us (non-host)
       if (currentHolder === localIdentityRef.current && event.isHost && !isHost) {
         // We are pre-empted — exit editing first so finalize can process, then release
