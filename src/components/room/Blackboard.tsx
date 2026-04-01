@@ -150,6 +150,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (activeText && activeText.isEditing) {
       activeText.exitEditing()
     }
+    // Finalize pending text (commit non-empty, remove empty) so it doesn't stay half-edited
+    finalizePendingTextRef.current()
+    // Discard active object to clear stale selection handles
+    const canvas = fabricRef.current
+    if (canvas) {
+      canvas.discardActiveObject()
+      canvas.renderAll()
+    }
     lockedByRef.current = null
     lockedByIsHostRef.current = false
     setIsLockedByOther(false)
@@ -176,6 +184,17 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (!canvas) return
     canvas.isDrawingMode = false
     canvas.selection = false
+    // Exit any active IText editing to prevent stale editing state
+    const activeObj = canvas.getActiveObject()
+    if (activeObj && (activeObj.type === 'i-text' || activeObj.type === 'IText') && (activeObj as fabric.IText).isEditing) {
+      (activeObj as fabric.IText).exitEditing()
+    }
+    if (editingTextRef.current && editingTextRef.current.isEditing && editingTextRef.current !== activeObj) {
+      editingTextRef.current.exitEditing()
+    }
+    editingTextRef.current = null
+    // Discard active object to prevent stale selection handles from rendering
+    canvas.discardActiveObject()
     if ((canvas as any).__toolMouseDown) canvas.off('mouse:down', (canvas as any).__toolMouseDown)
     if ((canvas as any).__toolMouseMove) canvas.off('mouse:move', (canvas as any).__toolMouseMove)
     if ((canvas as any).__toolMouseUp) canvas.off('mouse:up', (canvas as any).__toolMouseUp)
@@ -466,6 +485,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         const json = JSON.parse(event.data)
         delete json.type
         delete json.version
+        // Don't let remote selectable/evented state override local tool state
+        delete json.selectable
+        delete json.evented
         existing.set(json)
         existing.setCoords()
         canvas.renderAll()
@@ -623,6 +645,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       commitUndo()
       onCanvasEventRef.current?.({ type: 'object-modified', data: JSON.stringify((pending as any).toObject(['id'])), id })
     }
+    // Clear stale selection handles so they don't persist after text is committed
+    canvas.discardActiveObject()
+    canvas.renderAll()
   }, [commitUndo])
 
   // Always-current ref for finalizePendingText (used by lock system in handleLiveEvent)
