@@ -145,10 +145,18 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
   // Release the editing lock
   const releaseLock = useCallback(() => {
     if (lockedByRef.current !== localIdentityRef.current) return
+    // Exit any active text editing so editing:exited fires (broadcasts text-cursor hide)
+    const activeText = editingTextRef.current
+    if (activeText && activeText.isEditing) {
+      activeText.exitEditing()
+    }
     lockedByRef.current = null
     lockedByIsHostRef.current = false
     setIsLockedByOther(false)
     if (lockIdleTimerRef.current) { clearTimeout(lockIdleTimerRef.current); lockIdleTimerRef.current = null }
+    // Hide our cursor/caret on other screens so they don't stay stuck
+    onCanvasEventRef.current?.({ type: 'cursor-move', x: -100, y: -100 })
+    onCanvasEventRef.current?.({ type: 'text-cursor', x: 0, y: 0, height: 0, visible: false })
     onCanvasEventRef.current?.({ type: 'lock-release', identity: localIdentityRef.current })
   }, [])
 
@@ -299,6 +307,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       setIsLockedByOther(otherHoldsLock)
       if (otherHoldsLock) {
         disableCanvasInteraction()
+        // Clear stale cursor/caret from previous lock holder
+        remoteTextEditingRef.current = false
+        if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
+        if (caretDivRef.current) caretDivRef.current.style.display = 'none'
       }
       // Start force-release safety timer
       if (lockForceTimerRef.current) clearTimeout(lockForceTimerRef.current)
@@ -319,6 +331,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         lockedByIsHostRef.current = false
         setIsLockedByOther(false)
         if (lockForceTimerRef.current) { clearTimeout(lockForceTimerRef.current); lockForceTimerRef.current = null }
+        // Clear stale cursor/caret indicators from the released user
+        remoteTextEditingRef.current = false
+        if (cursorDivRef.current) cursorDivRef.current.style.display = 'none'
+        if (caretDivRef.current) caretDivRef.current.style.display = 'none'
         if (canDrawOverallRef.current) enableCanvasInteraction()
       }
       return

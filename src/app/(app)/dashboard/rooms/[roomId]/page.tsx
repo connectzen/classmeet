@@ -1582,12 +1582,14 @@ function MainStage({ participant, screenShare, cameraTracks, blackboardActive, c
           incomingEvent={incomingEvent}
           localIdentity={localIdentity}
         />
-        <div className="room-stage-overlay">
-          <div className="room-stage-label">
-            <PenTool size={14} />
-            <span>Blackboard{isHost || allowStudentDrawing ? '' : ` — ${participant?.name || 'Teacher'} is presenting`}</span>
+        {!isHost && !allowStudentDrawing && (
+          <div className="room-stage-overlay">
+            <div className="room-stage-label">
+              <PenTool size={14} />
+              <span>Blackboard — {participant?.name || 'Teacher'} is presenting</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Course presentation */}
