@@ -701,7 +701,21 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     const ro = new ResizeObserver(resize)
     if (container) ro.observe(container)
 
+    // Let Ctrl/Meta shortcuts (Ctrl+H, Ctrl+B, etc.) pass through to document
+    // handlers instead of being swallowed by the Fabric.js canvas keyboard handler.
+    // Only block pass-through when actively editing text (user needs Ctrl+A etc.).
+    const upperCanvas = (canvas as any).upperCanvasEl as HTMLElement | undefined
+    const passthroughShortcuts = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !editingTextRef.current?.isEditing) {
+        // Blur canvas so the event isn't consumed by Fabric, then re-dispatch
+        // on document so the room-level handler picks it up.
+        upperCanvas?.blur()
+      }
+    }
+    upperCanvas?.addEventListener('keydown', passthroughShortcuts)
+
     return () => {
+      upperCanvas?.removeEventListener('keydown', passthroughShortcuts)
       ro.disconnect()
       canvas.dispose()
       fabricRef.current = null
