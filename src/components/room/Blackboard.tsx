@@ -191,15 +191,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (!canvas) return
     canvas.isDrawingMode = false
     canvas.selection = false
-    // Exit any active IText editing to prevent stale editing state
-    const activeObj = canvas.getActiveObject()
-    if (activeObj && (activeObj.type === 'i-text' || activeObj.type === 'IText') && (activeObj as fabric.IText).isEditing) {
-      (activeObj as fabric.IText).exitEditing()
-    }
-    if (editingTextRef.current && editingTextRef.current.isEditing && editingTextRef.current !== activeObj) {
-      editingTextRef.current.exitEditing()
-    }
-    editingTextRef.current = null
     // Discard active object to prevent stale selection handles from rendering
     canvas.discardActiveObject()
     if ((canvas as any).__toolMouseDown) canvas.off('mouse:down', (canvas as any).__toolMouseDown)
