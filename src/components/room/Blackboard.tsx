@@ -1009,12 +1009,8 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     ;(canvas as any).__toolMouseMove = undefined
     ;(canvas as any).__toolMouseUp = undefined
 
-    // Make objects not selectable by default (select tool re-enables)
-    // Skip object locking when applying a remote tool change — the local user
-    // should keep their current canvas interaction state.
-    if (!suppressToolBroadcastRef.current) {
-      canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
-    }
+    // Make objects not selectable by default (select tool re-enables them)
+    canvas.forEachObject((o: fabric.FabricObject) => { o.selectable = false; o.evented = false })
 
     switch (tool) {
       case 'select': {
