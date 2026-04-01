@@ -703,14 +703,17 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
 
     // Let Ctrl/Meta shortcuts (Ctrl+H, Ctrl+B, etc.) pass through to document
     // handlers instead of being swallowed by the Fabric.js canvas keyboard handler.
-    // Only block pass-through when actively editing text (user needs Ctrl+A etc.).
+    // Only keep Ctrl+A/C/V/X/Z within Fabric when editing text (actual text shortcuts).
     const upperCanvas = (canvas as any).upperCanvasEl as HTMLElement | undefined
+    const textEditKeys = new Set(['KeyA', 'KeyC', 'KeyV', 'KeyX', 'KeyZ'])
     const passthroughShortcuts = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !editingTextRef.current?.isEditing) {
-        // Blur canvas so the event isn't consumed by Fabric, then re-dispatch
-        // on document so the room-level handler picks it up.
-        upperCanvas?.blur()
-      }
+      if (!(e.ctrlKey || e.metaKey)) return
+      // While editing text, let standard text shortcuts (select-all, copy, paste, cut, undo) stay in Fabric
+      if (editingTextRef.current?.isEditing && textEditKeys.has(e.code)) return
+      // Everything else (Ctrl+H, Ctrl+B, Ctrl+E, etc.) — prevent browser default
+      // and blur canvas so the room-level document handler picks it up.
+      e.preventDefault()
+      upperCanvas?.blur()
     }
     upperCanvas?.addEventListener('keydown', passthroughShortcuts)
 
