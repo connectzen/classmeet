@@ -909,12 +909,12 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           const obj = objects[0] as fabric.FabricObject | undefined
           if (obj) {
             ;(obj as any).id = incomingEvent.id
-            // Only allow interaction if the local user has draw permission
-            const canInteract = canDrawOverallRef.current
+            // Only allow selection if the local user has draw permission AND is using the select tool
+            const canSelect = canDrawOverallRef.current && activeToolRef.current === 'select'
             const isText = obj.type === 'i-text' || obj.type === 'IText'
-            obj.selectable = canInteract
-            obj.evented = canInteract
-            if (isText) (obj as any).editable = canInteract
+            obj.selectable = canSelect
+            obj.evented = canSelect
+            if (isText) (obj as any).editable = canDrawOverallRef.current
             canvas.add(obj)
             canvas.renderAll()
             // Clear shape-preview from contextTop now that committed object is on canvas
@@ -942,6 +942,9 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
           // Remove read-only properties that are getters in fabric v7
           delete json.type
           delete json.version
+          // Don't let remote selectable/evented state override local tool state
+          delete json.selectable
+          delete json.evented
           existing.set(json)
           existing.setCoords()
           canvas.renderAll()
