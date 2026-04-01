@@ -64,8 +64,8 @@ interface BlackboardProps {
 }
 
 // Lock system constants
-const LOCK_IDLE_RELEASE_MS = 2000   // Auto-release lock after 2s of no input
-const LOCK_FORCE_RELEASE_MS = 5000  // Force-release if no release received within 5s
+const LOCK_IDLE_RELEASE_MS = 5000   // Auto-release lock after 5s of no input
+const LOCK_FORCE_RELEASE_MS = 12000 // Force-release if no release received within 12s
 
 // ── Logical canvas size — all objects live in this coordinate space ───────────
 const LOGICAL_W = 1280
@@ -173,21 +173,10 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (lockIdleTimerRef.current) clearTimeout(lockIdleTimerRef.current)
     lockIdleTimerRef.current = setTimeout(() => {
       if (lockedByRef.current === localIdentityRef.current) {
-        // Don't auto-release while actively editing text — reschedule instead.
-        // Text editing has no continuous mouse:move events to refresh the timer,
-        // and users commonly pause for several seconds while thinking.
-        if (editingTextRef.current?.isEditing) {
-          // Re-broadcast lock-acquire as a heartbeat so remote participants
-          // reset their force-release safety timer (otherwise it expires after
-          // 5s and they re-enable interaction, allowing a second editor).
-          onCanvasEventRef.current?.({ type: 'lock-acquire', identity: localIdentityRef.current, isHost, timestamp: Date.now() })
-          resetLockIdleTimerRef.current()
-          return
-        }
         releaseLock()
       }
     }, LOCK_IDLE_RELEASE_MS)
-  }, [releaseLock, isHost])
+  }, [releaseLock])
 
   // Disable canvas interaction when locked by another user
   const disableCanvasInteraction = useCallback(() => {
@@ -315,19 +304,6 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
     if (event.type === 'lock-acquire') {
       const incomingIdentity = event.identity
       const currentHolder = lockedByRef.current
-      // Same holder re-acquiring (heartbeat) — just reset the force-release timer
-      if (currentHolder === incomingIdentity && incomingIdentity !== localIdentityRef.current) {
-        if (lockForceTimerRef.current) clearTimeout(lockForceTimerRef.current)
-        lockForceTimerRef.current = setTimeout(() => {
-          if (lockedByRef.current === incomingIdentity) {
-            lockedByRef.current = null
-            lockedByIsHostRef.current = false
-            setIsLockedByOther(false)
-            if (canDrawOverallRef.current) enableCanvasInteraction()
-          }
-        }, LOCK_FORCE_RELEASE_MS)
-        return
-      }
       // If we currently hold the lock and an incoming host overrides us (non-host)
       if (currentHolder === localIdentityRef.current && event.isHost && !isHost) {
         // We are pre-empted — exit editing first so finalize can process, then release
