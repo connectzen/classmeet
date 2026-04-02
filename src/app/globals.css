@@ -1983,16 +1983,8 @@ select option {
     width: 80px; height: 80px;
     font-size: 1.8rem;
   }
-  /* Let blackboard fill the available stage space on mobile portrait instead of
-     being crushed to a thin 16:9 strip (~211px on a 375px phone). The
-     ResizeObserver in Blackboard.tsx rescales the Fabric canvas automatically. */
-  .room-blackboard {
-    max-width: 100%;
-    max-height: 100%;
-  }
   /* Toolbar: hug the bottom, scroll horizontally if needed */
   .room-bb-toolbar {
-    bottom: 8px;
     left: 8px;
     right: 8px;
     flex-direction: column-reverse;
@@ -2110,6 +2102,24 @@ select option {
   overflow: visible;
   max-width: calc(100vw - 80px);
 }
+
+/* ── Mobile: override blackboard sizing, border & toolbar AFTER their base rules
+     so the cascade order is correct ────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .room-blackboard {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .room-stage-blackboard {
+    box-shadow: none;
+  }
+  .room-bb-toolbar {
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+  }
+}
+
 .room-bb-tool-group {
   display: flex;
   align-items: center;
