@@ -3024,7 +3024,8 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
 
   // ── Play: split text into sentences → words ──
   const parsePlayText = useCallback(() => {
-    const sentences = playText.split(/[.!?]+/).map(s => s.trim()).filter(Boolean)
+    // Split by newlines, periods, exclamation marks, or question marks
+    const sentences = playText.split(/[\n\r]+|[.!?]+/).map(s => s.trim()).filter(Boolean)
     return sentences.map(s => s.split(/\s+/).filter(Boolean))
   }, [playText])
 
@@ -3041,14 +3042,14 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     setIsPlaying(true)
     playIndexRef.current = 0
 
-    const startX = playPosition?.x ?? 20
-    const startY = playPosition?.y ?? 20
+    const startX = playPosition?.x ?? 40
+    const startY = playPosition?.y ?? 30
     let x = startX
     let y = startY
     const LOGICAL_W = 1280
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
-    const CHAR_WIDTH = 16
+    const CHAR_WIDTH = 20
 
     // Build word chunks based on config
     const wordsToFly: string[] = []
@@ -3075,7 +3076,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
       onBlackboardEvent(flyEvent)
       blackboardRef.current?.applyLiveEvent(flyEvent)
 
-      x += word.length * CHAR_WIDTH + 12
+      x += word.length * CHAR_WIDTH + 20
       if (x > LOGICAL_W - 100) {
         x = startX
         y += LINE_HEIGHT
