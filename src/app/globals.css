@@ -1115,7 +1115,7 @@ select option {
 @media (max-width: 600px) {
   .topbar { padding: 0 var(--space-2); gap: 2px; }
   .topbar-live-indicator { display: none; }
-  .topbar-greeting { font-size: 0.82rem; min-width: 0; flex-shrink: 1; }
+  .topbar-greeting { display: none; }
   /* UserMenu on mobile: hide avatar, show first name + small chevron */
   .user-menu-avatar { display: none; }
   .user-menu-name { display: inline !important; font-size: 0.82rem !important; max-width: 90px !important; }
@@ -1123,7 +1123,8 @@ select option {
   .user-menu-btn { padding: 4px 6px !important; gap: 4px !important; min-width: unset; border-radius: var(--radius-sm) !important; }
   .topbar-user-menu-wrapper { margin-left: 0; flex-shrink: 0; }
   .topbar-nav-label-desktop { display: none; }
-  .topbar-nav-label-mobile { display: inline; }
+  .topbar-nav-label-mobile { display: none; }
+  .topbar-nav-link { display: none; }
 }
 
 /* Mobile nav: hide desktop nav, show Dashboard + More */
