@@ -24,7 +24,7 @@ import {
   MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
   Check, Clock, ArrowLeft, ArrowRight, Award, Eye, Download,
   Star, Trophy, Play, Trash2, Type, AlertCircle, Copy, Pencil,
-  Image, Upload,
+  Image, Upload, SkipForward,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
@@ -2995,7 +2995,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
   const [sentenceInterval, setSentenceInterval] = useState(1)
   const [isPlaying, setIsPlaying] = useState(false)
   const [playPosition, setPlayPosition] = useState<{ x: number; y: number } | null>(null)
-  const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const flyQueueRef = useRef<{ word: string; targetX: number; targetY: number }[][]>([])
   const playIndexRef = useRef(0)
 
   // ── Slides state ──
@@ -3011,9 +3011,9 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     }
   }, [chatMessages.length, activeTab])
 
-  // Cleanup play timer on unmount
+  // Reset play state on unmount
   useEffect(() => {
-    return () => { if (playTimerRef.current) clearInterval(playTimerRef.current) }
+    return () => { flyQueueRef.current = []; playIndexRef.current = 0 }
   }, [])
 
   const handleSend = useCallback(async () => {
@@ -3104,31 +3104,52 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
       }
     }
 
-    let batchIdx = 0
-    const fly = () => {
-      if (batchIdx >= flyQueue.length) {
-        setIsPlaying(false)
-        if (playTimerRef.current) clearInterval(playTimerRef.current)
-        return
-      }
-      const batch = flyQueue[batchIdx]
+    flyQueueRef.current = flyQueue
+    playIndexRef.current = 0
+
+    // Fly the first batch immediately
+    if (flyQueue.length > 0) {
+      const batch = flyQueue[0]
       for (const item of batch) {
-        const id = `fly_${Date.now()}_${batchIdx}_${Math.random().toString(36).slice(2, 6)}`
+        const id = `fly_${Date.now()}_0_${Math.random().toString(36).slice(2, 6)}`
         const flyEvent = { type: 'fly-word' as const, text: item.word, targetX: item.targetX, targetY: item.targetY, id, fontSize: 28, fill: '#ffffff' }
         onBlackboardEvent(flyEvent)
         blackboardRef.current?.applyLiveEvent(flyEvent)
       }
-      batchIdx++
-      playIndexRef.current = batchIdx
+      playIndexRef.current = 1
     }
-
-    fly()
-    playTimerRef.current = setInterval(fly, 800)
   }, [parsePlayText, blackboardActive, onActivateBlackboard, onBlackboardEvent, blackboardRef, playPosition, wordsPerBurst, sentenceInterval])
+
+  // Fly the next batch on manual click
+  const nextPlayStep = useCallback(() => {
+    const queue = flyQueueRef.current
+    const idx = playIndexRef.current
+    if (idx >= queue.length) {
+      setIsPlaying(false)
+      flyQueueRef.current = []
+      playIndexRef.current = 0
+      return
+    }
+    const batch = queue[idx]
+    for (const item of batch) {
+      const id = `fly_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`
+      const flyEvent = { type: 'fly-word' as const, text: item.word, targetX: item.targetX, targetY: item.targetY, id, fontSize: 28, fill: '#ffffff' }
+      onBlackboardEvent(flyEvent)
+      blackboardRef.current?.applyLiveEvent(flyEvent)
+    }
+    playIndexRef.current = idx + 1
+    // Auto-finish if that was the last batch
+    if (idx + 1 >= queue.length) {
+      setIsPlaying(false)
+      flyQueueRef.current = []
+      playIndexRef.current = 0
+    }
+  }, [onBlackboardEvent, blackboardRef])
 
   const stopPlaying = useCallback(() => {
     setIsPlaying(false)
-    if (playTimerRef.current) { clearInterval(playTimerRef.current); playTimerRef.current = null }
+    flyQueueRef.current = []
+    playIndexRef.current = 0
   }, [])
 
   // Play: click on blackboard to set starting position
@@ -3332,22 +3353,31 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
                 onClick={startPlaying}
                 disabled={!playText.trim()}
               >
-                <Play size={14} /> Start Playing
+                <Play size={14} /> Start
               </button>
             ) : (
-              <button
-                className="btn btn-danger"
-                style={{ flex: 1, fontSize: '0.82rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                onClick={stopPlaying}
-              >
-                <X size={14} /> Stop
-              </button>
+              <>
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1, fontSize: '0.82rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  onClick={nextPlayStep}
+                >
+                  <SkipForward size={14} /> Next
+                </button>
+                <button
+                  className="btn btn-danger"
+                  style={{ fontSize: '0.82rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  onClick={stopPlaying}
+                >
+                  <X size={14} /> Stop
+                </button>
+              </>
             )}
           </div>
 
           {isPlaying && (
             <div style={{ fontSize: '0.75rem', color: 'var(--primary-400)', textAlign: 'center' }}>
-              Flying words… Click on the board to reposition.
+              Step {playIndexRef.current} / {flyQueueRef.current.length} — Click Next to fly the next word(s)
             </div>
           )}
         </div>
