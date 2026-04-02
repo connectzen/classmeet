@@ -65,12 +65,13 @@ export default function TopBar() {
   return (
     <header className="topbar">
       {/* Left: hamburger + live indicator + greeting */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
         <button
           className="btn btn-ghost btn-icon btn-sm"
           id="sidebar-toggle"
           onClick={toggleSidebar}
           aria-label="Toggle sidebar"
+          style={{ flexShrink: 0 }}
         >
           <Menu size={20} />
         </button>
@@ -86,8 +87,8 @@ export default function TopBar() {
         </div>
 
         {/* Greeting */}
-        <div className="topbar-greeting">
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', fontWeight: 500, whiteSpace: 'nowrap' }}>
+        <div className="topbar-greeting" style={{ minWidth: 0, overflow: 'hidden' }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {greeting}, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{firstName}</span>
           </span>
         </div>
