@@ -54,6 +54,7 @@ export interface BlackboardHandle {
   getToolbarSettings: () => { color: string; strokeWidth: number; textOptions: TextOptions }
   getLockState: () => { lockedBy: string | null; isHost: boolean }
   forceReleaseLock: (identity: string) => void
+  measureTextWidth: (text: string, fontSize: number) => number
 }
 
 interface BlackboardProps {
@@ -626,6 +627,14 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         if (lockForceTimerRef.current) { clearTimeout(lockForceTimerRef.current); lockForceTimerRef.current = null }
         if (canDrawOverallRef.current) enableCanvasInteraction()
       }
+    },
+    measureTextWidth: (text: string, fontSize: number) => {
+      const tmp = new fabric.IText(text, {
+        fontSize,
+        fontFamily: 'Arial, sans-serif',
+        strokeWidth: 0,
+      })
+      return tmp.width ?? text.length * fontSize * 0.6
     },
   }))
 

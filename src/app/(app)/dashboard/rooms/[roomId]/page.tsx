@@ -3050,14 +3050,12 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
     const FONT_SIZE = 28
-    const WIDTH_SCALE = 1.18              // Fabric IText renders ~18% wider than canvas 2D measureText
-    const MIN_WORD_GAP = FONT_SIZE * 0.45 // Minimum space between words (~12.6px)
+    const WORD_GAP = FONT_SIZE * 0.5      // Space between words (~14px)
     const linesAtOnce = sentenceInterval  // How many lines to play simultaneously
 
-    // Measure actual word widths using the same font as the board
-    const measureCanvas = document.createElement('canvas')
-    const measureCtx = measureCanvas.getContext('2d')!
-    measureCtx.font = `${FONT_SIZE}px Arial, sans-serif`
+    // Measure word widths using Fabric.js IText (matches actual rendered width)
+    const measure = (word: string) =>
+      blackboardRef.current?.measureTextWidth(word, FONT_SIZE) ?? word.length * FONT_SIZE * 0.6
 
     // Pre-build all fly batches
     // Each batch = array of words to fly simultaneously in one tick
@@ -3094,8 +3092,8 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
           for (let w = 0; w < wordsPerBurst && state.wordIdx < words.length; w++) {
             const word = words[state.wordIdx]
             batch.push({ word, targetX: state.x, targetY: state.y })
-            // Scale measured width to match Fabric.js IText rendering + minimum gap
-            state.x += measureCtx.measureText(word).width * WIDTH_SCALE + MIN_WORD_GAP
+            // Use exact Fabric.js width measurement + word gap
+            state.x += measure(word) + WORD_GAP
             if (state.x > LOGICAL_W - 100) {
               state.x = startX
               state.y += LINE_HEIGHT
