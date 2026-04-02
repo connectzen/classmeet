@@ -1115,13 +1115,14 @@ select option {
 @media (max-width: 600px) {
   .topbar { padding: 0 var(--space-2); gap: 2px; }
   .topbar-live-indicator { display: none; }
-  .topbar-greeting { display: none; }
+  .topbar-greeting { font-size: 0.82rem; min-width: 0; flex-shrink: 1; }
   /* UserMenu on mobile: hide avatar, show first name + small chevron */
   .user-menu-avatar { display: none; }
   .user-menu-name { display: inline !important; font-size: 0.82rem !important; max-width: 90px !important; }
   .user-menu-chevron { display: inline-block !important; }
   .user-menu-btn { padding: 4px 6px !important; gap: 4px !important; min-width: unset; border-radius: var(--radius-sm) !important; }
   .topbar-user-menu-wrapper { margin-left: 0; flex-shrink: 0; }
+  /* Hide the three-dots nav button on mobile */
   .topbar-nav-label-desktop { display: none; }
   .topbar-nav-label-mobile { display: none; }
   .topbar-nav-link { display: none; }
