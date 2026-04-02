@@ -1968,9 +1968,10 @@ select option {
     padding: 4px;
   }
   .room-stage-layer {
-    inset: 4px;
-    width: auto !important;
-    height: auto !important;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0;
   }
   .room-stage-avatar {
     width: 80px; height: 80px;
@@ -1981,6 +1982,7 @@ select option {
     bottom: 8px;
     left: 8px;
     right: 8px;
+    flex-direction: column-reverse;
   }
   .room-bb-toolbar-inner {
     width: 100%;
