@@ -437,7 +437,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       event.type === 'object-moving' ||
       event.type === 'lock-acquire' ||
       event.type === 'lock-release' ||
-      event.type === 'lock-state'
+      event.type === 'lock-state' ||
+      event.type === 'fly-word'
     ) {
       // Live drawing / cursor / shape-preview: call imperatively to bypass React state batching
       // All participants (including co-teachers/admins) receive live draw events
@@ -3033,11 +3034,17 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     if (sentences.length === 0) return
     if (!blackboardActive) onActivateBlackboard()
 
+    // Clear board before starting play (same as slides behavior)
+    onBlackboardEvent({ type: 'clear' })
+    blackboardRef.current?.applyLiveEvent({ type: 'clear' })
+
     setIsPlaying(true)
     playIndexRef.current = 0
 
-    let x = playPosition?.x ?? 100
-    let y = playPosition?.y ?? 80
+    const startX = playPosition?.x ?? 20
+    const startY = playPosition?.y ?? 20
+    let x = startX
+    let y = startY
     const LOGICAL_W = 1280
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
@@ -3045,14 +3052,12 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
 
     // Build word chunks based on config
     const wordsToFly: string[] = []
-    for (let si = 0; si < sentences.length; si++) {
+    for (let si = 0; si < sentences.length; si += sentenceInterval) {
       const words = sentences[si]
       for (let wi = 0; wi < words.length; wi += wordsPerBurst) {
         const chunk = words.slice(wi, wi + wordsPerBurst).join(' ')
         if (chunk) wordsToFly.push(chunk)
       }
-      // Respect sentenceInterval: skip (sentenceInterval-1) sentences
-      if (sentenceInterval > 1) si += sentenceInterval - 1
     }
 
     let idx = 0
@@ -3065,37 +3070,18 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
       const word = wordsToFly[idx]
       const id = `fly_${Date.now()}_${idx}`
 
-      const textObj = {
-        type: 'IText',
-        version: '6.6.1',
-        left: x,
-        top: y,
-        width: word.length * CHAR_WIDTH,
-        height: 40,
-        fill: '#ffffff',
-        fontSize: 28,
-        fontFamily: 'Arial, sans-serif',
-        fontWeight: 'normal',
-        fontStyle: 'normal',
-        underline: false,
-        text: word,
-        id,
-        editable: false,
-        objectCaching: false,
-        paintFirst: 'fill',
-        strokeWidth: 0,
-      }
-
-      onBlackboardEvent({ type: 'object-added', data: JSON.stringify(textObj), id })
-      blackboardRef.current?.applyLiveEvent({ type: 'object-added', data: JSON.stringify(textObj), id })
+      // Emit fly-word event — Blackboard animates from off-screen left to target (x, y)
+      const flyEvent = { type: 'fly-word' as const, text: word, targetX: x, targetY: y, id, fontSize: 28, fill: '#ffffff' }
+      onBlackboardEvent(flyEvent)
+      blackboardRef.current?.applyLiveEvent(flyEvent)
 
       x += word.length * CHAR_WIDTH + 12
       if (x > LOGICAL_W - 100) {
-        x = playPosition?.x ?? 100
+        x = startX
         y += LINE_HEIGHT
       }
       if (y > LOGICAL_H - 60) {
-        y = playPosition?.y ?? 80
+        y = startY
       }
 
       idx++

@@ -14,6 +14,7 @@ export type BlackboardEvent = (
   | { type: 'object-moving'; data: string; id: string }
   | { type: 'object-removed'; id: string }
   | { type: 'clear' }
+  | { type: 'fly-word'; text: string; targetX: number; targetY: number; id: string; fontSize?: number; fill?: string }
   | { type: 'drawing-live'; points: number[]; color: string; width: number }
   | { type: 'drawing-live-end' }
   | { type: 'cursor-move'; x: number; y: number }
@@ -467,6 +468,33 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       const ctx = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
       const uc = (canvas as any).upperCanvasEl as HTMLCanvasElement | undefined
       if (ctx && uc) ctx.clearRect(0, 0, uc.width, uc.height)
+      return
+    }
+
+    // ── Fly-word animation: create text off-screen and animate to target position ──
+    if (event.type === 'fly-word') {
+      const textObj = new fabric.IText(event.text, {
+        left: -300,
+        top: event.targetY,
+        fontSize: event.fontSize ?? 28,
+        fontFamily: 'Arial, sans-serif',
+        fill: event.fill ?? '#ffffff',
+        editable: false,
+        selectable: false,
+        evented: false,
+        strokeWidth: 0,
+      })
+      ;(textObj as any).id = event.id
+      suppressEventsRef.current = true
+      canvas.add(textObj)
+      canvas.renderAll()
+      suppressEventsRef.current = false
+      // Animate from off-screen left to target position
+      textObj.animate({ left: event.targetX }, {
+        duration: 500,
+        easing: fabric.util.ease.easeOutCubic,
+        onChange: () => canvas.renderAll(),
+      })
       return
     }
 
@@ -1000,6 +1028,29 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         canvas.clear()
         canvas.backgroundColor = '#1a1a2e'
         canvas.renderAll()
+        suppressEventsRef.current = false
+        return
+      }
+      case 'fly-word': {
+        const textObj = new fabric.IText(incomingEvent.text, {
+          left: -300,
+          top: incomingEvent.targetY,
+          fontSize: incomingEvent.fontSize ?? 28,
+          fontFamily: 'Arial, sans-serif',
+          fill: incomingEvent.fill ?? '#ffffff',
+          editable: false,
+          selectable: false,
+          evented: false,
+          strokeWidth: 0,
+        })
+        ;(textObj as any).id = incomingEvent.id
+        canvas.add(textObj)
+        canvas.renderAll()
+        textObj.animate({ left: incomingEvent.targetX }, {
+          duration: 500,
+          easing: fabric.util.ease.easeOutCubic,
+          onChange: () => canvas.renderAll(),
+        })
         suppressEventsRef.current = false
         return
       }
