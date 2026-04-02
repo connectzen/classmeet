@@ -1973,6 +1973,12 @@ select option {
     height: 100% !important;
     border-radius: 0;
   }
+  .room-stage-blackboard {
+    box-shadow: none;
+  }
+  .room-stage-video {
+    border-radius: 0;
+  }
   .room-stage-avatar {
     width: 80px; height: 80px;
     font-size: 1.8rem;
