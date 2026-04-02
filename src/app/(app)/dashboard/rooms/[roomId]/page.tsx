@@ -3050,8 +3050,8 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
     const FONT_SIZE = 28
-    const SPACE_WIDTH = FONT_SIZE * 0.35  // Approximate space character width
-    const FABRIC_PADDING = 6              // Fabric IText internal padding compensation
+    const WIDTH_SCALE = 1.18              // Fabric IText renders ~18% wider than canvas 2D measureText
+    const MIN_WORD_GAP = FONT_SIZE * 0.45 // Minimum space between words (~12.6px)
     const linesAtOnce = sentenceInterval  // How many lines to play simultaneously
 
     // Measure actual word widths using the same font as the board
@@ -3094,8 +3094,8 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
           for (let w = 0; w < wordsPerBurst && state.wordIdx < words.length; w++) {
             const word = words[state.wordIdx]
             batch.push({ word, targetX: state.x, targetY: state.y })
-            // Add measured word width + space gap + Fabric padding correction
-            state.x += measureCtx.measureText(word).width + SPACE_WIDTH + FABRIC_PADDING
+            // Scale measured width to match Fabric.js IText rendering + minimum gap
+            state.x += measureCtx.measureText(word).width * WIDTH_SCALE + MIN_WORD_GAP
             if (state.x > LOGICAL_W - 100) {
               state.x = startX
               state.y += LINE_HEIGHT
