@@ -2997,7 +2997,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
   const [playPosition, setPlayPosition] = useState<{ x: number; y: number } | null>(null)
   const [playStep, setPlayStep] = useState(0)
   const [playTotal, setPlayTotal] = useState(0)
-  const flyQueueRef = useRef<{ word: string; targetX: number; targetY: number }[][]>([])
+  const flyQueueRef = useRef<({ word: string; targetX: number; targetY: number }[] | null)[]>([])
   const playIndexRef = useRef(0)
 
   // ── Slides state ──
@@ -3049,9 +3049,10 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     const LOGICAL_W = 1280
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
-    const WORD_GAP = 14
     const FONT_SIZE = 28
-    const linesAtOnce = sentenceInterval // How many lines to play simultaneously
+    const SPACE_WIDTH = FONT_SIZE * 0.35  // Approximate space character width
+    const FABRIC_PADDING = 6              // Fabric IText internal padding compensation
+    const linesAtOnce = sentenceInterval  // How many lines to play simultaneously
 
     // Measure actual word widths using the same font as the board
     const measureCanvas = document.createElement('canvas')
@@ -3060,19 +3061,24 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
 
     // Pre-build all fly batches
     // Each batch = array of words to fly simultaneously in one tick
+    // null entries mark group boundaries (board clears between groups)
     type FlyItem = { word: string; targetX: number; targetY: number }
-    const flyQueue: FlyItem[][] = []
+    const flyQueue: (FlyItem[] | null)[] = []
 
     // Process sentences in groups of linesAtOnce
     for (let groupStart = 0; groupStart < sentences.length; groupStart += linesAtOnce) {
+      // Insert a group-boundary sentinel between groups (not before the first)
+      if (groupStart > 0) flyQueue.push(null)
+
       const groupEnd = Math.min(groupStart + linesAtOnce, sentences.length)
       const groupLines: string[][] = []
       for (let i = groupStart; i < groupEnd; i++) groupLines.push(sentences[i])
 
       // Per-line state: x position and word index
+      // Y is relative within the group (each group starts fresh from startY)
       const lineState = groupLines.map((_, li) => ({
         x: startX,
-        y: Math.min(startY + (groupStart + li) * LINE_HEIGHT, LOGICAL_H - 60),
+        y: Math.min(startY + li * LINE_HEIGHT, LOGICAL_H - 60),
         wordIdx: 0,
       }))
 
@@ -3088,11 +3094,13 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
           for (let w = 0; w < wordsPerBurst && state.wordIdx < words.length; w++) {
             const word = words[state.wordIdx]
             batch.push({ word, targetX: state.x, targetY: state.y })
-            state.x += measureCtx.measureText(word).width + WORD_GAP
+            // Add measured word width + space gap + Fabric padding correction
+            state.x += measureCtx.measureText(word).width + SPACE_WIDTH + FABRIC_PADDING
             if (state.x > LOGICAL_W - 100) {
               state.x = startX
               state.y += LINE_HEIGHT
-              if (state.y > LOGICAL_H - 60) state.y = startY
+              // Cap at bottom — don't wrap back to top (prevents overlapping)
+              if (state.y > LOGICAL_H - 60) state.y = LOGICAL_H - 60
             }
             state.wordIdx++
           }
@@ -3108,10 +3116,11 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
 
     flyQueueRef.current = flyQueue
     playIndexRef.current = 0
-    setPlayTotal(flyQueue.length)
+    // Count only real batches (exclude null sentinels) for the step counter
+    setPlayTotal(flyQueue.filter(b => b !== null).length)
 
-    // Fly the first batch immediately
-    if (flyQueue.length > 0) {
+    // Fly the first batch immediately (first entry is never a sentinel)
+    if (flyQueue.length > 0 && flyQueue[0] !== null) {
       const batch = flyQueue[0]
       for (const item of batch) {
         const id = `fly_${Date.now()}_0_${Math.random().toString(36).slice(2, 6)}`
@@ -3127,14 +3136,29 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
   // Fly the next batch on manual click
   const nextPlayStep = useCallback(() => {
     const queue = flyQueueRef.current
-    const idx = playIndexRef.current
+    let idx = playIndexRef.current
     if (idx >= queue.length) {
       setIsPlaying(false)
       flyQueueRef.current = []
       playIndexRef.current = 0
       return
     }
-    const batch = queue[idx]
+
+    // If we hit a group-boundary sentinel, clear the board and advance past it
+    if (queue[idx] === null) {
+      onBlackboardEvent({ type: 'clear' })
+      blackboardRef.current?.applyLiveEvent({ type: 'clear' })
+      idx += 1
+      playIndexRef.current = idx
+      if (idx >= queue.length) {
+        setIsPlaying(false)
+        flyQueueRef.current = []
+        playIndexRef.current = 0
+        return
+      }
+    }
+
+    const batch = queue[idx]!
     for (const item of batch) {
       const id = `fly_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`
       const flyEvent = { type: 'fly-word' as const, text: item.word, targetX: item.targetX, targetY: item.targetY, id, fontSize: 28, fill: '#ffffff' }
@@ -3142,7 +3166,8 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
       blackboardRef.current?.applyLiveEvent(flyEvent)
     }
     playIndexRef.current = idx + 1
-    setPlayStep(idx + 1)
+    // Step counter counts only real batches
+    setPlayStep(prev => prev + 1)
     // Auto-finish if that was the last batch
     if (idx + 1 >= queue.length) {
       setIsPlaying(false)
