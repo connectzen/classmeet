@@ -2995,6 +2995,8 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
   const [sentenceInterval, setSentenceInterval] = useState(1)
   const [isPlaying, setIsPlaying] = useState(false)
   const [playPosition, setPlayPosition] = useState<{ x: number; y: number } | null>(null)
+  const [playStep, setPlayStep] = useState(0)
+  const [playTotal, setPlayTotal] = useState(0)
   const flyQueueRef = useRef<{ word: string; targetX: number; targetY: number }[][]>([])
   const playIndexRef = useRef(0)
 
@@ -3047,7 +3049,8 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     const LOGICAL_W = 1280
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
-    const CHAR_WIDTH = 20
+    const CHAR_WIDTH = 13
+    const WORD_GAP = 10
     const linesAtOnce = sentenceInterval // How many lines to play simultaneously
 
     // Pre-build all fly batches
@@ -3080,7 +3083,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
           for (let w = 0; w < wordsPerBurst && state.wordIdx < words.length; w++) {
             const word = words[state.wordIdx]
             batch.push({ word, targetX: state.x, targetY: state.y })
-            state.x += word.length * CHAR_WIDTH + 20
+            state.x += word.length * CHAR_WIDTH + WORD_GAP
             if (state.x > LOGICAL_W - 100) {
               state.x = startX
               state.y += LINE_HEIGHT
@@ -3100,6 +3103,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
 
     flyQueueRef.current = flyQueue
     playIndexRef.current = 0
+    setPlayTotal(flyQueue.length)
 
     // Fly the first batch immediately
     if (flyQueue.length > 0) {
@@ -3111,6 +3115,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
         blackboardRef.current?.applyLiveEvent(flyEvent)
       }
       playIndexRef.current = 1
+      setPlayStep(1)
     }
   }, [parsePlayText, blackboardActive, onActivateBlackboard, onBlackboardEvent, blackboardRef, playPosition, wordsPerBurst, sentenceInterval])
 
@@ -3132,6 +3137,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
       blackboardRef.current?.applyLiveEvent(flyEvent)
     }
     playIndexRef.current = idx + 1
+    setPlayStep(idx + 1)
     // Auto-finish if that was the last batch
     if (idx + 1 >= queue.length) {
       setIsPlaying(false)
@@ -3371,7 +3377,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
 
           {isPlaying && (
             <div style={{ fontSize: '0.75rem', color: 'var(--primary-400)', textAlign: 'center' }}>
-              Step {playIndexRef.current} / {flyQueueRef.current.length} — Click Next to fly the next word(s)
+              Step {playStep} / {playTotal} — Click Next to fly the next word(s)
             </div>
           )}
         </div>
