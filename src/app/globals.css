@@ -2301,6 +2301,17 @@ select option {
   outline: none;
   border-color: var(--primary-500);
 }
+/* Number input for font size */
+.room-bb-fontsize-input {
+  width: 52px;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.room-bb-fontsize-input::-webkit-outer-spin-button,
+.room-bb-fontsize-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 /* Teacher cursor overlay — single shared cursor visible to all non-editing participants */
 .room-bb-cursor {
   position: absolute;

@@ -47,14 +47,6 @@ const STROKE_SIZES = [
   { label: 'Large',  value: 7 },
 ]
 
-const FONT_SIZES = [
-  { label: 'Small',  value: 16 },
-  { label: 'Normal', value: 24 },
-  { label: 'Large',  value: 32 },
-  { label: 'XL',     value: 40 },
-  { label: '2XL',    value: 56 },
-]
-
 const FONT_FAMILIES = [
   { label: 'Courier New',   value: 'Courier New, monospace' },
   { label: 'Arial',         value: 'Arial, sans-serif' },
@@ -308,16 +300,18 @@ export default function BlackboardToolbar({
                       <option key={f.value} value={f.value}>{f.label}</option>
                     ))}
                   </select>
-                  <select
-                    className="room-bb-select"
+                  <input
+                    type="number"
+                    className="room-bb-select room-bb-fontsize-input"
                     value={textOptions.fontSize}
-                    onChange={e => onTextOptionsChange({ ...textOptions, fontSize: Number(e.target.value) })}
+                    min={8}
+                    max={200}
+                    onChange={e => {
+                      const v = Math.max(8, Math.min(200, Number(e.target.value) || 8))
+                      onTextOptionsChange({ ...textOptions, fontSize: v })
+                    }}
                     title="Font Size"
-                  >
-                    {FONT_SIZES.map(s => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
+                  />
                   <div className="room-bb-divider" />
                   <button
                     className={`room-bb-tool-btn ${textOptions.bold ? 'room-bb-tool-active' : ''}`}
@@ -406,17 +400,19 @@ export default function BlackboardToolbar({
               <option key={f.value} value={f.value}>{f.label}</option>
             ))}
           </select>
-          <select
-            className="room-bb-select"
+          <input
+            type="number"
+            className="room-bb-select room-bb-fontsize-input"
             style={{ width: '100%' }}
             value={textOptions.fontSize}
-            onChange={e => onTextOptionsChange({ ...textOptions, fontSize: Number(e.target.value) })}
+            min={8}
+            max={200}
+            onChange={e => {
+              const v = Math.max(8, Math.min(200, Number(e.target.value) || 8))
+              onTextOptionsChange({ ...textOptions, fontSize: v })
+            }}
             title="Font Size"
-          >
-            {FONT_SIZES.map(s => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
+          />
           <div className="room-bb-text-panel-row">
             <button
               className={`room-bb-tool-btn ${textOptions.bold ? 'room-bb-tool-active' : ''}`}
