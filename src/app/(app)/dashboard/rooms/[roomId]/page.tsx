@@ -3044,57 +3044,82 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
 
     const startX = playPosition?.x ?? 40
     const startY = playPosition?.y ?? 30
-    let x = startX
-    let y = startY
     const LOGICAL_W = 1280
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
     const CHAR_WIDTH = 20
+    const linesAtOnce = sentenceInterval // How many lines to play simultaneously
 
-    // Build word chunks based on config — track sentence breaks
-    const wordsToFly: { word: string; newLine: boolean }[] = []
-    for (let si = 0; si < sentences.length; si += sentenceInterval) {
-      const words = sentences[si]
-      for (let wi = 0; wi < words.length; wi += wordsPerBurst) {
-        const chunk = words.slice(wi, wi + wordsPerBurst).join(' ')
-        if (chunk) wordsToFly.push({ word: chunk, newLine: wi === 0 && si > 0 })
+    // Pre-build all fly batches
+    // Each batch = array of words to fly simultaneously in one tick
+    type FlyItem = { word: string; targetX: number; targetY: number }
+    const flyQueue: FlyItem[][] = []
+
+    // Process sentences in groups of linesAtOnce
+    for (let groupStart = 0; groupStart < sentences.length; groupStart += linesAtOnce) {
+      const groupEnd = Math.min(groupStart + linesAtOnce, sentences.length)
+      const groupLines: string[][] = []
+      for (let i = groupStart; i < groupEnd; i++) groupLines.push(sentences[i])
+
+      // Per-line state: x position and word index
+      const lineState = groupLines.map((_, li) => ({
+        x: startX,
+        y: Math.min(startY + (groupStart + li) * LINE_HEIGHT, LOGICAL_H - 60),
+        wordIdx: 0,
+      }))
+
+      // Build batches by round-robin across lines until wordsPerBurst hit
+      let anyLeft = true
+      while (anyLeft) {
+        const batch: FlyItem[] = []
+        let wordsAdded = 0
+        let progress = true
+
+        while (wordsAdded < wordsPerBurst && progress) {
+          progress = false
+          for (let li = 0; li < groupLines.length && wordsAdded < wordsPerBurst; li++) {
+            const words = groupLines[li]
+            const state = lineState[li]
+            if (state.wordIdx >= words.length) continue
+            progress = true
+
+            const word = words[state.wordIdx]
+            batch.push({ word, targetX: state.x, targetY: state.y })
+            state.x += word.length * CHAR_WIDTH + 20
+            if (state.x > LOGICAL_W - 100) {
+              state.x = startX
+              state.y += LINE_HEIGHT
+              if (state.y > LOGICAL_H - 60) state.y = startY
+            }
+            state.wordIdx++
+            wordsAdded++
+          }
+        }
+
+        if (batch.length === 0) {
+          anyLeft = false
+        } else {
+          flyQueue.push(batch)
+        }
       }
     }
 
-    let idx = 0
+    let batchIdx = 0
     const fly = () => {
-      if (idx >= wordsToFly.length) {
+      if (batchIdx >= flyQueue.length) {
         setIsPlaying(false)
         if (playTimerRef.current) clearInterval(playTimerRef.current)
         return
       }
-      const { word, newLine } = wordsToFly[idx]
-
-      // Start a new line for each new sentence
-      if (newLine) {
-        x = startX
-        y += LINE_HEIGHT
-        if (y > LOGICAL_H - 60) y = startY
+      const batch = flyQueue[batchIdx]
+      for (const item of batch) {
+        const id = `fly_${Date.now()}_${batchIdx}_${Math.random().toString(36).slice(2, 6)}`
+        const flyEvent = { type: 'fly-word' as const, text: item.word, targetX: item.targetX, targetY: item.targetY, id, fontSize: 28, fill: '#ffffff' }
+        onBlackboardEvent(flyEvent)
+        blackboardRef.current?.applyLiveEvent(flyEvent)
       }
-
-      const id = `fly_${Date.now()}_${idx}`
-
-      // Emit fly-word event — Blackboard animates from off-screen left to target (x, y)
-      const flyEvent = { type: 'fly-word' as const, text: word, targetX: x, targetY: y, id, fontSize: 28, fill: '#ffffff' }
-      onBlackboardEvent(flyEvent)
-      blackboardRef.current?.applyLiveEvent(flyEvent)
-
-      x += word.length * CHAR_WIDTH + 20
-      if (x > LOGICAL_W - 100) {
-        x = startX
-        y += LINE_HEIGHT
-      }
-      if (y > LOGICAL_H - 60) {
-        y = startY
-      }
-
-      idx++
-      playIndexRef.current = idx
+      batchIdx++
+      playIndexRef.current = batchIdx
     }
 
     fly()
