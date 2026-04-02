@@ -89,7 +89,7 @@ export default function TopBar() {
         {/* Greeting */}
         <div className="topbar-greeting" style={{ minWidth: 0, overflow: 'hidden' }}>
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {greeting}, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{firstName}</span>
+            {greeting},<span className="topbar-greeting-name" style={{ color: 'var(--text-primary)', fontWeight: 600 }}> {firstName}</span>
           </span>
         </div>
 

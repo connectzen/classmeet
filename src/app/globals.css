@@ -1116,6 +1116,7 @@ select option {
   .topbar { padding: 0 var(--space-2); gap: 2px; }
   .topbar-live-indicator { display: none; }
   .topbar-greeting { font-size: 0.82rem; min-width: 0; flex-shrink: 1; }
+  .topbar-greeting-name { display: none; }
   /* UserMenu on mobile: hide avatar, show first name + small chevron */
   .user-menu-avatar { display: none; }
   .user-menu-name { display: inline !important; font-size: 0.82rem !important; max-width: 90px !important; }
