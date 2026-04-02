@@ -1318,7 +1318,7 @@ function RoomInner({ roomName }: { roomName: string }) {
         <ChatPanel
           onClose={() => setChatVisible(false)}
           isMobile={isMobile}
-          isHost={isHost}
+          isHost={isTeacher}
           blackboardRef={blackboardRef}
           onBlackboardEvent={handleBlackboardEvent}
           blackboardActive={blackboardActive}
