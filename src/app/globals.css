@@ -1706,6 +1706,39 @@ select option {
   cursor: not-allowed !important;
 }
 
+/* Chat panel tabs */
+.room-chat-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.room-chat-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #71717a;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 500;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.room-chat-tab:hover {
+  background: #27272a;
+  color: #a1a1aa;
+}
+.room-chat-tab-active {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--primary-400);
+}
+.room-chat-tab-active:hover {
+  background: rgba(99, 102, 241, 0.2);
+}
+
 /* Control bar */
 .room-controls {
   display: flex;

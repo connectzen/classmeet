@@ -24,6 +24,7 @@ import {
   MonitorOff, Volume2, PenTool, BookOpen, HelpCircle,
   Check, Clock, ArrowLeft, ArrowRight, Award, Eye, Download,
   Star, Trophy, Play, Trash2, Type, AlertCircle, Copy, Pencil,
+  Image, Upload,
 } from 'lucide-react'
 import Blackboard, { type BlackboardEvent, type BlackboardHandle } from '@/components/room/Blackboard'
 import { createClient } from '@/lib/supabase/client'
@@ -1314,7 +1315,21 @@ function RoomInner({ roomName }: { roomName: string }) {
 
       {/* Chat panel — overlay on mobile, sidebar on desktop */}
       {showChat && (
-        <ChatPanel onClose={() => setChatVisible(false)} isMobile={isMobile} />
+        <ChatPanel
+          onClose={() => setChatVisible(false)}
+          isMobile={isMobile}
+          isHost={isHost}
+          blackboardRef={blackboardRef}
+          onBlackboardEvent={handleBlackboardEvent}
+          blackboardActive={blackboardActive}
+          onActivateBlackboard={() => {
+            if (!blackboardActive) {
+              setBlackboardActive(true)
+              bringLayerToFront('blackboard')
+              handleBlackboardEvent({ type: 'activate' })
+            }
+          }}
+        />
       )}
 
       {/* Mobile: participants overlay panel */}
@@ -2931,17 +2946,74 @@ function QuizResultReveal({ submission, countdown, onDismiss, quizTitle, teacher
 }
 
 // ── Chat Panel ───────────────────────────────────────────────────────────────
-function ChatPanel({ onClose, isMobile }: { onClose: () => void; isMobile?: boolean }) {
+type ChatTab = 'chat' | 'play' | 'slides'
+
+interface ChatPanelProps {
+  onClose: () => void
+  isMobile?: boolean
+  isHost: boolean
+  blackboardRef: React.RefObject<BlackboardHandle | null>
+  onBlackboardEvent: (event: BlackboardEvent) => void
+  blackboardActive: boolean
+  onActivateBlackboard: () => void
+}
+
+// Compress an image file client-side to a max dimension & quality
+async function compressImage(file: File, maxDim = 1280, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = document.createElement('img')
+    img.onload = () => {
+      let w = img.width, h = img.height
+      if (w > maxDim || h > maxDim) {
+        const ratio = Math.min(maxDim / w, maxDim / h)
+        w = Math.round(w * ratio)
+        h = Math.round(h * ratio)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, w, h)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+      URL.revokeObjectURL(img.src)
+    }
+    img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error('Failed to load image')) }
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent, blackboardActive, onActivateBlackboard }: ChatPanelProps) {
   const { chatMessages, send, isSending } = useChat()
   const [message, setMessage] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [activeTab, setActiveTab] = useState<ChatTab>('chat')
+
+  // ── Play state ──
+  const [playText, setPlayText] = useState('')
+  const [wordsPerBurst, setWordsPerBurst] = useState(1)
+  const [sentenceInterval, setSentenceInterval] = useState(1)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [playPosition, setPlayPosition] = useState<{ x: number; y: number } | null>(null)
+  const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const playIndexRef = useRef(0)
+
+  // ── Slides state ──
+  const [slides, setSlides] = useState<string[]>([])
+  const [currentSlide, setCurrentSlide] = useState(0)
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Auto-scroll on new messages
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && activeTab === 'chat') {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [chatMessages.length])
+  }, [chatMessages.length, activeTab])
+
+  // Cleanup play timer on unmount
+  useEffect(() => {
+    return () => { if (playTimerRef.current) clearInterval(playTimerRef.current) }
+  }, [])
 
   const handleSend = useCallback(async () => {
     if (!message.trim() || isSending) return
@@ -2949,56 +3021,405 @@ function ChatPanel({ onClose, isMobile }: { onClose: () => void; isMobile?: bool
     setMessage('')
   }, [message, isSending, send])
 
+  // ── Play: split text into sentences → words ──
+  const parsePlayText = useCallback(() => {
+    const sentences = playText.split(/[.!?]+/).map(s => s.trim()).filter(Boolean)
+    return sentences.map(s => s.split(/\s+/).filter(Boolean))
+  }, [playText])
+
+  // ── Play: start flying words ──
+  const startPlaying = useCallback(() => {
+    const sentences = parsePlayText()
+    if (sentences.length === 0) return
+    if (!blackboardActive) onActivateBlackboard()
+
+    setIsPlaying(true)
+    playIndexRef.current = 0
+
+    let x = playPosition?.x ?? 100
+    let y = playPosition?.y ?? 80
+    const LOGICAL_W = 1280
+    const LOGICAL_H = 720
+    const LINE_HEIGHT = 50
+    const CHAR_WIDTH = 16
+
+    // Build word chunks based on config
+    const wordsToFly: string[] = []
+    for (let si = 0; si < sentences.length; si++) {
+      const words = sentences[si]
+      for (let wi = 0; wi < words.length; wi += wordsPerBurst) {
+        const chunk = words.slice(wi, wi + wordsPerBurst).join(' ')
+        if (chunk) wordsToFly.push(chunk)
+      }
+      // Respect sentenceInterval: skip (sentenceInterval-1) sentences
+      if (sentenceInterval > 1) si += sentenceInterval - 1
+    }
+
+    let idx = 0
+    const fly = () => {
+      if (idx >= wordsToFly.length) {
+        setIsPlaying(false)
+        if (playTimerRef.current) clearInterval(playTimerRef.current)
+        return
+      }
+      const word = wordsToFly[idx]
+      const id = `fly_${Date.now()}_${idx}`
+
+      const textObj = {
+        type: 'IText',
+        version: '6.6.1',
+        left: x,
+        top: y,
+        width: word.length * CHAR_WIDTH,
+        height: 40,
+        fill: '#ffffff',
+        fontSize: 28,
+        fontFamily: 'Arial, sans-serif',
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        underline: false,
+        text: word,
+        id,
+        editable: false,
+        objectCaching: false,
+        paintFirst: 'fill',
+        strokeWidth: 0,
+      }
+
+      onBlackboardEvent({ type: 'object-added', data: JSON.stringify(textObj), id })
+      blackboardRef.current?.applyLiveEvent({ type: 'object-added', data: JSON.stringify(textObj), id })
+
+      x += word.length * CHAR_WIDTH + 12
+      if (x > LOGICAL_W - 100) {
+        x = playPosition?.x ?? 100
+        y += LINE_HEIGHT
+      }
+      if (y > LOGICAL_H - 60) {
+        y = playPosition?.y ?? 80
+      }
+
+      idx++
+      playIndexRef.current = idx
+    }
+
+    fly()
+    playTimerRef.current = setInterval(fly, 800)
+  }, [parsePlayText, blackboardActive, onActivateBlackboard, onBlackboardEvent, blackboardRef, playPosition, wordsPerBurst, sentenceInterval])
+
+  const stopPlaying = useCallback(() => {
+    setIsPlaying(false)
+    if (playTimerRef.current) { clearInterval(playTimerRef.current); playTimerRef.current = null }
+  }, [])
+
+  // Play: click on blackboard to set starting position
+  useEffect(() => {
+    if (activeTab !== 'play') return
+    const handler = (e: MouseEvent) => {
+      const canvas = document.querySelector('.room-blackboard canvas') as HTMLCanvasElement
+      if (!canvas || !canvas.contains(e.target as Node)) return
+      const rect = canvas.getBoundingClientRect()
+      const zoom = canvas.width / 1280
+      const lx = (e.clientX - rect.left) / zoom
+      const ly = (e.clientY - rect.top) / zoom
+      setPlayPosition({ x: Math.round(lx), y: Math.round(ly) })
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [activeTab])
+
+  // ── Slides: upload & compress ──
+  const handleSlideUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    setIsUploading(true)
+    try {
+      const compressed: string[] = []
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith('image/')) continue
+        const dataUrl = await compressImage(file, 1280, 0.7)
+        compressed.push(dataUrl)
+      }
+      setSlides(prev => [...prev, ...compressed])
+      if (slides.length === 0 && compressed.length > 0) setCurrentSlide(0)
+    } finally {
+      setIsUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }, [slides.length])
+
+  const removeSlide = useCallback((idx: number) => {
+    setSlides(prev => {
+      const next = prev.filter((_, i) => i !== idx)
+      if (currentSlide >= next.length) setCurrentSlide(Math.max(0, next.length - 1))
+      return next
+    })
+  }, [currentSlide])
+
+  // Slides: present on blackboard as image
+  const presentSlide = useCallback((idx: number) => {
+    if (!slides[idx]) return
+    if (!blackboardActive) onActivateBlackboard()
+    setCurrentSlide(idx)
+
+    const id = `slide_${Date.now()}_${idx}`
+    // Clear board then add image
+    onBlackboardEvent({ type: 'clear' })
+    blackboardRef.current?.applyLiveEvent({ type: 'clear' })
+
+    const imgObj = {
+      type: 'Image',
+      version: '6.6.1',
+      left: 0,
+      top: 0,
+      width: 1280,
+      height: 720,
+      scaleX: 1,
+      scaleY: 1,
+      src: slides[idx],
+      id,
+      selectable: false,
+      evented: false,
+      crossOrigin: 'anonymous',
+    }
+    onBlackboardEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
+    blackboardRef.current?.applyLiveEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
+  }, [slides, blackboardActive, onActivateBlackboard, onBlackboardEvent, blackboardRef])
+
+  const tabs: { key: ChatTab; label: string; icon: React.ReactNode }[] = [
+    { key: 'chat', label: 'Chat', icon: <MessageSquare size={14} /> },
+    ...(isHost ? [
+      { key: 'play' as ChatTab, label: 'Play', icon: <Play size={14} /> },
+      { key: 'slides' as ChatTab, label: 'Slides', icon: <Image size={14} /> },
+    ] : []),
+  ]
+
   return (
     <div className={`room-sidebar room-sidebar-right ${isMobile ? 'room-sidebar-mobile' : ''}`}>
       {isMobile && <div className="room-mobile-overlay-bg" onClick={onClose} />}
       <div className="room-sidebar-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <MessageSquare size={16} />
-          <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Chat</span>
+        <div className="room-chat-tabs">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              className={`room-chat-tab ${activeTab === t.key ? 'room-chat-tab-active' : ''}`}
+              onClick={() => setActiveTab(t.key)}
+            >
+              {t.icon}
+              <span>{t.label}</span>
+            </button>
+          ))}
         </div>
-        <button className="room-icon-btn room-icon-btn-sm" onClick={onClose} title="Hide chat">
+        <button className="room-icon-btn room-icon-btn-sm" onClick={onClose} title="Hide panel">
           <ChevronRight size={16} />
         </button>
       </div>
 
-      <div className="room-sidebar-body room-chat-messages" ref={scrollRef}>
-        {chatMessages.length === 0 ? (
-          <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-            No messages yet. Say hello! 👋
-          </div>
-        ) : (
-          chatMessages.map((msg, i) => (
-            <div key={`${msg.timestamp}-${i}`} className="room-chat-msg">
-              <div className="room-chat-msg-header">
-                <span className="room-chat-sender">{msg.from?.name || msg.from?.identity || 'Unknown'}</span>
-                <span className="room-chat-time">{formatTime(msg.timestamp)}</span>
+      {/* ── Chat Tab ── */}
+      {activeTab === 'chat' && (
+        <>
+          <div className="room-sidebar-body room-chat-messages" ref={scrollRef}>
+            {chatMessages.length === 0 ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                No messages yet. Say hello! 👋
               </div>
-              <div className="room-chat-text">{msg.message}</div>
-            </div>
-          ))
-        )}
-      </div>
+            ) : (
+              chatMessages.map((msg, i) => (
+                <div key={`${msg.timestamp}-${i}`} className="room-chat-msg">
+                  <div className="room-chat-msg-header">
+                    <span className="room-chat-sender">{msg.from?.name || msg.from?.identity || 'Unknown'}</span>
+                    <span className="room-chat-time">{formatTime(msg.timestamp)}</span>
+                  </div>
+                  <div className="room-chat-text">{msg.message}</div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="room-chat-input">
+            <input
+              type="text"
+              className="input"
+              placeholder="Type a message…"
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSend()}
+              style={{ fontSize: '0.85rem' }}
+            />
+            <button
+              className="room-icon-btn room-send-btn"
+              onClick={handleSend}
+              disabled={!message.trim() || isSending}
+              title="Send message"
+            >
+              <Send size={16} />
+            </button>
+          </div>
+        </>
+      )}
 
-      <div className="room-chat-input">
-        <input
-          type="text"
-          className="input"
-          placeholder="Type a message…"
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleSend()}
-          style={{ fontSize: '0.85rem' }}
-        />
-        <button
-          className="room-icon-btn room-send-btn"
-          onClick={handleSend}
-          disabled={!message.trim() || isSending}
-          title="Send message"
-        >
-          <Send size={16} />
-        </button>
-      </div>
+      {/* ── Play Tab ── */}
+      {activeTab === 'play' && (
+        <div className="room-sidebar-body" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            Type or paste text. Words will fly onto the board.
+            {playPosition ? (
+              <span style={{ color: 'var(--primary-400)' }}> • Starting at ({playPosition.x}, {playPosition.y})</span>
+            ) : ' Click on the board to set starting position.'}
+          </div>
+
+          <textarea
+            className="input"
+            style={{ minHeight: 120, resize: 'vertical', fontSize: '0.85rem', fontFamily: 'inherit', lineHeight: 1.5 }}
+            placeholder="Paste or type your paragraph here…"
+            value={playText}
+            onChange={e => setPlayText(e.target.value)}
+            disabled={isPlaying}
+          />
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 100 }}>
+              Words per burst
+              <input
+                type="number"
+                className="input"
+                style={{ fontSize: '0.82rem', padding: '4px 8px' }}
+                value={wordsPerBurst}
+                min={1}
+                max={20}
+                onChange={e => setWordsPerBurst(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                disabled={isPlaying}
+              />
+            </label>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 100 }}>
+              Every N sentences
+              <input
+                type="number"
+                className="input"
+                style={{ fontSize: '0.82rem', padding: '4px 8px' }}
+                value={sentenceInterval}
+                min={1}
+                max={10}
+                onChange={e => setSentenceInterval(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                disabled={isPlaying}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!isPlaying ? (
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, fontSize: '0.82rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                onClick={startPlaying}
+                disabled={!playText.trim()}
+              >
+                <Play size={14} /> Start Playing
+              </button>
+            ) : (
+              <button
+                className="btn btn-danger"
+                style={{ flex: 1, fontSize: '0.82rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                onClick={stopPlaying}
+              >
+                <X size={14} /> Stop
+              </button>
+            )}
+          </div>
+
+          {isPlaying && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--primary-400)', textAlign: 'center' }}>
+              Flying words… Click on the board to reposition.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Slides Tab ── */}
+      {activeTab === 'slides' && (
+        <div className="room-sidebar-body" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            Upload images to present as slides. They are temporary and won&apos;t be stored.
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleSlideUpload}
+          />
+          <button
+            className="btn btn-outline"
+            style={{ fontSize: '0.82rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+          >
+            <Upload size={14} /> {isUploading ? 'Compressing…' : 'Upload Images'}
+          </button>
+
+          {slides.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 6 }}>
+                {slides.map((src, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      position: 'relative', borderRadius: 6, overflow: 'hidden',
+                      border: currentSlide === i ? '2px solid var(--primary-500)' : '2px solid #3f3f46',
+                      cursor: 'pointer', aspectRatio: '16/9',
+                    }}
+                    onClick={() => presentSlide(i)}
+                  >
+                    <img src={src} alt={`Slide ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button
+                      style={{
+                        position: 'absolute', top: 2, right: 2,
+                        width: 18, height: 18, borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.7)', border: 'none',
+                        color: '#f87171', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      onClick={e => { e.stopPropagation(); removeSlide(i) }}
+                      title="Remove slide"
+                    >
+                      <X size={10} />
+                    </button>
+                    <div style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0,
+                      background: 'rgba(0,0,0,0.6)', padding: '1px 4px',
+                      fontSize: '0.6rem', color: '#e4e4e7', textAlign: 'center',
+                    }}>
+                      {i + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <button
+                  className="room-icon-btn"
+                  onClick={() => { if (currentSlide > 0) presentSlide(currentSlide - 1) }}
+                  disabled={currentSlide <= 0}
+                  title="Previous slide"
+                >
+                  <ArrowLeft size={16} />
+                </button>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {slides.length > 0 ? `${currentSlide + 1} / ${slides.length}` : 'No slides'}
+                </span>
+                <button
+                  className="room-icon-btn"
+                  onClick={() => { if (currentSlide < slides.length - 1) presentSlide(currentSlide + 1) }}
+                  disabled={currentSlide >= slides.length - 1}
+                  title="Next slide"
+                >
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
