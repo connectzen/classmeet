@@ -1114,15 +1114,13 @@ select option {
 /* Compact topbar on small screens */
 @media (max-width: 600px) {
   .topbar { padding: 0 var(--space-2); gap: 2px; }
-  .topbar-live-indicator { padding: 4px 8px 4px 6px; gap: 4px; }
-  .topbar-live-text { display: none; }
-  .topbar-live-count { display: none; }
-  .topbar-greeting { font-size: 0.8rem; min-width: 0; flex-shrink: 1; overflow: hidden; }
-  /* UserMenu on mobile: hide avatar + full name, show small chevron only */
+  .topbar-live-indicator { display: none; }
+  .topbar-greeting { font-size: 0.82rem; min-width: 0; flex-shrink: 1; }
+  /* UserMenu on mobile: hide avatar, show first name + small chevron */
   .user-menu-avatar { display: none; }
-  .user-menu-name { display: none; }
+  .user-menu-name { display: inline !important; font-size: 0.82rem !important; max-width: 90px !important; }
   .user-menu-chevron { display: inline-block !important; }
-  .user-menu-btn { padding: 4px 6px !important; gap: 0 !important; min-width: unset; border-radius: var(--radius-sm) !important; }
+  .user-menu-btn { padding: 4px 6px !important; gap: 4px !important; min-width: unset; border-radius: var(--radius-sm) !important; }
   .topbar-user-menu-wrapper { margin-left: 0; flex-shrink: 0; }
   .topbar-nav-label-desktop { display: none; }
   .topbar-nav-label-mobile { display: inline; }

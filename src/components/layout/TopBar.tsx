@@ -65,7 +65,7 @@ export default function TopBar() {
   return (
     <header className="topbar">
       {/* Left: hamburger + live indicator + greeting */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
         <button
           className="btn btn-ghost btn-icon btn-sm"
           id="sidebar-toggle"
