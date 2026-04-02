@@ -3051,13 +3051,13 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     const LINE_HEIGHT = 50
     const CHAR_WIDTH = 20
 
-    // Build word chunks based on config
-    const wordsToFly: string[] = []
+    // Build word chunks based on config — track sentence breaks
+    const wordsToFly: { word: string; newLine: boolean }[] = []
     for (let si = 0; si < sentences.length; si += sentenceInterval) {
       const words = sentences[si]
       for (let wi = 0; wi < words.length; wi += wordsPerBurst) {
         const chunk = words.slice(wi, wi + wordsPerBurst).join(' ')
-        if (chunk) wordsToFly.push(chunk)
+        if (chunk) wordsToFly.push({ word: chunk, newLine: wi === 0 && si > 0 })
       }
     }
 
@@ -3068,7 +3068,15 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
         if (playTimerRef.current) clearInterval(playTimerRef.current)
         return
       }
-      const word = wordsToFly[idx]
+      const { word, newLine } = wordsToFly[idx]
+
+      // Start a new line for each new sentence
+      if (newLine) {
+        x = startX
+        y += LINE_HEIGHT
+        if (y > LOGICAL_H - 60) y = startY
+      }
+
       const id = `fly_${Date.now()}_${idx}`
 
       // Emit fly-word event — Blackboard animates from off-screen left to target (x, y)
