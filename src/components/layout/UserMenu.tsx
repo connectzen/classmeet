@@ -64,7 +64,7 @@ export default function UserMenu() {
           <span className="user-menu-name truncate" style={{ fontSize: '0.875rem', fontWeight: 500, maxWidth: '120px' }}>
             {user.fullName || user.email}
           </span>
-          <ChevronDown size={14} style={{ color: 'var(--text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          <ChevronDown size={14} className="user-menu-chevron" style={{ color: 'var(--text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
         </button>
 
         {open && (

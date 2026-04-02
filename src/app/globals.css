@@ -1103,6 +1103,14 @@ select option {
   min-width: 200px;
 }
 
+/* User menu wrapper: pushed right on desktop, inline on mobile */
+.topbar-user-menu-wrapper {
+  margin-left: auto;
+}
+
+/* Nav label visibility */
+.topbar-nav-label-mobile { display: none; }
+
 /* Compact topbar on small screens */
 @media (max-width: 600px) {
   .topbar { padding: 0 var(--space-3); gap: 4px; }
@@ -1110,10 +1118,11 @@ select option {
   .topbar-live-text { display: none; }
   .topbar-greeting { font-size: 0.8rem; }
   .user-menu-name { display: none; }
-  .user-menu-avatar { display: none; }
-  .user-menu-btn { padding: 6px !important; gap: 0 !important; min-width: 32px; }
-  .topbar-nav-icon { display: none; }
-  .topbar-nav-label { display: none; }
+  .user-menu-chevron { display: none; }
+  .user-menu-btn { padding: 4px !important; gap: 4px !important; min-width: unset; }
+  .topbar-user-menu-wrapper { margin-left: 0; }
+  .topbar-nav-label-desktop { display: none; }
+  .topbar-nav-label-mobile { display: inline; }
 }
 
 /* Mobile nav: hide desktop nav, show Dashboard + More */

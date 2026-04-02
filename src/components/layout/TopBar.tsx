@@ -3,7 +3,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, Radio, ChevronDown } from 'lucide-react'
+import { Menu, Radio, ChevronDown, MoreVertical } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { useLiveSessionCount } from '@/hooks/useLiveSessionCount'
 import { useUnreadMessageCount } from '@/hooks/useUnreadMessageCount'
@@ -91,9 +91,14 @@ export default function TopBar() {
             {greeting}, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{firstName}</span>
           </span>
         </div>
+
+        {/* User menu - next to greeting on mobile, pushed right on desktop */}
+        <div className="topbar-user-menu-wrapper">
+          <UserMenu />
+        </div>
       </div>
 
-      {/* Right: nav dropdown + user menu */}
+      {/* Right: nav/more dropdown */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
         {/* Navigation dropdown */}
         {navLinks.length > 0 && (
@@ -103,11 +108,12 @@ export default function TopBar() {
               onClick={() => setNavOpen(o => !o)}
               aria-expanded={navOpen}
               aria-haspopup="true"
-              aria-label="Navigate"
+              aria-label="More actions"
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <Menu size={16} className="topbar-nav-icon" />
-              <span className="topbar-nav-label">Navigate</span>
+              <MoreVertical size={16} />
+              <span className="topbar-nav-label-desktop">Navigate</span>
+              <span className="topbar-nav-label-mobile">More</span>
               <ChevronDown size={14} style={{ transition: 'transform 0.15s', transform: navOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
             </button>
 
@@ -135,8 +141,6 @@ export default function TopBar() {
             )}
           </div>
         )}
-
-        <UserMenu />
       </div>
     </header>
   )
