@@ -3049,9 +3049,14 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     const LOGICAL_W = 1280
     const LOGICAL_H = 720
     const LINE_HEIGHT = 50
-    const CHAR_WIDTH = 13
-    const WORD_GAP = 10
+    const WORD_GAP = 14
+    const FONT_SIZE = 28
     const linesAtOnce = sentenceInterval // How many lines to play simultaneously
+
+    // Measure actual word widths using the same font as the board
+    const measureCanvas = document.createElement('canvas')
+    const measureCtx = measureCanvas.getContext('2d')!
+    measureCtx.font = `${FONT_SIZE}px Arial, sans-serif`
 
     // Pre-build all fly batches
     // Each batch = array of words to fly simultaneously in one tick
@@ -3083,7 +3088,7 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
           for (let w = 0; w < wordsPerBurst && state.wordIdx < words.length; w++) {
             const word = words[state.wordIdx]
             batch.push({ word, targetX: state.x, targetY: state.y })
-            state.x += word.length * CHAR_WIDTH + WORD_GAP
+            state.x += measureCtx.measureText(word).width + WORD_GAP
             if (state.x > LOGICAL_W - 100) {
               state.x = startX
               state.y += LINE_HEIGHT
