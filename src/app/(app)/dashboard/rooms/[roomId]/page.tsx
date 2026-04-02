@@ -3068,21 +3068,16 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
         wordIdx: 0,
       }))
 
-      // Build batches by round-robin across lines until wordsPerBurst hit
+      // Build batches: each step picks wordsPerBurst words from EVERY active line
+      // so total batch size = wordsPerBurst × number of lines with remaining words
       let anyLeft = true
       while (anyLeft) {
         const batch: FlyItem[] = []
-        let wordsAdded = 0
-        let progress = true
 
-        while (wordsAdded < wordsPerBurst && progress) {
-          progress = false
-          for (let li = 0; li < groupLines.length && wordsAdded < wordsPerBurst; li++) {
-            const words = groupLines[li]
-            const state = lineState[li]
-            if (state.wordIdx >= words.length) continue
-            progress = true
-
+        for (let li = 0; li < groupLines.length; li++) {
+          const words = groupLines[li]
+          const state = lineState[li]
+          for (let w = 0; w < wordsPerBurst && state.wordIdx < words.length; w++) {
             const word = words[state.wordIdx]
             batch.push({ word, targetX: state.x, targetY: state.y })
             state.x += word.length * CHAR_WIDTH + 20
@@ -3092,7 +3087,6 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
               if (state.y > LOGICAL_H - 60) state.y = startY
             }
             state.wordIdx++
-            wordsAdded++
           }
         }
 
