@@ -559,6 +559,44 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       }
       return
     }
+
+    // ── Persistent events (clear, object-added) called imperatively by presentSlide ──
+    if (event.type === 'clear') {
+      suppressEventsRef.current = true
+      if (livePreviewRef.current) livePreviewRef.current = null
+      canvas.clear()
+      canvas.backgroundColor = '#1a1a2e'
+      canvas.renderAll()
+      suppressEventsRef.current = false
+      return
+    }
+
+    if (event.type === 'object-added') {
+      suppressEventsRef.current = true
+      if (livePreviewRef.current) {
+        canvas.remove(livePreviewRef.current)
+        livePreviewRef.current = null
+      }
+      const json = JSON.parse(event.data)
+      fabric.util.enlivenObjects([json]).then((objects) => {
+        const obj = objects[0] as fabric.FabricObject | undefined
+        if (obj) {
+          ;(obj as any).id = event.id
+          const canSelect = canDrawOverallRef.current && activeToolRef.current === 'select'
+          const isText = obj.type === 'i-text' || obj.type === 'IText'
+          obj.selectable = canSelect
+          obj.evented = canSelect
+          if (isText) (obj as any).editable = canDrawOverallRef.current
+          canvas.add(obj)
+          canvas.renderAll()
+          const ctx2 = (canvas as any).contextTop as CanvasRenderingContext2D | undefined
+          const uc2 = (canvas as any).upperCanvasEl as HTMLCanvasElement | undefined
+          if (ctx2 && uc2) ctx2.clearRect(0, 0, uc2.width, uc2.height)
+        }
+        suppressEventsRef.current = false
+      })
+      return
+    }
   }, [isHost, disableCanvasInteraction, enableCanvasInteraction])
 
   // ── Expose methods to parent ─────────────────────────────────────────────
