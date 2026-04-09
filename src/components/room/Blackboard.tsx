@@ -14,6 +14,7 @@ export type BlackboardEvent = (
   | { type: 'object-moving'; data: string; id: string }
   | { type: 'object-removed'; id: string }
   | { type: 'clear' }
+  | { type: 'slide-image'; src: string; id: string }
   | { type: 'fly-word'; text: string; targetX: number; targetY: number; id: string; fontSize?: number; fill?: string }
   | { type: 'drawing-live'; points: number[]; color: string; width: number }
   | { type: 'drawing-live-end' }
@@ -597,6 +598,34 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
       })
       return
     }
+
+    // ── Slide image: load via fromURL and fit to logical canvas ─────────
+    if (event.type === 'slide-image') {
+      suppressEventsRef.current = true
+      fabric.FabricImage.fromURL(event.src, { crossOrigin: 'anonymous' }).then((img) => {
+        const natW = img.width
+        const natH = img.height
+        // Fit (contain) within the logical 1280×720 canvas
+        const scale = Math.min(LOGICAL_W / natW, LOGICAL_H / natH)
+        img.set({
+          left: LOGICAL_W / 2,
+          top: LOGICAL_H / 2,
+          originX: 'center',
+          originY: 'center',
+          scaleX: scale,
+          scaleY: scale,
+          selectable: false,
+          evented: false,
+        })
+        ;(img as any).id = event.id
+        canvas.add(img)
+        canvas.renderAll()
+        suppressEventsRef.current = false
+      }).catch(() => {
+        suppressEventsRef.current = false
+      })
+      return
+    }
   }, [isHost, disableCanvasInteraction, enableCanvasInteraction])
 
   // ── Expose methods to parent ─────────────────────────────────────────────
@@ -1076,6 +1105,30 @@ const Blackboard = forwardRef<BlackboardHandle, BlackboardProps>(function Blackb
         canvas.backgroundColor = '#1a1a2e'
         canvas.renderAll()
         suppressEventsRef.current = false
+        return
+      }
+      case 'slide-image': {
+        fabric.FabricImage.fromURL(incomingEvent.src, { crossOrigin: 'anonymous' }).then((img) => {
+          const natW = img.width
+          const natH = img.height
+          const scale = Math.min(LOGICAL_W / natW, LOGICAL_H / natH)
+          img.set({
+            left: LOGICAL_W / 2,
+            top: LOGICAL_H / 2,
+            originX: 'center',
+            originY: 'center',
+            scaleX: scale,
+            scaleY: scale,
+            selectable: false,
+            evented: false,
+          })
+          ;(img as any).id = incomingEvent.id
+          canvas.add(img)
+          canvas.renderAll()
+          suppressEventsRef.current = false
+        }).catch(() => {
+          suppressEventsRef.current = false
+        })
         return
       }
       case 'fly-word': {

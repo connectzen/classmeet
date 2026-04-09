@@ -3267,39 +3267,12 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     onBlackboardEvent({ type: 'clear' })
     blackboardRef.current?.applyLiveEvent({ type: 'clear' })
 
-    // Load the image to get natural dimensions, then scale to fit the 1280×720 canvas
-    const img = new window.Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => {
-      const natW = img.naturalWidth || img.width
-      const natH = img.naturalHeight || img.height
-      // Fit (contain) within 1280×720
-      const scale = Math.min(1280 / natW, 720 / natH)
-      const scaledW = natW * scale
-      const scaledH = natH * scale
-      const left = (1280 - scaledW) / 2
-      const top = (720 - scaledH) / 2
-
-      const id = `slide_${Date.now()}_${idx}`
-      const imgObj = {
-        type: 'Image',
-        version: '6.6.1',
-        left,
-        top,
-        width: natW,
-        height: natH,
-        scaleX: scale,
-        scaleY: scale,
-        src: slides[idx],
-        id,
-        selectable: false,
-        evented: false,
-        crossOrigin: 'anonymous',
-      }
-      onBlackboardEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
-      blackboardRef.current?.applyLiveEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
-    }
-    img.src = slides[idx]
+    const id = `slide_${Date.now()}_${idx}`
+    // Use a dedicated slide-image event so Blackboard can load via fromURL
+    // and fit properly regardless of natural image dimensions
+    const event: any = { type: 'slide-image', src: slides[idx], id }
+    onBlackboardEvent(event)
+    blackboardRef.current?.applyLiveEvent(event)
   }, [slides, blackboardActive, onActivateBlackboard, onBlackboardEvent, blackboardRef])
 
   const tabs: { key: ChatTab; label: string; icon: React.ReactNode }[] = [
