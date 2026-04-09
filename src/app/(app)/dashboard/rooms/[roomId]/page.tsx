@@ -412,6 +412,9 @@ function RoomInner({ roomName }: { roomName: string }) {
     } else if (event.type === 'deactivate') {
       setBlackboardActive(false)
       removeLayerFromOrder('blackboard')
+      // Reset drawing permission when blackboard is deactivated
+      setAllowStudentDrawing(false)
+      allowStudentDrawingRef.current = false
     } else if (event.type === 'allow-drawing') {
       setAllowStudentDrawing(event.allowed)
       allowStudentDrawingRef.current = event.allowed
@@ -479,6 +482,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       // Auto-hide blackboard when course slides start
       setBlackboardActive(false)
       removeLayerFromOrder('blackboard')
+      setAllowStudentDrawing(false)
+      allowStudentDrawingRef.current = false
       bringLayerToFront('course')
     } else if (event.type === 'stop-course') {
       setCourseActive(false)
@@ -490,6 +495,11 @@ function RoomInner({ roomName }: { roomName: string }) {
       setCurrentQuestionIndex(event.questionIndex ?? 0)
       setQuizRevealed(false)
       setQuizAnswers({})
+      // Auto-hide blackboard when quiz starts
+      setBlackboardActive(false)
+      removeLayerFromOrder('blackboard')
+      setAllowStudentDrawing(false)
+      allowStudentDrawingRef.current = false
       bringLayerToFront('quiz')
     } else if (event.type === 'stop-quiz') {
       setQuizActive(false)
@@ -595,6 +605,8 @@ function RoomInner({ roomName }: { roomName: string }) {
       // Reset drawing permission when blackboard is deactivated
       setAllowStudentDrawing(false)
       allowStudentDrawingRef.current = false
+      // Broadcast permission reset so students' toolbars hide immediately
+      sendBlackboardData(encoder.encode(JSON.stringify({ type: 'allow-drawing', allowed: false })), { reliable: true })
     }
     updateLayerOrder('blackboard', next)
 
@@ -630,6 +642,8 @@ function RoomInner({ roomName }: { roomName: string }) {
     if (blackboardActive) {
       setBlackboardActive(false)
       removeLayerFromOrder('blackboard')
+      setAllowStudentDrawing(false)
+      allowStudentDrawingRef.current = false
       sendBlackboardData(encoder.encode(JSON.stringify({ type: 'deactivate' })), { reliable: true })
     }
     updateLayerOrder('course', true)
@@ -659,6 +673,8 @@ function RoomInner({ roomName }: { roomName: string }) {
     if (blackboardActive) {
       setBlackboardActive(false)
       removeLayerFromOrder('blackboard')
+      setAllowStudentDrawing(false)
+      allowStudentDrawingRef.current = false
       sendBlackboardData(encoder.encode(JSON.stringify({ type: 'deactivate' })), { reliable: true })
     }
     updateLayerOrder('course', true)
@@ -697,6 +713,8 @@ function RoomInner({ roomName }: { roomName: string }) {
     if (blackboardActive) {
       setBlackboardActive(false)
       removeLayerFromOrder('blackboard')
+      setAllowStudentDrawing(false)
+      allowStudentDrawingRef.current = false
       sendBlackboardData(encoder.encode(JSON.stringify({ type: 'deactivate' })), { reliable: true })
     }
     updateLayerOrder('quiz', true)
