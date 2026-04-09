@@ -3245,28 +3245,43 @@ function ChatPanel({ onClose, isMobile, isHost, blackboardRef, onBlackboardEvent
     if (!blackboardActive) onActivateBlackboard()
     setCurrentSlide(idx)
 
-    const id = `slide_${Date.now()}_${idx}`
-    // Clear board then add image
+    // Clear board first
     onBlackboardEvent({ type: 'clear' })
     blackboardRef.current?.applyLiveEvent({ type: 'clear' })
 
-    const imgObj = {
-      type: 'Image',
-      version: '6.6.1',
-      left: 0,
-      top: 0,
-      width: 1280,
-      height: 720,
-      scaleX: 1,
-      scaleY: 1,
-      src: slides[idx],
-      id,
-      selectable: false,
-      evented: false,
-      crossOrigin: 'anonymous',
+    // Load the image to get natural dimensions, then scale to fit the 1280×720 canvas
+    const img = new window.Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const natW = img.naturalWidth || img.width
+      const natH = img.naturalHeight || img.height
+      // Fit (contain) within 1280×720
+      const scale = Math.min(1280 / natW, 720 / natH)
+      const scaledW = natW * scale
+      const scaledH = natH * scale
+      const left = (1280 - scaledW) / 2
+      const top = (720 - scaledH) / 2
+
+      const id = `slide_${Date.now()}_${idx}`
+      const imgObj = {
+        type: 'Image',
+        version: '6.6.1',
+        left,
+        top,
+        width: natW,
+        height: natH,
+        scaleX: scale,
+        scaleY: scale,
+        src: slides[idx],
+        id,
+        selectable: false,
+        evented: false,
+        crossOrigin: 'anonymous',
+      }
+      onBlackboardEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
+      blackboardRef.current?.applyLiveEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
     }
-    onBlackboardEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
-    blackboardRef.current?.applyLiveEvent({ type: 'object-added', data: JSON.stringify(imgObj), id })
+    img.src = slides[idx]
   }, [slides, blackboardActive, onActivateBlackboard, onBlackboardEvent, blackboardRef])
 
   const tabs: { key: ChatTab; label: string; icon: React.ReactNode }[] = [
